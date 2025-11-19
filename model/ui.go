@@ -35,6 +35,10 @@ type Model struct {
 	// Cache for date keys to keep order stable during a frame
 	dateKeys []string
 
+	// Terminal dimensions
+	width  int
+	height int
+
 	// Error handling
 	Err error
 }
@@ -79,6 +83,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+
 	case tea.KeyMsg:
 		switch m.State {
 		case Adding:
@@ -146,6 +154,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.moveTask(-1)
 				m.Data.Save(m.FilePath)
 				m.State = Browsing
+			case "up", "k":
+				m.reorderTask(-1)
+				m.Data.Save(m.FilePath)
+			case "down", "j":
+				m.reorderTask(1)
+				m.Data.Save(m.FilePath)
 			}
 		}
 	}
@@ -155,6 +169,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) View() string {
 	var columns []string
+
+	// Calculate dynamic width
+	// App margins: 4 (2 left + 2 right)
+	// Column margins: 2 per column (1 left + 1 right)
+	// Column borders: 2 per column
+	// Column padding: 2 per column
+	// Total extra per column = 6
+
+	availableWidth := m.width - 4
+	if availableWidth < 0 {
+		availableWidth = 0
+	}
+
+	colWidth := (availableWidth / m.VisibleDays) - 6
+	if colWidth < 10 {
+		colWidth = 10 // Minimum width
+	}
 
 	for i, dateStr := range m.dateKeys {
 		isFocused := m.State != Adding && m.ColIdx == i
@@ -205,15 +236,15 @@ func (m Model) View() string {
 		// Assemble column
 		colContent := lipgloss.JoinVertical(lipgloss.Left, title, lipgloss.JoinVertical(lipgloss.Left, taskViews...))
 
-		style := styles.ColumnStyle
+		style := styles.ColumnStyle.Copy().Width(colWidth)
 		if isFocused {
-			style = styles.FocusedColumnStyle
+			style = styles.FocusedColumnStyle.Copy().Width(colWidth)
 		}
 
 		columns = append(columns, style.Render(colContent))
 	}
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, columns...) + "\n\n" + m.helpView()
+	return styles.AppStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, columns...) + "\n\n" + m.helpView())
 }
 
 func (m Model) helpView() string {
@@ -224,7 +255,7 @@ func (m Model) helpView() string {
 	case Adding:
 		help = "enter: save • esc: cancel"
 	case Moving:
-		help = "←/→/h/l: move to day • esc: cancel"
+		help = "←/→/h/l: move day • ↑/↓/k/j: move up/down • esc: cancel"
 	}
 	return styles.HelpStyle.Render(help)
 }
@@ -295,4 +326,21 @@ func (m *Model) moveTask(direction int) {
 	// Follow the task
 	m.ColIdx = targetColIdx
 	m.RowIdx = len(m.Data[targetDate]) - 1
+}
+
+func (m *Model) reorderTask(direction int) {
+	currentDate := m.dateKeys[m.ColIdx]
+	tasks := m.Data[currentDate]
+	if len(tasks) == 0 {
+		return
+	}
+
+	newRowIdx := m.RowIdx + direction
+	if newRowIdx < 0 || newRowIdx >= len(tasks) {
+		return
+	}
+
+	// Swap
+	tasks[m.RowIdx], tasks[newRowIdx] = tasks[newRowIdx], tasks[m.RowIdx]
+	m.RowIdx = newRowIdx
 }
