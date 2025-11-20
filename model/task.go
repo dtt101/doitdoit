@@ -53,6 +53,18 @@ func (d TodoData) pruneOldTasks() {
 	cutoffStr := cutoff.Format("2006-01-02")
 
 	for dateStr := range d {
+		if dateStr == "Future" {
+			// Prune completed tasks from Future
+			tasks := d[dateStr]
+			activeTasks := make([]Task, 0, len(tasks))
+			for _, t := range tasks {
+				if !t.Completed {
+					activeTasks = append(activeTasks, t)
+				}
+			}
+			d[dateStr] = activeTasks
+			continue
+		}
 		if dateStr < cutoffStr {
 			delete(d, dateStr)
 		}

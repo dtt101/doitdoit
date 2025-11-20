@@ -41,6 +41,9 @@ type Model struct {
 
 	// Error handling
 	Err error
+
+	// Future View
+	ShowFuture bool
 }
 
 func NewModel(filePath string, visibleDays int) (Model, error) {
@@ -112,12 +115,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q", "ctrl+c":
 				return m, tea.Quit
 			case "right", "l":
-				if m.ColIdx < m.VisibleDays-1 {
+				if !m.ShowFuture && m.ColIdx < m.VisibleDays-1 {
 					m.ColIdx++
 					m.clampRow()
 				}
 			case "left", "h":
-				if m.ColIdx > 0 {
+				if !m.ShowFuture && m.ColIdx > 0 {
 					m.ColIdx--
 					m.clampRow()
 				}
@@ -126,7 +129,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.RowIdx--
 				}
 			case "down", "j":
-				currentDate := m.dateKeys[m.ColIdx]
+				currentDate := m.getCurrentKey()
 				if m.RowIdx < len(m.Data[currentDate])-1 {
 					m.RowIdx++
 				}
@@ -141,6 +144,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.Data.Save(m.FilePath)
 			case "m":
 				m.State = Moving
+			case "f":
+				m.ShowFuture = !m.ShowFuture
+				m.RowIdx = 0
+				m.clampRow()
 			}
 
 		case Moving:
@@ -148,11 +155,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc", "m":
 				m.State = Browsing
 			case "right", "l":
-				m.moveTask(1)
-				m.Data.Save(m.FilePath)
+				if !m.ShowFuture {
+					m.moveTask(1)
+					m.Data.Save(m.FilePath)
+				}
 			case "left", "h":
-				m.moveTask(-1)
-				m.Data.Save(m.FilePath)
+				if !m.ShowFuture {
+					m.moveTask(-1)
+					m.Data.Save(m.FilePath)
+				}
 			case "up", "k":
 				m.reorderTask(-1)
 				m.Data.Save(m.FilePath)
@@ -200,14 +211,31 @@ func (m Model) View() string {
 	}
 	minContentHeight := minTotalHeight - 4 // Subtract border+padding
 
-	for i, dateStr := range m.dateKeys {
-		isFocused := m.State != Adding && m.ColIdx == i
+	// If showing future, we just have one column
+	keys := m.dateKeys
+	if m.ShowFuture {
+		keys = []string{"Future"}
+		// Adjust colWidth for single column? Or keep it same for consistency?
+		// Let's make it full width for Future view or maybe centered?
+		// User said "purely a list of tasks", maybe similar to day view but one big column.
+		// Let's stick to the calculated colWidth for now, or maybe make it wider.
+		// Actually, if it's a single column, let's use the full available width.
+		colWidth = availableWidth - 6
+	}
+
+	for i, dateStr := range keys {
+		isFocused := m.State != Adding && (m.ShowFuture || m.ColIdx == i)
 
 		// Header
-		displayDate, _ := time.Parse("2006-01-02", dateStr)
-		header := displayDate.Format("Mon, Jan 02")
-		if dateStr == time.Now().Format("2006-01-02") {
-			header = "Today"
+		header := ""
+		if m.ShowFuture {
+			header = "Future"
+		} else {
+			displayDate, _ := time.Parse("2006-01-02", dateStr)
+			header = displayDate.Format("Mon, Jan 02")
+			if dateStr == time.Now().Format("2006-01-02") {
+				header = "Today"
+			}
 		}
 
 		title := styles.TitleStyle.Render(header)
@@ -247,7 +275,7 @@ func (m Model) View() string {
 		}
 
 		// Input field if adding to this column
-		if m.State == Adding && m.ColIdx == i {
+		if m.State == Adding && (m.ShowFuture || m.ColIdx == i) {
 			// Add spacing before input if there are tasks
 			if len(tasks) > 0 {
 				taskViews = append(taskViews, "")
@@ -256,7 +284,7 @@ func (m Model) View() string {
 			// Match TaskStyle padding
 			inputStyle := lipgloss.NewStyle()
 			taskViews = append(taskViews, inputStyle.Render(m.TextInput.View()))
-		} else if len(tasks) == 0 && !(m.State == Adding && m.ColIdx == i) {
+		} else if len(tasks) == 0 && !(m.State == Adding && (m.ShowFuture || m.ColIdx == i)) {
 			taskViews = append(taskViews, lipgloss.NewStyle().Foreground(styles.Subtle).Render("No tasks"))
 		}
 
@@ -277,7 +305,7 @@ func (m Model) View() string {
 
 	// Render columns with unified height
 	for i, content := range colContents {
-		isFocused := m.State != Adding && m.ColIdx == i
+		isFocused := m.State != Adding && (m.ShowFuture || m.ColIdx == i)
 
 		style := styles.ColumnStyle.Copy().Width(colWidth).Height(maxContentHeight)
 		if isFocused {
@@ -294,7 +322,7 @@ func (m Model) helpView() string {
 	var help string
 	switch m.State {
 	case Browsing:
-		help = "a: add • d: delete • space: toggle • m: move • arrows/hjkl: nav • q: quit"
+		help = "a: add • d: delete • space: toggle • m: move • f: future • arrows/hjkl: nav • q: quit"
 	case Adding:
 		help = "enter: save • esc: cancel"
 	case Moving:
@@ -305,8 +333,15 @@ func (m Model) helpView() string {
 
 // Logic helpers
 
+func (m Model) getCurrentKey() string {
+	if m.ShowFuture {
+		return "Future"
+	}
+	return m.dateKeys[m.ColIdx]
+}
+
 func (m *Model) clampRow() {
-	currentDate := m.dateKeys[m.ColIdx]
+	currentDate := m.getCurrentKey()
 	count := len(m.Data[currentDate])
 	if m.RowIdx >= count {
 		m.RowIdx = count - 1
@@ -317,7 +352,7 @@ func (m *Model) clampRow() {
 }
 
 func (m *Model) addTask(title string) {
-	currentDate := m.dateKeys[m.ColIdx]
+	currentDate := m.getCurrentKey()
 	newTask := Task{
 		ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
 		Title:     title,
@@ -342,7 +377,7 @@ func (m *Model) addTask(title string) {
 }
 
 func (m *Model) deleteTask() {
-	currentDate := m.dateKeys[m.ColIdx]
+	currentDate := m.getCurrentKey()
 	tasks := m.Data[currentDate]
 	if len(tasks) == 0 || m.RowIdx >= len(tasks) {
 		return
@@ -353,7 +388,7 @@ func (m *Model) deleteTask() {
 }
 
 func (m *Model) toggleTask() {
-	currentDate := m.dateKeys[m.ColIdx]
+	currentDate := m.getCurrentKey()
 	tasks := m.Data[currentDate]
 	if m.RowIdx >= len(tasks) {
 		return
@@ -376,6 +411,9 @@ func (m *Model) toggleTask() {
 }
 
 func (m *Model) moveTask(direction int) {
+	if m.ShowFuture {
+		return
+	}
 	currentDate := m.dateKeys[m.ColIdx]
 	tasks := m.Data[currentDate]
 	if len(tasks) == 0 || m.RowIdx >= len(tasks) {
@@ -412,7 +450,7 @@ func (m *Model) moveTask(direction int) {
 }
 
 func (m *Model) reorderTask(direction int) {
-	currentDate := m.dateKeys[m.ColIdx]
+	currentDate := m.getCurrentKey()
 	tasks := m.Data[currentDate]
 	if len(tasks) == 0 {
 		return
