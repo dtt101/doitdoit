@@ -219,27 +219,44 @@ func (m Model) View() string {
 		tasks := m.Data[dateStr]
 
 		for j, task := range tasks {
-			checked := "[ ]"
+			var style lipgloss.Style
 			if task.Completed {
-				checked = "[x]"
+				style = styles.CompletedTaskStyle
+			} else {
+				style = styles.TaskStyle
 			}
 
-			taskStr := fmt.Sprintf("%s %s", checked, task.Title)
-
+			title := task.Title
 			if isFocused && m.RowIdx == j {
+				style = style.Copy().Foreground(styles.Highlight).Bold(true)
 				if m.State == Moving {
-					taskStr += " (Move: <- ->)"
+					title += " (Move: <- ->)"
 				}
-				taskViews = append(taskViews, styles.SelectedTaskStyle.Render(taskStr))
-			} else {
-				taskViews = append(taskViews, styles.TaskStyle.Render(taskStr))
+			}
+
+			// Calculate title width to ensure proper wrapping
+			titleWidth := colWidth
+			if titleWidth < 1 {
+				titleWidth = 1
+			}
+
+			taskViews = append(taskViews, style.Width(titleWidth).Render(title))
+
+			// Add a blank line between tasks
+			if j < len(tasks)-1 {
+				taskViews = append(taskViews, "")
 			}
 		}
 
 		// Input field if adding to this column
 		if m.State == Adding && m.ColIdx == i {
+			// Add spacing before input if there are tasks
+			if len(tasks) > 0 {
+				taskViews = append(taskViews, "")
+			}
+
 			// Match TaskStyle padding
-			inputStyle := lipgloss.NewStyle().PaddingLeft(1)
+			inputStyle := lipgloss.NewStyle()
 			taskViews = append(taskViews, inputStyle.Render(m.TextInput.View()))
 		} else if len(tasks) == 0 && !(m.State == Adding && m.ColIdx == i) {
 			taskViews = append(taskViews, lipgloss.NewStyle().Foreground(styles.Subtle).Render("No tasks"))
@@ -325,8 +342,24 @@ func (m *Model) deleteTask() {
 
 func (m *Model) toggleTask() {
 	currentDate := m.dateKeys[m.ColIdx]
-	if len(m.Data[currentDate]) > m.RowIdx {
-		m.Data[currentDate][m.RowIdx].Completed = !m.Data[currentDate][m.RowIdx].Completed
+	tasks := m.Data[currentDate]
+	if m.RowIdx >= len(tasks) {
+		return
+	}
+
+	// Toggle completion
+	tasks[m.RowIdx].Completed = !tasks[m.RowIdx].Completed
+
+	// If completed and not already at the bottom, move to bottom
+	if tasks[m.RowIdx].Completed && m.RowIdx < len(tasks)-1 {
+		task := tasks[m.RowIdx]
+		// Remove task at RowIdx
+		tasks = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
+		// Append task to end
+		tasks = append(tasks, task)
+
+		// Update the map with the reordered slice
+		m.Data[currentDate] = tasks
 	}
 }
 

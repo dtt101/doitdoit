@@ -24,12 +24,15 @@ var (
 
 	// Task Styles
 	TaskStyle = lipgloss.NewStyle().
-			PaddingLeft(1).
 			Foreground(Text)
 
 	SelectedTaskStyle = TaskStyle.
 				Foreground(Highlight).
 				Bold(true)
+
+	CompletedTaskStyle = TaskStyle.
+				Foreground(Subtle).
+				Strikethrough(true)
 
 	TitleStyle = lipgloss.NewStyle().
 			Foreground(Special).
