@@ -130,7 +130,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.RowIdx < len(m.Data[currentDate])-1 {
 					m.RowIdx++
 				}
-			case "n":
+			case "a":
 				m.State = Adding
 				return m, nil
 			case "d":
@@ -296,7 +296,7 @@ func (m Model) helpView() string {
 	var help string
 	switch m.State {
 	case Browsing:
-		help = "n: new • d: delete • space: toggle • m: move • arrows/hjkl: nav • q: quit"
+		help = "a: add • d: delete • space: toggle • m: move • arrows/hjkl: nav • q: quit"
 	case Adding:
 		help = "enter: save • esc: cancel"
 	case Moving:

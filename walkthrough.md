@@ -7,7 +7,7 @@ I have built a CLI todo list application using Go and the Bubble Tea framework. 
 - **Columnar Layout**: Tasks are displayed in columns, one for each day.
 - **Navigation**: Vim-like navigation (h/j/k/l or arrows) to move between days and tasks.
 - **Task Management**:
-    - **Add**: Press `n` to add a new task to the current day.
+    - **Add**: Press `a` to add a new task to the current day.
     - **Toggle**: Press `space` or `enter` to toggle completion status.
     - **Delete**: Press `d` to delete a task.
     - **Move**: Press `m` to enter move mode, then use left/right arrows to move the task to a different day.
@@ -39,7 +39,7 @@ go build -o doitdoit
 
 | Key | Action |
 | :--- | :--- |
-| `n` | New task |
+| `a` | Add task |
 | `d` | Delete task |
 | `space` / `enter` | Toggle completion |
 | `m` | Move task (enter move mode) |
