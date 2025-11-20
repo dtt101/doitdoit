@@ -51,6 +51,7 @@ func NewModel(filePath string, visibleDays int) (Model, error) {
 
 	ti := textinput.New()
 	ti.Placeholder = "New task..."
+	ti.Prompt = ""
 	ti.Focus()
 
 	m := Model{
@@ -204,17 +205,12 @@ func (m Model) View() string {
 		tasks := m.Data[dateStr]
 
 		for j, task := range tasks {
-			cursor := " "
-			if isFocused && m.RowIdx == j {
-				cursor = ">"
-			}
-
 			checked := "[ ]"
 			if task.Completed {
 				checked = "[x]"
 			}
 
-			taskStr := fmt.Sprintf("%s %s %s", cursor, checked, task.Title)
+			taskStr := fmt.Sprintf("%s %s", checked, task.Title)
 
 			if isFocused && m.RowIdx == j {
 				if m.State == Moving {
@@ -228,7 +224,9 @@ func (m Model) View() string {
 
 		// Input field if adding to this column
 		if m.State == Adding && m.ColIdx == i {
-			taskViews = append(taskViews, lipgloss.NewStyle().Foreground(styles.Highlight).Render("> ")+m.TextInput.View())
+			// Match TaskStyle padding
+			inputStyle := lipgloss.NewStyle().PaddingLeft(1)
+			taskViews = append(taskViews, inputStyle.Render(m.TextInput.View()))
 		} else if len(tasks) == 0 && !(m.State == Adding && m.ColIdx == i) {
 			taskViews = append(taskViews, lipgloss.NewStyle().Foreground(styles.Subtle).Render("No tasks"))
 		}
