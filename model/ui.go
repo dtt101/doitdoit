@@ -145,16 +145,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case Moving:
 			switch msg.String() {
-			case "esc":
+			case "esc", "m":
 				m.State = Browsing
 			case "right", "l":
 				m.moveTask(1)
 				m.Data.Save(m.FilePath)
-				m.State = Browsing
 			case "left", "h":
 				m.moveTask(-1)
 				m.Data.Save(m.FilePath)
-				m.State = Browsing
 			case "up", "k":
 				m.reorderTask(-1)
 				m.Data.Save(m.FilePath)
@@ -230,7 +228,7 @@ func (m Model) View() string {
 			if isFocused && m.RowIdx == j {
 				style = style.Copy().Foreground(styles.Highlight).Bold(true)
 				if m.State == Moving {
-					title += " (Move: <- ->)"
+					title += " m"
 				}
 			}
 
@@ -300,7 +298,7 @@ func (m Model) helpView() string {
 	case Adding:
 		help = "enter: save • esc: cancel"
 	case Moving:
-		help = "←/→/h/l: move day • ↑/↓/k/j: move up/down • esc: cancel"
+		help = "←/→/h/l: move day • ↑/↓/k/j: move up/down • m/esc: done"
 	}
 	return styles.HelpStyle.Render(help)
 }
@@ -396,11 +394,21 @@ func (m *Model) moveTask(direction int) {
 	m.Data[currentDate] = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
 
 	// Add to target
-	m.Data[targetDate] = append(m.Data[targetDate], taskToMove)
+	targetTasks := m.Data[targetDate]
+	insertIdx := m.RowIdx
+	if insertIdx > len(targetTasks) {
+		insertIdx = len(targetTasks)
+	}
+
+	if insertIdx == len(targetTasks) {
+		m.Data[targetDate] = append(targetTasks, taskToMove)
+	} else {
+		m.Data[targetDate] = append(targetTasks[:insertIdx], append([]Task{taskToMove}, targetTasks[insertIdx:]...)...)
+	}
 
 	// Follow the task
 	m.ColIdx = targetColIdx
-	m.RowIdx = len(m.Data[targetDate]) - 1
+	m.RowIdx = insertIdx
 }
 
 func (m *Model) reorderTask(direction int) {
