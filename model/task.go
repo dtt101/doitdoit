@@ -12,6 +12,7 @@ type Task struct {
 	Title     string    `json:"title"`
 	Completed bool      `json:"completed"`
 	CreatedAt time.Time `json:"created_at"`
+	DueDate   string    `json:"due_date,omitempty"`
 }
 
 // TodoData maps a date string (YYYY-MM-DD) to a list of tasks
@@ -69,6 +70,44 @@ func (d TodoData) pruneOldTasks() {
 			delete(d, dateStr)
 		}
 	}
+}
+
+// DistributeFutureTasks moves tasks from "Future" to specific dates if they are due
+func (d TodoData) DistributeFutureTasks(visibleDays int) {
+	futureTasks, ok := d["Future"]
+	if !ok || len(futureTasks) == 0 {
+		return
+	}
+
+	today := time.Now()
+	// Calculate the last visible date
+	lastVisible := today.AddDate(0, 0, visibleDays-1).Format("2006-01-02")
+	todayStr := today.Format("2006-01-02")
+
+	remainingFuture := make([]Task, 0)
+
+	for _, task := range futureTasks {
+		if task.DueDate == "" {
+			remainingFuture = append(remainingFuture, task)
+			continue
+		}
+
+		// If due date is valid
+		if task.DueDate <= lastVisible {
+			targetDate := task.DueDate
+			// If overdue, move to today
+			if targetDate < todayStr {
+				targetDate = todayStr
+			}
+
+			// Add to target date
+			d[targetDate] = append(d[targetDate], task)
+		} else {
+			remainingFuture = append(remainingFuture, task)
+		}
+	}
+
+	d["Future"] = remainingFuture
 }
 
 // Helper to get sorted keys

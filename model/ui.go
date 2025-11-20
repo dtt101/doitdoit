@@ -17,6 +17,7 @@ const (
 	Browsing State = iota
 	Adding
 	Moving
+	SettingDate
 )
 
 type Model struct {
@@ -64,6 +65,7 @@ func NewModel(filePath string, visibleDays int) (Model, error) {
 		State:       Browsing,
 		TextInput:   ti,
 	}
+	m.Data.DistributeFutureTasks(visibleDays)
 	m.updateDateKeys()
 	return m, nil
 }
@@ -148,6 +150,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ShowFuture = !m.ShowFuture
 				m.RowIdx = 0
 				m.clampRow()
+			case "t":
+				if m.ShowFuture {
+					m.State = SettingDate
+					m.TextInput.Placeholder = "YYYY-MM-DD"
+					m.TextInput.Focus()
+					return m, nil
+				}
 			}
 
 		case Moving:
@@ -171,6 +180,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.reorderTask(1)
 				m.Data.Save(m.FilePath)
 			}
+
+		case SettingDate:
+			switch msg.String() {
+			case "enter":
+				m.setTaskDate(m.TextInput.Value())
+				m.TextInput.Reset()
+				m.State = Browsing
+				m.Data.Save(m.FilePath)
+			case "esc":
+				m.TextInput.Reset()
+				m.State = Browsing
+			default:
+				m.TextInput, cmd = m.TextInput.Update(msg)
+			}
+			return m, cmd
 		}
 	}
 
@@ -253,6 +277,10 @@ func (m Model) View() string {
 			}
 
 			title := task.Title
+			if m.ShowFuture && task.DueDate != "" {
+				title += fmt.Sprintf(" (%s)", task.DueDate)
+			}
+
 			if isFocused && m.RowIdx == j {
 				style = style.Copy().Foreground(styles.Highlight).Bold(true)
 				if m.State == Moving {
@@ -275,7 +303,7 @@ func (m Model) View() string {
 		}
 
 		// Input field if adding to this column
-		if m.State == Adding && (m.ShowFuture || m.ColIdx == i) {
+		if (m.State == Adding || m.State == SettingDate) && (m.ShowFuture || m.ColIdx == i) {
 			// Add spacing before input if there are tasks
 			if len(tasks) > 0 {
 				taskViews = append(taskViews, "")
@@ -283,8 +311,12 @@ func (m Model) View() string {
 
 			// Match TaskStyle padding
 			inputStyle := lipgloss.NewStyle()
-			taskViews = append(taskViews, inputStyle.Render(m.TextInput.View()))
-		} else if len(tasks) == 0 && !(m.State == Adding && (m.ShowFuture || m.ColIdx == i)) {
+			prefix := ""
+			if m.State == SettingDate {
+				prefix = "Due Date: "
+			}
+			taskViews = append(taskViews, inputStyle.Render(prefix+m.TextInput.View()))
+		} else if len(tasks) == 0 && !((m.State == Adding || m.State == SettingDate) && (m.ShowFuture || m.ColIdx == i)) {
 			taskViews = append(taskViews, lipgloss.NewStyle().Foreground(styles.Subtle).Render("No tasks"))
 		}
 
@@ -305,7 +337,7 @@ func (m Model) View() string {
 
 	// Render columns with unified height
 	for i, content := range colContents {
-		isFocused := m.State != Adding && (m.ShowFuture || m.ColIdx == i)
+		isFocused := m.State != Adding && m.State != SettingDate && (m.ShowFuture || m.ColIdx == i)
 
 		style := styles.ColumnStyle.Copy().Width(colWidth).Height(maxContentHeight)
 		if isFocused {
@@ -322,11 +354,13 @@ func (m Model) helpView() string {
 	var help string
 	switch m.State {
 	case Browsing:
-		help = "a: add • d: delete • space: toggle • m: move • f: future • arrows/hjkl: nav • q: quit"
+		help = "a: add • d: delete • space: toggle • m: move • f: future • t: date • arrows/hjkl: nav • q: quit"
 	case Adding:
 		help = "enter: save • esc: cancel"
 	case Moving:
 		help = "←/→/h/l: move day • ↑/↓/k/j: move up/down • m/esc: done"
+	case SettingDate:
+		help = "enter: save date • esc: cancel"
 	}
 	return styles.HelpStyle.Render(help)
 }
@@ -464,4 +498,31 @@ func (m *Model) reorderTask(direction int) {
 	// Swap
 	tasks[m.RowIdx], tasks[newRowIdx] = tasks[newRowIdx], tasks[m.RowIdx]
 	m.RowIdx = newRowIdx
+}
+
+func (m *Model) setTaskDate(dateStr string) {
+	currentDate := m.getCurrentKey()
+	tasks := m.Data[currentDate]
+	if len(tasks) == 0 || m.RowIdx >= len(tasks) {
+		return
+	}
+
+	// Basic validation (could be improved)
+	if len(dateStr) < 5 { // At least M-D
+		return
+	}
+
+	// If only M-D provided, append current year
+	if len(dateStr) == 5 {
+		dateStr = fmt.Sprintf("%d-%s", time.Now().Year(), dateStr)
+	}
+
+	// Update task
+	tasks[m.RowIdx].DueDate = dateStr
+	m.Data[currentDate] = tasks
+
+	// Redistribute
+	m.Data.DistributeFutureTasks(m.VisibleDays)
+	m.updateDateKeys()
+	m.clampRow()
 }
