@@ -188,6 +188,20 @@ func (m Model) View() string {
 		colWidth = 10 // Minimum width
 	}
 
+	// Pre-calculate column contents to determine max height
+	var colContents []string
+	maxContentHeight := 0
+
+	// Minimum height based on window size
+	// App margins: 2 (1 top + 1 bottom)
+	// Footer overhead: ~7 lines
+	// Column overhead: 4 lines (2 border + 2 padding)
+	minTotalHeight := m.height - 9
+	if minTotalHeight < 10 {
+		minTotalHeight = 10
+	}
+	minContentHeight := minTotalHeight - 4 // Subtract border+padding
+
 	for i, dateStr := range m.dateKeys {
 		isFocused := m.State != Adding && m.ColIdx == i
 
@@ -231,15 +245,31 @@ func (m Model) View() string {
 			taskViews = append(taskViews, lipgloss.NewStyle().Foreground(styles.Subtle).Render("No tasks"))
 		}
 
-		// Assemble column
-		colContent := lipgloss.JoinVertical(lipgloss.Left, title, lipgloss.JoinVertical(lipgloss.Left, taskViews...))
+		// Assemble content
+		content := lipgloss.JoinVertical(lipgloss.Left, title, lipgloss.JoinVertical(lipgloss.Left, taskViews...))
+		colContents = append(colContents, content)
 
-		style := styles.ColumnStyle.Copy().Width(colWidth)
+		h := lipgloss.Height(content)
+		if h > maxContentHeight {
+			maxContentHeight = h
+		}
+	}
+
+	// Ensure we meet the minimum window height
+	if maxContentHeight < minContentHeight {
+		maxContentHeight = minContentHeight
+	}
+
+	// Render columns with unified height
+	for i, content := range colContents {
+		isFocused := m.State != Adding && m.ColIdx == i
+
+		style := styles.ColumnStyle.Copy().Width(colWidth).Height(maxContentHeight)
 		if isFocused {
-			style = styles.FocusedColumnStyle.Copy().Width(colWidth)
+			style = styles.FocusedColumnStyle.Copy().Width(colWidth).Height(maxContentHeight)
 		}
 
-		columns = append(columns, style.Render(colContent))
+		columns = append(columns, style.Render(content))
 	}
 
 	return styles.AppStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, columns...) + "\n\n" + m.helpView())
