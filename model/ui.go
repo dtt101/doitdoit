@@ -326,7 +326,21 @@ func (m *Model) addTask(title string) {
 		CreatedAt: time.Now(),
 		Completed: false,
 	}
-	m.Data[currentDate] = append(m.Data[currentDate], newTask)
+
+	tasks := m.Data[currentDate]
+	insertIdx := len(tasks)
+	for i, t := range tasks {
+		if t.Completed {
+			insertIdx = i
+			break
+		}
+	}
+
+	if insertIdx == len(tasks) {
+		m.Data[currentDate] = append(tasks, newTask)
+	} else {
+		m.Data[currentDate] = append(tasks[:insertIdx], append([]Task{newTask}, tasks[insertIdx:]...)...)
+	}
 }
 
 func (m *Model) deleteTask() {
