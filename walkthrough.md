@@ -11,7 +11,7 @@ I have built a CLI todo list application using Go and the Bubble Tea framework. 
     - **Toggle**: Press `space` or `enter` to toggle completion status.
     - **Delete**: Press `d` to delete a task.
     - **Move**: Press `m` to enter move mode, then use left/right arrows to move the task to a different day.
-- **Persistence**: Data is saved to a JSON file. By default, it looks for `~/Dropbox/doitdoit.json`, but this can be overridden with the `-file` flag.
+- **Persistence**: Data is saved to a JSON file. On first run, the app will prompt you to specify the storage location (e.g., `~/Dropbox/doitdoit.json`). This preference is saved to `~/.doitdoit_config.json`.
 - **Auto-Pruning**: Tasks older than 5 days are automatically removed when the app loads/saves.
 
 ## Usage
@@ -25,11 +25,14 @@ go build -o doitdoit
 ### Running the App
 
 ```bash
-# Default (3 days, ~/Dropbox/doitdoit.json)
+# Run the app (uses configured storage path)
 ./doitdoit
 
-# Custom settings
-./doitdoit -days 5 -file ./my_todos.json
+# Override storage location for this session
+./doitdoit -file ./my_todos.json
+
+# Customize visible days
+./doitdoit -days 5
 ```
 
 ### Key Bindings
