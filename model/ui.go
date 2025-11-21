@@ -58,6 +58,7 @@ func NewModel(filePath string, visibleDays int) (Model, error) {
 	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 	ti.TextStyle = lipgloss.NewStyle().Foreground(styles.Text)
 	ti.Prompt = ""
+	ti.Width = 30
 	ti.Focus()
 
 	m := Model{
