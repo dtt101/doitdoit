@@ -99,15 +99,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch m.State {
 		case Adding:
-			switch msg.String() {
-			case "enter":
+			switch msg.Type {
+			case tea.KeyEnter:
 				if m.TextInput.Value() != "" {
 					m.addTask(m.TextInput.Value())
 					m.TextInput.Reset()
 					m.State = Browsing
 					m.Data.Save(m.FilePath)
 				}
-			case "esc":
+			case tea.KeyEsc:
 				m.TextInput.Reset()
 				m.State = Browsing
 			default:
@@ -207,13 +207,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case SettingDate:
-			switch msg.String() {
-			case "enter":
+			switch msg.Type {
+			case tea.KeyEnter:
 				m.setTaskDate(m.TextInput.Value())
 				m.TextInput.Reset()
 				m.State = Browsing
 				m.Data.Save(m.FilePath)
-			case "esc":
+			case tea.KeyEsc:
 				m.TextInput.Reset()
 				m.State = Browsing
 			default:
