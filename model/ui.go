@@ -185,6 +185,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "down", "j":
 				m.reorderTask(1)
 				m.Data.Save(m.FilePath)
+			case "f":
+				if !m.ShowFuture {
+					// Move to Future
+					currentDate := m.getCurrentKey()
+					tasks := m.Data[currentDate]
+					if len(tasks) > 0 && m.RowIdx < len(tasks) {
+						task := tasks[m.RowIdx]
+						// Remove from current
+						m.Data[currentDate] = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
+
+						// Add to Future
+						futureTasks := m.Data["Future"]
+						m.Data["Future"] = append(futureTasks, task)
+
+						m.clampRow()
+						m.State = Browsing
+						m.Data.Save(m.FilePath)
+					}
+				}
 			}
 
 		case SettingDate:
