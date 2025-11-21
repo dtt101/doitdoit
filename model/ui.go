@@ -155,6 +155,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "t":
 				if m.ShowFuture {
 					m.State = SettingDate
+					m.TextInput.Reset() // Clear previous input
 					m.TextInput.Placeholder = "YYYY-MM-DD or MM-DD"
 					m.TextInput.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 					m.TextInput.TextStyle = lipgloss.NewStyle().Foreground(styles.Text)
@@ -555,11 +556,40 @@ func (m *Model) setTaskDate(dateStr string) {
 	}
 
 	// Update task
+	taskID := tasks[m.RowIdx].ID
 	tasks[m.RowIdx].DueDate = dateStr
 	m.Data[currentDate] = tasks
 
 	// Redistribute
 	m.Data.DistributeFutureTasks(m.VisibleDays)
 	m.updateDateKeys()
-	m.clampRow()
+
+	// Check if we need to switch view
+	// We need to find where the task went
+	found := false
+	if !m.ShowFuture {
+		// Already in daily view, nothing to do (though this function is only called in Future view currently)
+	} else {
+		// Check visible days
+		for colIdx, dateKey := range m.dateKeys {
+			for rowIdx, t := range m.Data[dateKey] {
+				if t.ID == taskID {
+					// Found it in a visible day!
+					m.ShowFuture = false
+					m.ColIdx = colIdx
+					m.RowIdx = rowIdx
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+	}
+
+	if !found {
+		// Still in future or somewhere else
+		m.clampRow()
+	}
 }
