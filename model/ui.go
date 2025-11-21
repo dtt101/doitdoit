@@ -140,6 +140,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "a":
 				m.State = Adding
+				m.TextInput.Reset() // Clear previous input
+				m.TextInput.Placeholder = "New task..."
+				m.TextInput.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+				m.TextInput.TextStyle = lipgloss.NewStyle().Foreground(styles.Text)
+				m.TextInput.Focus()
 				return m, nil
 			case "d":
 				m.deleteTask()
