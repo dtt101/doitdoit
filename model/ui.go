@@ -282,9 +282,12 @@ func (m Model) View() string {
 			}
 
 			if isFocused && m.RowIdx == j {
-				style = style.Copy().Foreground(styles.Highlight).Bold(true)
 				if m.State == Moving {
-					title += " m"
+					// Use special moving style with highlight background
+					style = styles.MovingTaskStyle
+				} else {
+					// Normal selection highlight
+					style = style.Copy().Foreground(styles.Highlight).Bold(true)
 				}
 			}
 

@@ -34,6 +34,12 @@ var (
 				Foreground(Subtle).
 				Strikethrough(true)
 
+	MovingTaskStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Background(lipgloss.Color("#FF79C6")).
+			Bold(true).
+			Padding(0, 1)
+
 	TitleStyle = lipgloss.NewStyle().
 			Foreground(Special).
 			Bold(true).
