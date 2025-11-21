@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,100 @@ func main() {
 	filePathFlag := flag.String("file", "", "Path to the JSON data file (overrides config)")
 	visibleDays := flag.Int("days", 3, "Number of days to display")
 	flag.Parse()
+
+	// Handle CLI commands
+	if len(flag.Args()) > 0 {
+		cmd := flag.Arg(0)
+		if cmd == "config" {
+			if len(flag.Args()) > 1 && flag.Arg(1) == "show" {
+				cfg, err := config.LoadConfig()
+				if err != nil {
+					fmt.Printf("Error loading config: %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Printf("Storage Path: %s\n", cfg.StoragePath)
+				os.Exit(0)
+			} else if len(flag.Args()) > 1 && flag.Arg(1) == "move" {
+				if len(flag.Args()) < 3 {
+					fmt.Println("Usage: doitdoit config move <new_file_path>")
+					os.Exit(1)
+				}
+				newPath := flag.Arg(2)
+
+				// Expand ~ if present
+				if strings.HasPrefix(newPath, "~/") {
+					home, _ := os.UserHomeDir()
+					newPath = filepath.Join(home, newPath[2:])
+				}
+
+				cfg, err := config.LoadConfig()
+				if err != nil {
+					fmt.Printf("Error loading config: %v\n", err)
+					os.Exit(1)
+				}
+
+				oldPath := cfg.StoragePath
+				if oldPath == "" {
+					fmt.Println("No storage path currently configured.")
+					os.Exit(1)
+				}
+
+				// Check if source exists
+				sourceFile, err := os.Open(oldPath)
+				if err != nil {
+					fmt.Printf("Error opening current storage file: %v\n", err)
+					os.Exit(1)
+				}
+				defer sourceFile.Close()
+
+				// Create destination directory
+				newDir := filepath.Dir(newPath)
+				if err := os.MkdirAll(newDir, 0755); err != nil {
+					fmt.Printf("Error creating directory for new path: %v\n", err)
+					os.Exit(1)
+				}
+
+				// Create destination file
+				destFile, err := os.Create(newPath)
+				if err != nil {
+					fmt.Printf("Error creating new storage file: %v\n", err)
+					os.Exit(1)
+				}
+				defer destFile.Close()
+
+				// Copy content
+				_, err = io.Copy(destFile, sourceFile)
+				if err != nil {
+					fmt.Printf("Error copying data: %v\n", err)
+					os.Exit(1)
+				}
+
+				// Close files to ensure flush
+				sourceFile.Close()
+				destFile.Close()
+
+				// Update config
+				cfg.StoragePath = newPath
+				if err := config.SaveConfig(cfg); err != nil {
+					fmt.Printf("Error saving config: %v\n", err)
+					// Try to cleanup? No, better to leave both than lose data.
+					os.Exit(1)
+				}
+
+				// Remove old file
+				if err := os.Remove(oldPath); err != nil {
+					fmt.Printf("Warning: Could not remove old file: %v\n", err)
+				}
+
+				fmt.Printf("Successfully moved storage to: %s\n", newPath)
+				os.Exit(0)
+
+			} else {
+				fmt.Println("Usage: doitdoit config show | move <path>")
+				os.Exit(1)
+			}
+		}
+	}
 
 	var finalPath string
 
