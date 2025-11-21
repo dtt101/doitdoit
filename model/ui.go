@@ -55,6 +55,8 @@ func NewModel(filePath string, visibleDays int) (Model, error) {
 
 	ti := textinput.New()
 	ti.Placeholder = "New task..."
+	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	ti.TextStyle = lipgloss.NewStyle().Foreground(styles.Text)
 	ti.Prompt = ""
 	ti.Focus()
 
@@ -153,7 +155,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "t":
 				if m.ShowFuture {
 					m.State = SettingDate
-					m.TextInput.Placeholder = "YYYY-MM-DD"
+					m.TextInput.Placeholder = "YYYY-MM-DD or MM-DD"
+					m.TextInput.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+					m.TextInput.TextStyle = lipgloss.NewStyle().Foreground(styles.Text)
 					m.TextInput.Focus()
 					return m, nil
 				}
@@ -357,7 +361,11 @@ func (m Model) helpView() string {
 	var help string
 	switch m.State {
 	case Browsing:
-		help = "a: add • d: delete • space: toggle • m: move • f: future • t: date • arrows/hjkl: nav • q: quit"
+		help = "a: add • d: delete • space: toggle • m: move • f: future"
+		if m.ShowFuture {
+			help += " • t: date"
+		}
+		help += " • arrows/hjkl: nav • q: quit"
 	case Adding:
 		help = "enter: save • esc: cancel"
 	case Moving:
@@ -434,13 +442,39 @@ func (m *Model) toggleTask() {
 	// Toggle completion
 	tasks[m.RowIdx].Completed = !tasks[m.RowIdx].Completed
 
-	// If completed and not already at the bottom, move to bottom
-	if tasks[m.RowIdx].Completed && m.RowIdx < len(tasks)-1 {
+	if tasks[m.RowIdx].Completed {
+		// If completed and not already at the bottom, move to bottom
+		if m.RowIdx < len(tasks)-1 {
+			task := tasks[m.RowIdx]
+			// Remove task at RowIdx
+			tasks = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
+			// Append task to end
+			tasks = append(tasks, task)
+
+			// Update the map with the reordered slice
+			m.Data[currentDate] = tasks
+		}
+	} else {
+		// If uncompleted, move it above completed tasks
 		task := tasks[m.RowIdx]
-		// Remove task at RowIdx
+		// Remove task at current position
 		tasks = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
-		// Append task to end
-		tasks = append(tasks, task)
+
+		// Find the first completed task to insert before it
+		insertIdx := len(tasks)
+		for i, t := range tasks {
+			if t.Completed {
+				insertIdx = i
+				break
+			}
+		}
+
+		// Insert at the appropriate position
+		if insertIdx == len(tasks) {
+			tasks = append(tasks, task)
+		} else {
+			tasks = append(tasks[:insertIdx], append([]Task{task}, tasks[insertIdx:]...)...)
+		}
 
 		// Update the map with the reordered slice
 		m.Data[currentDate] = tasks
