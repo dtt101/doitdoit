@@ -380,26 +380,55 @@ func (m Model) View() string {
 		columns = append(columns, style.Render(content))
 	}
 
-	return styles.AppStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, columns...) + "\n\n" + m.helpView())
+	return styles.AppStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, columns...) + "\n" + m.helpView())
 }
 
 func (m Model) helpView() string {
-	var help string
+	var items []string
+
+	key := func(k string) string {
+		return styles.KeyStyle.Render(k)
+	}
+	desc := func(d string) string {
+		return lipgloss.NewStyle().Foreground(styles.Subtle).Render(d)
+	}
+	group := func(k, d string) string {
+		return key(k) + " " + desc(d)
+	}
+
 	switch m.State {
 	case Browsing:
-		help = "a: add • d: delete • space: toggle • m: move • f: future"
+		items = append(items, group("a", "add"))
+		items = append(items, group("d", "delete"))
+		items = append(items, group("space", "toggle"))
+		items = append(items, group("m", "move"))
+		items = append(items, group("f", "future"))
 		if m.ShowFuture {
-			help += " • t: date"
+			items = append(items, group("t", "date"))
 		}
-		help += " • arrows/hjkl: nav • q: quit"
+		items = append(items, group("arrows/hjkl", "nav"))
+		items = append(items, group("q", "quit"))
 	case Adding:
-		help = "enter: save • esc: cancel"
+		items = append(items, group("enter", "save"))
+		items = append(items, group("esc", "cancel"))
 	case Moving:
-		help = "←/→/h/l: move day • ↑/↓/k/j: move up/down • m/esc: done"
+		items = append(items, group("←/→/h/l", "move day"))
+		items = append(items, group("↑/↓/k/j", "move up/down"))
+		items = append(items, group("m/esc", "done"))
 	case SettingDate:
-		help = "enter: save date • esc: cancel"
+		items = append(items, group("enter", "save date"))
+		items = append(items, group("esc", "cancel"))
 	}
-	return styles.HelpStyle.Render(help)
+
+	var helpStr string
+	for i, item := range items {
+		if i > 0 {
+			helpStr += "   "
+		}
+		helpStr += item
+	}
+
+	return styles.HelpStyle.Render(helpStr)
 }
 
 // Logic helpers

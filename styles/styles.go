@@ -6,6 +6,7 @@ var (
 	// Colors
 	Subtle    = lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#6272A4"}
 	Highlight = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#FF79C6"}
+	KeyColor  = lipgloss.AdaptiveColor{Light: "#9B9B9B", Dark: "#BD93F9"}
 	Text      = lipgloss.AdaptiveColor{Light: "#191919", Dark: "#F8F8F2"}
 	Special   = lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#50FA7B"}
 	Warning   = lipgloss.AdaptiveColor{Light: "#F25D94", Dark: "#FF5555"}
@@ -47,7 +48,12 @@ var (
 
 	HelpStyle = lipgloss.NewStyle().
 			Foreground(Subtle).
-			MarginTop(2)
+			MarginTop(2).
+			MarginLeft(1)
+
+	KeyStyle = lipgloss.NewStyle().
+			Foreground(KeyColor).
+			Bold(true)
 
 	AppStyle = lipgloss.NewStyle().
 			Margin(1, 2)
