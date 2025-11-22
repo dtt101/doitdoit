@@ -10,10 +10,8 @@ If your other machines have Go installed, you can install directly from the sour
 2.  **Run `go install`** on the target machine:
 
     ```bash
-    go install github.com/vs/doitdoit@latest
+    go install github.com/dtt101/doitdoit@latest
     ```
-
-    *Note: Replace `github.com/vs/doitdoit` with your actual repository URL.*
 
     This will compile the binary and place it in `$GOPATH/bin` (usually `~/go/bin`), which should be in your `$PATH`. You can then run `doitdoit` anywhere.
 
