@@ -35,10 +35,72 @@ func Load(path string) (TodoData, error) {
 		return nil, err
 	}
 
+	// Roll over incomplete tasks
+	data.rollOverIncompleteTasks()
+
 	// Prune old tasks
 	data.pruneOldTasks()
 
 	return data, nil
+}
+
+func (d TodoData) rollOverIncompleteTasks() {
+	todayStr := time.Now().Format("2006-01-02")
+	tasksToRollOver := make([]Task, 0)
+	datesToRemove := make([]string, 0)
+
+	for dateStr, tasks := range d {
+		if dateStr == "Future" {
+			continue
+		}
+
+		parsedDate, err := time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			continue // Skip invalid date strings
+		}
+
+		now := time.Now()
+		normalizedNow := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+		normalizedParsedDate := time.Date(parsedDate.Year(), parsedDate.Month(), parsedDate.Day(), 0, 0, 0, 0, parsedDate.Location())
+
+		if normalizedParsedDate.Before(normalizedNow) {
+			remainingTasks := make([]Task, 0, len(tasks))
+			for _, task := range tasks {
+				if !task.Completed {
+					task.DueDate = todayStr // Update due date to today
+					tasksToRollOver = append(tasksToRollOver, task)
+				} else {
+					remainingTasks = append(remainingTasks, task)
+				}
+			}
+			if len(remainingTasks) > 0 {
+				d[dateStr] = remainingTasks
+			} else {
+				datesToRemove = append(datesToRemove, dateStr)
+			}
+		}
+	}
+
+	// Add rolled over tasks to today
+	if len(tasksToRollOver) > 0 {
+		// If today already has tasks, append to them.
+		// Otherwise, create a new entry for today.
+		if existingTasks, ok := d[todayStr]; ok {
+			d[todayStr] = append(existingTasks, tasksToRollOver...)
+		} else {
+			d[todayStr] = tasksToRollOver
+		}
+	}
+
+	// Clean up empty dates that were rolled over
+	for _, date := range datesToRemove {
+		delete(d, date)
+	}
+
+	// Additionally, if today's entry exists but is now empty, remove it.
+	if tasks, ok := d[todayStr]; ok && len(tasks) == 0 {
+		delete(d, todayStr)
+	}
 }
 
 func (d TodoData) Save(path string) error {
