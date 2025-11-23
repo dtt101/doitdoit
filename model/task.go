@@ -1,9 +1,13 @@
 package model
 
 import (
+	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -21,17 +25,20 @@ type TodoData map[string][]Task
 func Load(path string) (TodoData, error) {
 	data := make(TodoData)
 
-	// If file doesn't exist, return empty data
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return data, nil
+	// Check if file exists
+	if _, err := os.Stat(path); err == nil {
+		bytes, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+
+		if err := json.Unmarshal(bytes, &data); err != nil {
+			return nil, err
+		}
 	}
 
-	bytes, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := json.Unmarshal(bytes, &data); err != nil {
+	// Import tasks from text file if it exists
+	if err := data.importFromTextFile(path); err != nil {
 		return nil, err
 	}
 
@@ -42,6 +49,68 @@ func Load(path string) (TodoData, error) {
 	data.pruneOldTasks()
 
 	return data, nil
+}
+
+func (d TodoData) importFromTextFile(jsonPath string) error {
+	// Look for import.txt in the same directory as the JSON file
+	dir := filepath.Dir(jsonPath)
+	importPath := filepath.Join(dir, "import.txt")
+
+	if _, err := os.Stat(importPath); os.IsNotExist(err) {
+		return nil
+	}
+
+	file, err := os.Open(importPath)
+	if err != nil {
+		return err
+	}
+	// We defer close, but we also close explicitly before removing
+	defer file.Close()
+
+	var newTasks []Task
+	scanner := bufio.NewScanner(file)
+	
+	// Seed for unique IDs in this batch
+	baseTime := time.Now().UnixNano()
+	idx := 0
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		newTask := Task{
+			ID:        fmt.Sprintf("%d-%d", baseTime, idx),
+			Title:     line,
+			Completed: false,
+			CreatedAt: time.Now(),
+		}
+		newTasks = append(newTasks, newTask)
+		idx++
+	}
+
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	// If we found tasks, add them and save
+	if len(newTasks) > 0 {
+		if d["Future"] == nil {
+			d["Future"] = make([]Task, 0)
+		}
+		d["Future"] = append(d["Future"], newTasks...)
+		
+		if err := d.Save(jsonPath); err != nil {
+			return err
+		}
+	}
+
+	// Close the file so we can delete it (important on Windows)
+	file.Close()
+
+	// Delete the import file
+	return os.Remove(importPath)
 }
 
 func (d TodoData) rollOverIncompleteTasks() {
