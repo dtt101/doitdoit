@@ -8,7 +8,7 @@ A simple, efficient terminal-based task manager written in Go. `doitdoit` helps 
 
 *   **Clean TUI:** A multi-column terminal interface displaying tasks for today and the next few days.
 *   **Automatic Rollover:** Incomplete tasks from previous days are automatically moved to "Today" when you start the app. No task is left behind.
-*   **Future Planning:** A dedicated "Future" view (`f` key) for tasks that don't have a specific due date yet.
+*   **Future Planning:** "Future" view (`f` key) for scheduling.
 *   **Keyboard Driven:** Fully navigable and operable using standard Vim-like keys (`h`, `j`, `k`, `l`) or arrow keys.
 *   **Bulk Import:** Easily import a list of tasks from a text file.
 *   **Data Pruning:** Automatically cleans up tasks older than 5 days to keep your data file lightweight.
