@@ -104,8 +104,8 @@ func TestPruningAndRollover(t *testing.T) {
 	}
 
 	// Execute the logic in the same order as Load()
-	data.rollOverIncompleteTasks()
-	data.pruneOldTasks()
+	_ = data.rollOverIncompleteTasks()
+	_ = data.pruneOldTasks()
 
 	// Assertions
 

@@ -24,6 +24,7 @@ type TodoData map[string][]Task
 
 func Load(path string) (TodoData, error) {
 	data := make(TodoData)
+	dirty := false
 
 	// Check if file exists
 	if _, err := os.Stat(path); err == nil {
@@ -38,38 +39,51 @@ func Load(path string) (TodoData, error) {
 	}
 
 	// Import tasks from text file if it exists
-	if err := data.importFromTextFile(path); err != nil {
+	imported, err := data.importFromTextFile(path)
+	if err != nil {
 		return nil, err
 	}
+	dirty = dirty || imported
 
 	// Roll over incomplete tasks
-	data.rollOverIncompleteTasks()
+	if data.rollOverIncompleteTasks() {
+		dirty = true
+	}
 
 	// Prune old tasks
-	data.pruneOldTasks()
+	if data.pruneOldTasks() {
+		dirty = true
+	}
+
+	// Persist any changes triggered during load so the file stays up to date
+	if dirty {
+		if err := data.Save(path); err != nil {
+			return nil, err
+		}
+	}
 
 	return data, nil
 }
 
-func (d TodoData) importFromTextFile(jsonPath string) error {
+func (d TodoData) importFromTextFile(jsonPath string) (bool, error) {
 	// Look for import.txt in the same directory as the JSON file
 	dir := filepath.Dir(jsonPath)
 	importPath := filepath.Join(dir, "import.txt")
 
 	if _, err := os.Stat(importPath); os.IsNotExist(err) {
-		return nil
+		return false, nil
 	}
 
 	file, err := os.Open(importPath)
 	if err != nil {
-		return err
+		return false, err
 	}
 	// We defer close, but we also close explicitly before removing
 	defer file.Close()
 
 	var newTasks []Task
 	scanner := bufio.NewScanner(file)
-	
+
 	// Seed for unique IDs in this batch
 	baseTime := time.Now().UnixNano()
 	idx := 0
@@ -91,7 +105,7 @@ func (d TodoData) importFromTextFile(jsonPath string) error {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return err
+		return false, err
 	}
 
 	// If we found tasks, add them and save
@@ -100,23 +114,24 @@ func (d TodoData) importFromTextFile(jsonPath string) error {
 			d["Future"] = make([]Task, 0)
 		}
 		d["Future"] = append(d["Future"], newTasks...)
-		
-		if err := d.Save(jsonPath); err != nil {
-			return err
-		}
 	}
 
 	// Close the file so we can delete it (important on Windows)
 	file.Close()
 
 	// Delete the import file
-	return os.Remove(importPath)
+	if err := os.Remove(importPath); err != nil {
+		return false, err
+	}
+
+	return len(newTasks) > 0, nil
 }
 
-func (d TodoData) rollOverIncompleteTasks() {
+func (d TodoData) rollOverIncompleteTasks() bool {
 	todayStr := time.Now().Format("2006-01-02")
 	tasksToRollOver := make([]Task, 0)
 	datesToRemove := make([]string, 0)
+	changed := false
 
 	for dateStr, tasks := range d {
 		if dateStr == "Future" {
@@ -159,17 +174,21 @@ func (d TodoData) rollOverIncompleteTasks() {
 		} else {
 			d[todayStr] = tasksToRollOver
 		}
+		changed = true
 	}
 
 	// Clean up empty dates that were rolled over
 	for _, date := range datesToRemove {
 		delete(d, date)
+		changed = true
 	}
 
 	// Additionally, if today's entry exists but is now empty, remove it.
 	if tasks, ok := d[todayStr]; ok && len(tasks) == 0 {
 		delete(d, todayStr)
 	}
+
+	return changed
 }
 
 func (d TodoData) Save(path string) error {
@@ -177,12 +196,50 @@ func (d TodoData) Save(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, bytes, 0644)
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	temp, err := os.CreateTemp(dir, "doitdoit-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+
+	if _, err := temp.Write(bytes); err != nil {
+		temp.Close()
+		os.Remove(tempPath)
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		os.Remove(tempPath)
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		os.Remove(tempPath)
+		return err
+	}
+
+	// Restrict permissions to the owner for privacy
+	if err := os.Chmod(tempPath, 0600); err != nil {
+		os.Remove(tempPath)
+		return err
+	}
+
+	if err := os.Rename(tempPath, path); err != nil {
+		os.Remove(tempPath)
+		return err
+	}
+
+	return nil
 }
 
-func (d TodoData) pruneOldTasks() {
+func (d TodoData) pruneOldTasks() bool {
 	cutoff := time.Now().AddDate(0, 0, -5)
 	cutoffStr := cutoff.Format("2006-01-02")
+	changed := false
 
 	for dateStr := range d {
 		if dateStr == "Future" {
@@ -194,13 +251,19 @@ func (d TodoData) pruneOldTasks() {
 					activeTasks = append(activeTasks, t)
 				}
 			}
+			if len(activeTasks) != len(tasks) {
+				changed = true
+			}
 			d[dateStr] = activeTasks
 			continue
 		}
 		if dateStr < cutoffStr {
 			delete(d, dateStr)
+			changed = true
 		}
 	}
+
+	return changed
 }
 
 // DistributeFutureTasks moves tasks from "Future" to specific dates if they are due

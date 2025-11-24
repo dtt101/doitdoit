@@ -17,6 +17,9 @@
 # Go workspace file
 go.work
 
+# go cache
+.gocache
+
 # OS Specific
 .DS_Store
 

@@ -51,5 +51,6 @@ func SaveConfig(cfg *Config) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0644)
+	// Restrict permissions to the owner since the file stores a user path
+	return os.WriteFile(path, data, 0600)
 }

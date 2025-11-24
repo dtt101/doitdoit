@@ -105,7 +105,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.addTask(m.TextInput.Value())
 					m.TextInput.Reset()
 					m.State = Browsing
-					m.Data.Save(m.FilePath)
+					m.persist()
 				}
 			case tea.KeyEsc:
 				m.TextInput.Reset()
@@ -148,10 +148,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "d":
 				m.deleteTask()
-				m.Data.Save(m.FilePath)
+				m.persist()
 			case "enter", " ":
 				m.toggleTask()
-				m.Data.Save(m.FilePath)
+				m.persist()
 			case "m":
 				m.State = Moving
 			case "f":
@@ -177,19 +177,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "right", "l":
 				if !m.ShowFuture {
 					m.moveTask(1)
-					m.Data.Save(m.FilePath)
+					m.persist()
 				}
 			case "left", "h":
 				if !m.ShowFuture {
 					m.moveTask(-1)
-					m.Data.Save(m.FilePath)
+					m.persist()
 				}
 			case "up", "k":
 				m.reorderTask(-1)
-				m.Data.Save(m.FilePath)
+				m.persist()
 			case "down", "j":
 				m.reorderTask(1)
-				m.Data.Save(m.FilePath)
+				m.persist()
 			case "f":
 				if !m.ShowFuture {
 					// Move to Future
@@ -206,7 +206,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 						m.clampRow()
 						m.State = Browsing
-						m.Data.Save(m.FilePath)
+						m.persist()
 					}
 				}
 			}
@@ -217,7 +217,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setTaskDate(m.TextInput.Value())
 				m.TextInput.Reset()
 				m.State = Browsing
-				m.Data.Save(m.FilePath)
+				m.persist()
 			case tea.KeyEsc:
 				m.TextInput.Reset()
 				m.State = Browsing
@@ -380,7 +380,12 @@ func (m Model) View() string {
 		columns = append(columns, style.Render(content))
 	}
 
-	return styles.AppStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, columns...) + "\n" + m.helpView())
+	footer := m.helpView()
+	if errView := m.errorView(); errView != "" {
+		footer = errView + "\n" + footer
+	}
+
+	return styles.AppStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, columns...) + "\n" + footer)
 }
 
 func (m Model) helpView() string {
@@ -434,6 +439,14 @@ func (m Model) helpView() string {
 }
 
 // Logic helpers
+
+func (m *Model) persist() {
+	if err := m.Data.Save(m.FilePath); err != nil {
+		m.Err = err
+		return
+	}
+	m.Err = nil
+}
 
 func (m Model) getCurrentKey() string {
 	if m.ShowFuture {
@@ -648,4 +661,11 @@ func (m *Model) setTaskDate(dateStr string) {
 		// Still in future or somewhere else
 		m.clampRow()
 	}
+}
+
+func (m Model) errorView() string {
+	if m.Err == nil {
+		return ""
+	}
+	return lipgloss.NewStyle().Foreground(styles.Warning).Render(fmt.Sprintf("Error saving: %v", m.Err))
 }
