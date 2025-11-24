@@ -412,7 +412,9 @@ func (m Model) helpView() string {
 		items = append(items, group("enter", "save"))
 		items = append(items, group("esc", "cancel"))
 	case Moving:
-		items = append(items, group("←/→/h/l", "move day"))
+		if !m.ShowFuture {
+			items = append(items, group("←/→/h/l", "move day"))
+		}
 		items = append(items, group("↑/↓/k/j", "move up/down"))
 		items = append(items, group("m/esc", "done"))
 	case SettingDate:
