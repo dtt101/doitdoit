@@ -21,7 +21,7 @@ A simple, efficient terminal-based task manager written in Go. `doitdoit` helps 
 
 ### Running from Source
 ```bash
-git clone https://github.com/vs/doitdoit.git
+git clone https://github.com/dtt101/doitdoit.git
 cd doitdoit
 go run main.go
 ```
@@ -32,6 +32,14 @@ To build a standalone binary:
 go build -o doitdoit
 ./doitdoit
 ```
+
+## Running Tests
+
+Ensure you have Go 1.24+ available, then run all tests with:
+```bash
+go test ./...
+```
+For a fresh run that skips cache, use `go test ./... -count=1`, and add `-cover` if you want a quick coverage summary.
 
 ## Usage
 

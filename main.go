@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/vs/doitdoit/config"
-	"github.com/vs/doitdoit/model"
+	"github.com/dtt101/doitdoit/config"
+	"github.com/dtt101/doitdoit/model"
 )
 
 func main() {

@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vs/doitdoit/styles"
+	"github.com/dtt101/doitdoit/styles"
 )
 
 type State int
@@ -53,21 +53,14 @@ func NewModel(filePath string, visibleDays int) (Model, error) {
 		return Model{}, err
 	}
 
-	ti := textinput.New()
-	ti.Placeholder = "New task..."
-	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-	ti.TextStyle = lipgloss.NewStyle().Foreground(styles.Text)
-	ti.Prompt = ""
-	ti.Width = 30
-	ti.Focus()
-
 	m := Model{
 		Data:        data,
 		FilePath:    filePath,
 		VisibleDays: visibleDays,
 		State:       Browsing,
-		TextInput:   ti,
+		TextInput:   textinput.New(),
 	}
+	m.configureTextInput("New task...")
 	m.Data.DistributeFutureTasks(visibleDays)
 	m.updateDateKeys()
 	return m, nil
@@ -140,11 +133,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "a":
 				m.State = Adding
-				m.TextInput.Reset() // Clear previous input
-				m.TextInput.Placeholder = "New task..."
-				m.TextInput.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-				m.TextInput.TextStyle = lipgloss.NewStyle().Foreground(styles.Text)
-				m.TextInput.Focus()
+				m.configureTextInput("New task...")
 				return m, nil
 			case "d":
 				m.deleteTask()
@@ -161,11 +150,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "t":
 				if m.ShowFuture {
 					m.State = SettingDate
-					m.TextInput.Reset() // Clear previous input
-					m.TextInput.Placeholder = "YYYY-MM-DD or MM-DD"
-					m.TextInput.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-					m.TextInput.TextStyle = lipgloss.NewStyle().Foreground(styles.Text)
-					m.TextInput.Focus()
+					m.configureTextInput("YYYY-MM-DD or MM-DD")
 					return m, nil
 				}
 			}
@@ -668,4 +653,14 @@ func (m Model) errorView() string {
 		return ""
 	}
 	return lipgloss.NewStyle().Foreground(styles.Warning).Render(fmt.Sprintf("Error saving: %v", m.Err))
+}
+
+func (m *Model) configureTextInput(placeholder string) {
+	m.TextInput.Reset()
+	m.TextInput.Placeholder = placeholder
+	m.TextInput.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	m.TextInput.TextStyle = lipgloss.NewStyle().Foreground(styles.Text)
+	m.TextInput.Prompt = ""
+	m.TextInput.Width = 30
+	m.TextInput.Focus()
 }

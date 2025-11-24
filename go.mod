@@ -1,4 +1,4 @@
-module github.com/vs/doitdoit
+module github.com/dtt101/doitdoit
 
 go 1.24.0
 
