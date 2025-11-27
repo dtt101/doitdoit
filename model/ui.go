@@ -2,7 +2,7 @@ package model
 
 import (
 	"fmt"
-
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -199,7 +199,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case SettingDate:
 			switch msg.Type {
 			case tea.KeyEnter:
-				m.setTaskDate(m.TextInput.Value())
+				if err := m.setTaskDate(m.TextInput.Value()); err != nil {
+					return m, nil
+				}
 				m.TextInput.Reset()
 				m.State = Browsing
 				m.persist()
@@ -592,26 +594,23 @@ func (m *Model) reorderTask(direction int) {
 	m.RowIdx = newRowIdx
 }
 
-func (m *Model) setTaskDate(dateStr string) {
+func (m *Model) setTaskDate(dateStr string) error {
 	currentDate := m.getCurrentKey()
 	tasks := m.Data[currentDate]
 	if len(tasks) == 0 || m.RowIdx >= len(tasks) {
-		return
+		return nil
 	}
 
-	// Basic validation (could be improved)
-	if len(dateStr) < 5 { // At least M-D
-		return
+	normalizedDate, err := normalizeDueDateInput(dateStr)
+	if err != nil {
+		m.Err = err
+		return err
 	}
-
-	// If only M-D provided, append current year
-	if len(dateStr) == 5 {
-		dateStr = fmt.Sprintf("%d-%s", time.Now().Year(), dateStr)
-	}
+	m.Err = nil
 
 	// Update task
 	taskID := tasks[m.RowIdx].ID
-	tasks[m.RowIdx].DueDate = dateStr
+	tasks[m.RowIdx].DueDate = normalizedDate
 	m.Data[currentDate] = tasks
 
 	// Redistribute
@@ -646,13 +645,34 @@ func (m *Model) setTaskDate(dateStr string) {
 		// Still in future or somewhere else
 		m.clampRow()
 	}
+
+	return nil
+}
+
+func normalizeDueDateInput(dateStr string) (string, error) {
+	dateStr = strings.TrimSpace(dateStr)
+	if dateStr == "" {
+		return "", fmt.Errorf("date is required in YYYY-MM-DD or MM-DD format")
+	}
+
+	// If only M-D provided, append current year
+	if len(dateStr) == 5 {
+		dateStr = fmt.Sprintf("%d-%s", time.Now().Year(), dateStr)
+	}
+
+	parsed, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return "", fmt.Errorf("invalid date; use YYYY-MM-DD or MM-DD")
+	}
+
+	return parsed.Format("2006-01-02"), nil
 }
 
 func (m Model) errorView() string {
 	if m.Err == nil {
 		return ""
 	}
-	return lipgloss.NewStyle().Foreground(styles.Warning).Render(fmt.Sprintf("Error saving: %v", m.Err))
+	return lipgloss.NewStyle().Foreground(styles.Warning).Render(fmt.Sprintf("Error: %v", m.Err))
 }
 
 func (m *Model) configureTextInput(placeholder string) {
