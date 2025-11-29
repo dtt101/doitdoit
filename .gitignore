@@ -30,3 +30,6 @@ debug/
 config.json
 # Added by goreleaser init:
 dist/
+
+# mise local
+.mise.local.toml
