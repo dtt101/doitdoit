@@ -46,11 +46,6 @@ func (m Model) View() string {
 	keys := m.dateKeys
 	if m.ShowFuture {
 		keys = []string{"Future"}
-		// Adjust colWidth for single column? Or keep it same for consistency?
-		// Let's make it full width for Future view or maybe centered?
-		// User said "purely a list of tasks", maybe similar to day view but one big column.
-		// Let's stick to the calculated colWidth for now, or maybe make it wider.
-		// Actually, if it's a single column, let's use the full available width.
 		colWidth = availableWidth - 6
 	}
 
