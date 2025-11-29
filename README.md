@@ -17,7 +17,7 @@ A simple, efficient terminal-based task manager written in Go. `doitdoit` helps 
 ### Prerequisites
 *   [Go](https://go.dev/dl/) (1.19 or later recommended)
 
-### Install via `go install` (simplest for Go users)
+### Install via `go install`
 ```bash
 go install github.com/dtt101/doitdoit@latest
 ```
