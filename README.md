@@ -2,8 +2,6 @@
 
 A simple, efficient terminal-based task manager written in Go. `doitdoit` helps you manage your daily tasks with a focus on what's ahead, keeping your workflow smooth and keyboard-driven.
 
-![Screenshot Placeholder](path/to/screenshot.png)
-
 ## Features
 
 *   **Clean TUI:** A multi-column terminal interface displaying tasks for today and the next few days.
@@ -18,6 +16,12 @@ A simple, efficient terminal-based task manager written in Go. `doitdoit` helps 
 
 ### Prerequisites
 *   [Go](https://go.dev/dl/) (1.19 or later recommended)
+
+### Install via `go install` (simplest for Go users)
+```bash
+go install github.com/dtt101/doitdoit@latest
+```
+This builds and places the binary in `$GOPATH/bin` (usually `~/go/bin`); ensure that directory is on your `PATH`.
 
 ### Running from Source
 ```bash
