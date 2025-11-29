@@ -2,6 +2,9 @@
 
 A simple, efficient terminal-based task manager written in Go. `doitdoit` helps you manage your daily tasks with a focus on what's ahead, keeping your workflow smooth and keyboard-driven.
 
+
+<img src="https://github.com/user-attachments/assets/f91436e2-55e5-4c3f-8eee-742b2057265a" width="600" />
+
 ## Features
 
 *   **Clean TUI:** A multi-column terminal interface displaying tasks for today and the next few days.
