@@ -1,4 +1,4 @@
-# doitdoit
+# doitdoit aka TUIDUI
 
 A simple, efficient terminal-based task manager written in Go. `doitdoit` helps you manage your daily tasks with a focus on what's ahead, keeping your workflow smooth and keyboard-driven.
 
