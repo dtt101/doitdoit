@@ -2,6 +2,9 @@
 
 A simple, efficient terminal-based task manager written in Go. `doitdoit` helps you manage your daily tasks with a focus on what's ahead, keeping your workflow smooth and keyboard-driven.
 
+This software is licensed under the terms described in [LICENCE.md](./LICENCE.md).  
+Inspired by the O'SaaSy License from [37signals](https://www.fizzy.do/license).
+
 ![Screenshot](https://github.com/user-attachments/assets/f91436e2-55e5-4c3f-8eee-742b2057265a)
 
 ## Features
