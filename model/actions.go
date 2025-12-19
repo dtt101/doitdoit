@@ -147,6 +147,45 @@ func (m *Model) reorderTask(direction int) {
 	m.RowIdx = newRowIdx
 }
 
+func (m *Model) moveFutureTaskToToday() {
+	if !m.ShowFuture {
+		return
+	}
+
+	futureTasks := m.Data["Future"]
+	if len(futureTasks) == 0 || m.RowIdx >= len(futureTasks) {
+		return
+	}
+
+	todayStr := time.Now().Format("2006-01-02")
+	task := futureTasks[m.RowIdx]
+	task.DueDate = todayStr
+
+	// Remove from Future
+	m.Data["Future"] = append(futureTasks[:m.RowIdx], futureTasks[m.RowIdx+1:]...)
+
+	// Insert into Today, keeping incomplete tasks above completed ones
+	todayTasks := m.Data[todayStr]
+	insertIdx := len(todayTasks)
+	for i, t := range todayTasks {
+		if t.Completed {
+			insertIdx = i
+			break
+		}
+	}
+
+	if insertIdx == len(todayTasks) {
+		m.Data[todayStr] = append(todayTasks, task)
+	} else {
+		m.Data[todayStr] = append(todayTasks[:insertIdx], append([]Task{task}, todayTasks[insertIdx:]...)...)
+	}
+
+	// Jump back to today with the moved task focused
+	m.ShowFuture = false
+	m.ColIdx = 0
+	m.RowIdx = insertIdx
+}
+
 func (m *Model) setTaskDate(dateStr string) error {
 	currentDate := m.getCurrentKey()
 	tasks := m.Data[currentDate]

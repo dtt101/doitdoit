@@ -182,6 +182,7 @@ func (m Model) helpView() string {
 		items = append(items, group("f", "future"))
 		if m.ShowFuture {
 			items = append(items, group("t", "date"))
+			items = append(items, group("T", "to today"))
 		}
 		items = append(items, group("arrows/hjkl", "nav"))
 		items = append(items, group("q", "quit"))

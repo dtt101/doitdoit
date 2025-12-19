@@ -72,6 +72,7 @@ On the first run, `doitdoit` will ask where you want to store your data file (`d
     *   Use **Up/Down** to reorder the task within the list.
     *   Press **`m`** or **`Esc`** to exit Move Mode.
 *   **`t`**: Set a due date for a task (Only available in Future view).
+*   **`T`**: Move the selected Future task directly to Today (Future view).
 
 #### Global
 *   **`q`** or **`Ctrl+c`**: Quit the application.

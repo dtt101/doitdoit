@@ -102,6 +102,11 @@ func (m Model) handleBrowsingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.configureTextInput("YYYY-MM-DD or MM-DD")
 			return m, nil
 		}
+	case "T":
+		if m.ShowFuture {
+			m.moveFutureTaskToToday()
+			m.persist()
+		}
 	}
 
 	return m, nil
