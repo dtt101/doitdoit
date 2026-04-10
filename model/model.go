@@ -43,6 +43,9 @@ type Model struct {
 
 	// Future View
 	ShowFuture bool
+
+	// Brief flash on copy
+	copyFlash bool
 }
 
 func NewModel(filePath string, visibleDays int) (Model, error) {

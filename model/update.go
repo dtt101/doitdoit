@@ -1,13 +1,20 @@
 package model
 
 import (
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+type copyFlashDoneMsg struct{}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		return m.handleWindowSize(msg)
+	case copyFlashDoneMsg:
+		m.copyFlash = false
+		return m, nil
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
 	default:
@@ -107,6 +114,13 @@ func (m Model) handleBrowsingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.moveFutureTaskToToday()
 			m.persist()
 		}
+	case "y":
+		m.copyTask()
+		if m.copyFlash {
+			return m, tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg {
+				return copyFlashDoneMsg{}
+			})
+		}
 	}
 
 	return m, nil
@@ -116,6 +130,13 @@ func (m Model) handleMovingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "m":
 		m.State = Browsing
+	case "y":
+		m.copyTask()
+		if m.copyFlash {
+			return m, tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg {
+				return copyFlashDoneMsg{}
+			})
+		}
 	case "right", "l":
 		if !m.ShowFuture {
 			m.moveTask(1)

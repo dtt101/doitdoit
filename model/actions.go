@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/atotto/clipboard"
 )
 
 func (m *Model) addTask(title string) {
@@ -239,6 +241,20 @@ func (m *Model) setTaskDate(dateStr string) error {
 	}
 
 	return nil
+}
+
+func (m *Model) copyTask() {
+	currentDate := m.getCurrentKey()
+	tasks := m.Data[currentDate]
+	if len(tasks) == 0 || m.RowIdx >= len(tasks) {
+		return
+	}
+
+	if err := clipboard.WriteAll(tasks[m.RowIdx].Title); err != nil {
+		m.Err = err
+		return
+	}
+	m.copyFlash = true
 }
 
 func normalizeDueDateInput(dateStr string) (string, error) {

@@ -84,7 +84,9 @@ func (m Model) View() string {
 			}
 
 			if isFocused && m.RowIdx == j {
-				if m.State == Moving {
+				if m.copyFlash {
+					style = style.Copy().Foreground(styles.Special).Bold(true)
+				} else if m.State == Moving {
 					// Use special moving style with highlight background
 					style = styles.MovingTaskStyle
 				} else {
@@ -177,6 +179,7 @@ func (m Model) helpView() string {
 	case Browsing:
 		items = append(items, group("a", "add"))
 		items = append(items, group("d", "delete"))
+		items = append(items, group("y", "copy"))
 		items = append(items, group("space", "toggle"))
 		items = append(items, group("m", "move"))
 		items = append(items, group("f", "future"))
@@ -194,6 +197,7 @@ func (m Model) helpView() string {
 			items = append(items, group("←/→/h/l", "move day"))
 		}
 		items = append(items, group("↑/↓/k/j", "move up/down"))
+		items = append(items, group("y", "copy"))
 		items = append(items, group("m/esc", "done"))
 	case SettingDate:
 		items = append(items, group("enter", "save date"))
