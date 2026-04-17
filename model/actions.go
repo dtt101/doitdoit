@@ -8,6 +8,13 @@ import (
 	"github.com/atotto/clipboard"
 )
 
+func insertAt(tasks []Task, idx int, task Task) []Task {
+	tasks = append(tasks, Task{})
+	copy(tasks[idx+1:], tasks[idx:])
+	tasks[idx] = task
+	return tasks
+}
+
 func (m *Model) addTask(title string) {
 	currentDate := m.getCurrentKey()
 	newTask := Task{
@@ -29,7 +36,7 @@ func (m *Model) addTask(title string) {
 	if insertIdx == len(tasks) {
 		m.Data[currentDate] = append(tasks, newTask)
 	} else {
-		m.Data[currentDate] = append(tasks[:insertIdx], append([]Task{newTask}, tasks[insertIdx:]...)...)
+		m.Data[currentDate] = insertAt(tasks, insertIdx, newTask)
 	}
 }
 
@@ -85,7 +92,7 @@ func (m *Model) toggleTask() {
 		if insertIdx == len(tasks) {
 			tasks = append(tasks, task)
 		} else {
-			tasks = append(tasks[:insertIdx], append([]Task{task}, tasks[insertIdx:]...)...)
+			tasks = insertAt(tasks, insertIdx, task)
 		}
 
 		// Update the map with the reordered slice
@@ -110,6 +117,7 @@ func (m *Model) moveTask(direction int) {
 
 	targetDate := m.dateKeys[targetColIdx]
 	taskToMove := tasks[m.RowIdx]
+	taskToMove.DueDate = targetDate
 
 	// Remove from current
 	m.Data[currentDate] = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
@@ -124,7 +132,7 @@ func (m *Model) moveTask(direction int) {
 	if insertIdx == len(targetTasks) {
 		m.Data[targetDate] = append(targetTasks, taskToMove)
 	} else {
-		m.Data[targetDate] = append(targetTasks[:insertIdx], append([]Task{taskToMove}, targetTasks[insertIdx:]...)...)
+		m.Data[targetDate] = insertAt(targetTasks, insertIdx, taskToMove)
 	}
 
 	// Follow the task
@@ -179,7 +187,7 @@ func (m *Model) moveFutureTaskToToday() {
 	if insertIdx == len(todayTasks) {
 		m.Data[todayStr] = append(todayTasks, task)
 	} else {
-		m.Data[todayStr] = append(todayTasks[:insertIdx], append([]Task{task}, todayTasks[insertIdx:]...)...)
+		m.Data[todayStr] = insertAt(todayTasks, insertIdx, task)
 	}
 
 	// Jump back to today with the moved task focused
@@ -263,8 +271,9 @@ func normalizeDueDateInput(dateStr string) (string, error) {
 		return "", fmt.Errorf("date is required in YYYY-MM-DD or MM-DD format")
 	}
 
-	// If only M-D provided, append current year
-	if len(dateStr) == 5 {
+	// If only M-D or MM-DD provided (no year), prepend current year
+	parts := strings.Split(dateStr, "-")
+	if len(parts) == 2 {
 		dateStr = fmt.Sprintf("%d-%s", time.Now().Year(), dateStr)
 	}
 

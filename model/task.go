@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const pruneAfterDays = 5
+
 type Task struct {
 	ID        string    `json:"id"`
 	Title     string    `json:"title"`
@@ -237,7 +239,7 @@ func (d TodoData) Save(path string) error {
 }
 
 func (d TodoData) pruneOldTasks() bool {
-	cutoff := time.Now().AddDate(0, 0, -5)
+	cutoff := time.Now().AddDate(0, 0, -pruneAfterDays)
 	cutoffStr := cutoff.Format("2006-01-02")
 	changed := false
 
@@ -274,8 +276,7 @@ func (d TodoData) DistributeFutureTasks(visibleDays int) {
 	}
 
 	today := time.Now()
-	// Calculate the last visible date
-	lastVisible := today.AddDate(0, 0, visibleDays-1).Format("2006-01-02")
+	lastVisible := today.AddDate(0, 0, visibleDays-1)
 	todayStr := today.Format("2006-01-02")
 
 	remainingFuture := make([]Task, 0)
@@ -286,11 +287,17 @@ func (d TodoData) DistributeFutureTasks(visibleDays int) {
 			continue
 		}
 
-		// If due date is valid
-		if task.DueDate <= lastVisible {
+		dueDate, err := time.Parse("2006-01-02", task.DueDate)
+		if err != nil {
+			remainingFuture = append(remainingFuture, task)
+			continue
+		}
+
+		// If due date falls within visible range
+		if !dueDate.After(lastVisible) {
 			targetDate := task.DueDate
 			// If overdue, move to today
-			if targetDate < todayStr {
+			if dueDate.Before(today) {
 				targetDate = todayStr
 			}
 

@@ -40,9 +40,10 @@ func main() {
 				newPath := flag.Arg(2)
 
 				// Expand ~ if present
-				if strings.HasPrefix(newPath, "~/") {
-					home, _ := os.UserHomeDir()
-					newPath = filepath.Join(home, newPath[2:])
+				newPath, err := config.ExpandPath(newPath)
+				if err != nil {
+					fmt.Printf("Error expanding path: %v\n", err)
+					os.Exit(1)
 				}
 
 				cfg, err := config.LoadConfig()
@@ -137,7 +138,6 @@ func main() {
 
 				fmt.Printf("Successfully moved storage to: %s\n", newPath)
 				os.Exit(0)
-
 			} else {
 				fmt.Println("Usage: doitdoit config show | move <path>")
 				os.Exit(1)
@@ -147,17 +147,13 @@ func main() {
 
 	var finalPath string
 
-	// Helper to expand ~
-	expandPath := func(path string) string {
-		if strings.HasPrefix(path, "~/") {
-			home, _ := os.UserHomeDir()
-			return filepath.Join(home, path[2:])
-		}
-		return path
-	}
-
 	if *filePathFlag != "" {
-		finalPath = expandPath(*filePathFlag)
+		var err error
+		finalPath, err = config.ExpandPath(*filePathFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error expanding path: %v\n", err)
+			os.Exit(1)
+		}
 	} else {
 		// Load Config
 		cfg, err := config.LoadConfig()
@@ -174,7 +170,7 @@ func main() {
 				fmt.Println("Welcome to DoItDoIt! Please configure your storage location.")
 				fmt.Print("Enter the path for your tasks file (e.g. ~/Dropbox/doitdoit.json): ")
 				input, _ := reader.ReadString('\n')
-				candidatePath = expandPath(strings.TrimSpace(input))
+				candidatePath, _ = config.ExpandPath(strings.TrimSpace(input))
 				if candidatePath == "" {
 					continue
 				}
