@@ -17,18 +17,6 @@ HTML + CSS + a single vanilla JS file + [mustache.js] for templates.
 - **Domain logic**: `rollOverIncompleteTasks` and `pruneOldTasks` are ported
   from `model/task.go`. Keep them in sync if the CLI's rules change.
 
-### Why no htmx?
-
-The earlier plan reached for htmx. In practice:
-
-- htmx's strength is HTML-over-the-wire from a server.
-- We have no server. Dropbox returns JSON, not HTML.
-- Mutations need PKCE auth, optimistic UI, conflict handling — all JS-driven.
-
-So htmx would be a wrapper over a JS app, not the app itself. mustache.js +
-vanilla event delegation does the same job in fewer moving parts. Same
-spirit (no React, no build, server-rendered feel) without forcing a fit.
-
 ## One-time setup
 
 ### 1. Register a Dropbox app
@@ -66,9 +54,8 @@ If you chose **Full Dropbox** access, the file path can be anywhere; just set
 
 ### 3. Deploy on GitHub Pages
 
-In the repo: **Settings → Pages → Source: Deploy from a branch → Branch
-`main`, Folder `/web` → Save.** Wait ~30s; the URL appears at the top of the
-Pages settings page.
+1.  **Push your changes**: The included GitHub Action will automatically deploy the `web/` folder to a `gh-pages` branch.
+2.  **Configure Pages**: In the repo: **Settings → Pages → Source: Deploy from a branch → Branch `gh-pages`, Folder `/(root)` → Save.** Wait ~30s; the URL appears at the top of the Pages settings page.
 
 That's it. Push to `main` to redeploy.
 
