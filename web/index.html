@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#0b0a08" />
+  <meta name="description" content="doitdoit — terminal-native task manager, mobile companion" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="doitdoit" />
+
+  <title>doitdoit · terminal task manager</title>
+
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%230b0a08'/%3E%3Ctext x='50%25' y='62%25' text-anchor='middle' font-family='monospace' font-size='44' font-weight='900' fill='%23ffb53d'%3E▒%3C/text%3E%3C/svg%3E" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Major+Mono+Display&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="grain" aria-hidden="true"></div>
+<div class="scanlines" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+
+<header class="hdr">
+  <div class="hdr__brand" aria-label="doitdoit">
+    <span class="brand__sym" aria-hidden="true">▒</span>
+    <span class="brand__mark">doitdoit</span>
+  </div>
+  <div class="hdr__meta">
+    <span class="meta__path" id="meta-path">/Apps/doitdoit/doitdoit.json</span>
+    <span class="meta__sync" id="sync-indicator" data-state="idle" title="sync state">[ok]</span>
+    <button class="meta__menu" id="btn-menu" aria-label="menu" hidden>···</button>
+  </div>
+</header>
+
+<main id="app" class="app">
+
+  <section id="connect" class="connect" hidden>
+    <div class="connect__inner">
+      <div class="connect__art" aria-hidden="true">
+        <span class="art__line">┌──────────────────┐</span>
+        <span class="art__line art__line--mid">│ <em>doitdoit</em> ⏎ │</span>
+        <span class="art__line">└──────────────────┘</span>
+      </div>
+
+      <h1 class="connect__title">terminal-native<br/>task manager.</h1>
+      <p class="connect__lead">
+        this device pairs with the dropbox file your CLI already syncs.
+        no server, no backend — your tasks stay yours.
+      </p>
+
+      <button id="btn-connect" class="btn btn--prime" type="button">
+        <span class="btn__caret">&gt;</span> connect dropbox
+      </button>
+
+      <details class="connect__details">
+        <summary>what happens when i click that?</summary>
+        <div class="details__body">
+          <p><span class="dim">01.</span> dropbox sends you back here with an auth code (OAuth 2.0 + PKCE — no client secret needed).</p>
+          <p><span class="dim">02.</span> we exchange it for an access token, kept in <code>localStorage</code>. it never leaves this device.</p>
+          <p><span class="dim">03.</span> we read &amp; write a single JSON file at <code>/Apps/doitdoit/doitdoit.json</code> in your Dropbox.</p>
+          <p><span class="dim">04.</span> the same file your TUI uses. mutate from either; the other catches up on next load.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section id="board" class="board" hidden></section>
+
+  <div class="empty-state" id="empty-state" hidden>
+    <p class="empty-state__line">— inbox zero —</p>
+    <p class="empty-state__sub">add a task below to get started</p>
+  </div>
+</main>
+
+<footer class="prompt" id="prompt-bar" hidden>
+  <form id="add-form" class="prompt__form" autocomplete="off">
+    <span class="prompt__caret" aria-hidden="true">&gt;</span>
+    <input
+      id="add-input"
+      class="prompt__input"
+      type="text"
+      autocomplete="off"
+      autocapitalize="off"
+      autocorrect="off"
+      spellcheck="false"
+      placeholder="add a task… use !future or !YYYY-MM-DD to schedule"
+      aria-label="new task"
+    />
+    <button class="prompt__submit" type="submit" aria-label="add task">⏎</button>
+  </form>
+  <div class="prompt__hint">
+    <span>tap [&nbsp;] to toggle</span>
+    <span class="dot">·</span>
+    <span>tap ✕ to remove</span>
+    <span class="dot">·</span>
+    <span>!future · !YYYY-MM-DD to schedule</span>
+  </div>
+</footer>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<dialog id="menu-dialog" class="menu">
+  <div class="menu__hdr">menu</div>
+  <button class="menu__item" data-act="reload">⟳ force reload</button>
+  <button class="menu__item" data-act="copy-path">⎘ copy file path</button>
+  <button class="menu__item menu__item--danger" data-act="logout">⏻ disconnect dropbox</button>
+  <button class="menu__close" data-act="close">close</button>
+</dialog>
+
+<template id="tmpl-board">
+{{#days}}
+<section class="day day--{{cls}}" data-key="{{key}}">
+  <h2 class="day__head">
+    <span class="day__rule"></span>
+    <span class="day__label">{{label}}</span>
+    {{#count}}<span class="day__count">{{count}}</span>{{/count}}
+    <span class="day__rule day__rule--fill"></span>
+  </h2>
+  {{#hasTasks}}
+  <ul class="tasks">
+    {{#tasks}}
+    <li class="task{{#completed}} task--done{{/completed}}" data-id="{{id}}" data-key="{{dayKey}}">
+      <button class="task__check" data-action="toggle" aria-label="toggle complete">
+        <span class="bracket">[</span><span class="task__mark">{{mark}}</span><span class="bracket">]</span>
+      </button>
+      <span class="task__title">{{title}}</span>
+      <button class="task__del" data-action="delete" aria-label="delete">✕</button>
+    </li>
+    {{/tasks}}
+  </ul>
+  {{/hasTasks}}
+  {{^hasTasks}}
+  <div class="day__empty">— nothing here —</div>
+  {{/hasTasks}}
+</section>
+{{/days}}
+</template>
+
+<script src="https://unpkg.com/mustache@4.2.0/mustache.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

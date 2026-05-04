@@ -16,6 +16,7 @@ Inspired by the O'SaaSy License from [37signals](https://www.fizzy.do/license).
 *   **Bulk Import:** Easily import a list of tasks from a text file.
 *   **Data Pruning:** Automatically cleans up tasks older than 5 days to keep your data file lightweight.
 *   **Cloud Sync Friendly:** All data is stored in a single JSON file, making it easy to sync across devices using your preferred file sync service.
+*   **Mobile Companion:** A static web app under [`web/`](./web) reads and writes the same Dropbox JSON file from a phone. See [web/README.md](./web/README.md).
 
 ## Installation & Running
 
