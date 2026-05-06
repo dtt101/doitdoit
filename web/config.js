@@ -19,7 +19,7 @@ window.DOITDOIT_CONFIG = {
   // Path inside the chosen Dropbox scope.
   // For an App-folder app, this is relative to /Apps/<your-app>/.
   // The leading "/" is required by the Dropbox API.
-  dropboxFilePath: "/doitdoit/config.json",
+  dropboxFilePath: "/config.json",
 
   // Number of upcoming days rendered (today + next N-1).
   visibleDays: 5,
