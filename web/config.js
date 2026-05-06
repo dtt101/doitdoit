@@ -14,12 +14,12 @@
  */
 window.DOITDOIT_CONFIG = {
   // Public app key (a.k.a. client ID). PKCE flow — no secret needed.
-  dropboxAppKey: "",
+  dropboxAppKey: "siaohdrrxv0yejd",
 
   // Path inside the chosen Dropbox scope.
   // For an App-folder app, this is relative to /Apps/<your-app>/.
   // The leading "/" is required by the Dropbox API.
-  dropboxFilePath: "/doitdoit.json",
+  dropboxFilePath: "/doitdoit/config.json",
 
   // Number of upcoming days rendered (today + next N-1).
   visibleDays: 5,
