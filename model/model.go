@@ -79,7 +79,7 @@ func (m *Model) updateDateKeys() {
 }
 
 func (m Model) Init() tea.Cmd {
-	return textinput.Blink
+	return tea.Batch(textinput.Blink, dateTick())
 }
 
 func (m *Model) persist() {
