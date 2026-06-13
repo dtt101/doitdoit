@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -59,6 +60,46 @@ func TestMoveStorageMissingSource(t *testing.T) {
 	}
 	if _, err := os.Stat(newPath); !os.IsNotExist(err) {
 		t.Errorf("destination should not exist after failed move")
+	}
+}
+
+// When the data is copied to the destination but the original can't be
+// removed, the move is still effectively complete: the destination exists and
+// MoveStorage reports ErrOldNotRemoved so the caller can warn and continue.
+func TestMoveStorageOldNotRemoved(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root bypasses directory permissions")
+	}
+
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "src")
+	if err := os.Mkdir(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	oldPath := filepath.Join(srcDir, "old.json")
+	newPath := filepath.Join(dir, "new.json")
+	writeFile(t, oldPath, "payload")
+
+	// Make the source directory read-only so both the rename fast path and the
+	// final os.Remove(oldPath) fail, forcing the copy fallback and a removal
+	// error. Restore perms afterwards so t.TempDir cleanup can run.
+	if err := os.Chmod(srcDir, 0500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(srcDir, 0755) })
+
+	err := MoveStorage(oldPath, newPath)
+	if !errors.Is(err, ErrOldNotRemoved) {
+		t.Fatalf("err = %v, want ErrOldNotRemoved", err)
+	}
+
+	// Destination was written despite the removal failure.
+	got, readErr := os.ReadFile(newPath)
+	if readErr != nil {
+		t.Fatalf("reading new file: %v", readErr)
+	}
+	if string(got) != "payload" {
+		t.Errorf("content = %q, want %q", got, "payload")
 	}
 }
 

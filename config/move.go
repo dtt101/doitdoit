@@ -1,11 +1,18 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 )
+
+// ErrOldNotRemoved indicates the data was moved to the destination
+// successfully but the original file could not be removed. The move is
+// effectively complete — callers should treat this as a warning rather than a
+// failure, leaving the old file behind for manual cleanup.
+var ErrOldNotRemoved = errors.New("storage moved but old file could not be removed")
 
 // SamePath reports whether two paths refer to the same location after
 // resolving to absolute form.
@@ -40,8 +47,10 @@ func MoveStorage(oldPath, newPath string) error {
 	if err := copyFile(oldPath, newPath); err != nil {
 		return err
 	}
+	// The data is safely at the destination; failing to remove the original is
+	// non-fatal. Signal it distinctly so callers can warn but still proceed.
 	if err := os.Remove(oldPath); err != nil {
-		return fmt.Errorf("removing old file: %w", err)
+		return fmt.Errorf("%w: %v", ErrOldNotRemoved, err)
 	}
 	return nil
 }
