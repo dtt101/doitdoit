@@ -70,3 +70,25 @@ func TestDateTickNoChangeSameDay(t *testing.T) {
 		t.Errorf("expected today's task to be untouched, got %d", len(m.Data[today]))
 	}
 }
+
+func TestDateTickPreservesFocusedDateAfterRollover(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+
+	m := Model{
+		Data:        TodoData{today: {{ID: "1", Title: "Keep focus here"}}},
+		FilePath:    filepath.Join(t.TempDir(), "tasks.json"),
+		VisibleDays: 3,
+		State:       Adding,
+		ColIdx:      1,
+		dateKeys:    []string{yesterday, today, tomorrow},
+	}
+
+	newM, _ := m.Update(dateTickMsg(time.Now()))
+	m = newM.(Model)
+
+	if m.dateKeys[m.ColIdx] != today {
+		t.Errorf("focused date = %q, want %q", m.dateKeys[m.ColIdx], today)
+	}
+}

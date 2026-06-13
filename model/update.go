@@ -36,10 +36,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
 	if len(m.dateKeys) == 0 || m.dateKeys[0] != time.Now().Format("2006-01-02") {
+		focusedDate := ""
+		if !m.ShowFuture && m.ColIdx >= 0 && m.ColIdx < len(m.dateKeys) {
+			focusedDate = m.dateKeys[m.ColIdx]
+		}
+
 		m.Data.rollOverIncompleteTasks()
 		m.Data.pruneOldTasks()
 		m.Data.DistributeFutureTasks(m.VisibleDays)
 		m.updateDateKeys()
+		for i, dateKey := range m.dateKeys {
+			if dateKey == focusedDate {
+				m.ColIdx = i
+				break
+			}
+		}
 		m.clampRow()
 		m.persist()
 	}
