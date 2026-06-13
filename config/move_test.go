@@ -63,9 +63,6 @@ func TestMoveStorageMissingSource(t *testing.T) {
 	}
 }
 
-// When the data is copied to the destination but the original can't be
-// removed, the move is still effectively complete: the destination exists and
-// MoveStorage reports ErrOldNotRemoved so the caller can warn and continue.
 func TestMoveStorageOldNotRemoved(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("running as root bypasses directory permissions")
@@ -80,9 +77,7 @@ func TestMoveStorageOldNotRemoved(t *testing.T) {
 	newPath := filepath.Join(dir, "new.json")
 	writeFile(t, oldPath, "payload")
 
-	// Make the source directory read-only so both the rename fast path and the
-	// final os.Remove(oldPath) fail, forcing the copy fallback and a removal
-	// error. Restore perms afterwards so t.TempDir cleanup can run.
+	// Read-only source dir forces the rename and the final os.Remove to fail.
 	if err := os.Chmod(srcDir, 0500); err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +88,6 @@ func TestMoveStorageOldNotRemoved(t *testing.T) {
 		t.Fatalf("err = %v, want ErrOldNotRemoved", err)
 	}
 
-	// Destination was written despite the removal failure.
 	got, readErr := os.ReadFile(newPath)
 	if readErr != nil {
 		t.Fatalf("reading new file: %v", readErr)
@@ -103,8 +97,6 @@ func TestMoveStorageOldNotRemoved(t *testing.T) {
 	}
 }
 
-// copyFile is the cross-filesystem fallback path that MoveStorage's rename
-// shortcut normally skips on the same filesystem, so exercise it directly.
 func TestCopyFile(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src.json")
@@ -123,7 +115,6 @@ func TestCopyFile(t *testing.T) {
 		t.Errorf("content = %q, want %q", got, "hello world")
 	}
 
-	// copyFile leaves the source in place; MoveStorage removes it afterwards.
 	if _, err := os.Stat(src); err != nil {
 		t.Errorf("source should still exist after copyFile: %v", err)
 	}

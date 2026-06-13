@@ -65,8 +65,6 @@ func main() {
 
 				if err := config.MoveStorage(oldPath, newPath); err != nil {
 					if errors.Is(err, config.ErrOldNotRemoved) {
-						// Data is at the new location; just warn and carry on
-						// to update the config to point there.
 						fmt.Printf("Warning: %v\n", err)
 					} else {
 						fmt.Printf("Error moving storage: %v\n", err)

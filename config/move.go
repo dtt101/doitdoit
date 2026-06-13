@@ -8,14 +8,11 @@ import (
 	"path/filepath"
 )
 
-// ErrOldNotRemoved indicates the data was moved to the destination
-// successfully but the original file could not be removed. The move is
-// effectively complete — callers should treat this as a warning rather than a
-// failure, leaving the old file behind for manual cleanup.
+// ErrOldNotRemoved means the data reached the destination but the original
+// file could not be removed; callers should treat this as a warning.
 var ErrOldNotRemoved = errors.New("storage moved but old file could not be removed")
 
-// SamePath reports whether two paths refer to the same location after
-// resolving to absolute form.
+// SamePath reports whether two paths resolve to the same absolute location.
 func SamePath(a, b string) bool {
 	absA, err := filepath.Abs(a)
 	if err != nil {
@@ -28,36 +25,29 @@ func SamePath(a, b string) bool {
 	return absA == absB
 }
 
-// MoveStorage moves the storage file from oldPath to newPath, creating the
-// destination directory if needed. It first attempts an atomic rename (valid
-// on the same filesystem) and falls back to a copy when the rename fails, for
-// example across filesystems. On success the old file no longer exists.
+// MoveStorage moves the storage file from oldPath to newPath, trying an atomic
+// rename first and falling back to a copy across filesystems. It returns
+// ErrOldNotRemoved if the data is moved but the original cannot be deleted.
 func MoveStorage(oldPath, newPath string) error {
 	newDir := filepath.Dir(newPath)
 	if err := os.MkdirAll(newDir, 0755); err != nil {
 		return fmt.Errorf("creating directory for new path: %w", err)
 	}
 
-	// Fast path: atomic rename on the same filesystem.
 	if err := os.Rename(oldPath, newPath); err == nil {
 		return nil
 	}
 
-	// Fallback: copy to the destination, then remove the original.
 	if err := copyFile(oldPath, newPath); err != nil {
 		return err
 	}
-	// The data is safely at the destination; failing to remove the original is
-	// non-fatal. Signal it distinctly so callers can warn but still proceed.
 	if err := os.Remove(oldPath); err != nil {
 		return fmt.Errorf("%w: %v", ErrOldNotRemoved, err)
 	}
 	return nil
 }
 
-// copyFile copies src to dst durably: it writes to a temp file in the
-// destination directory, fsyncs, restricts permissions to the owner, and
-// atomically renames into place.
+// copyFile durably copies src to dst via a temp file, fsync, 0600, and rename.
 func copyFile(src, dst string) error {
 	source, err := os.Open(src)
 	if err != nil {
