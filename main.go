@@ -131,11 +131,6 @@ func main() {
 					os.Exit(1)
 				}
 
-				// Remove old file
-				if err := os.Remove(oldPath); err != nil {
-					fmt.Printf("Warning: Could not remove old file: %v\n", err)
-				}
-
 				fmt.Printf("Successfully moved storage to: %s\n", newPath)
 				os.Exit(0)
 			} else {
