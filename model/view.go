@@ -94,13 +94,13 @@ func (m Model) View() string {
 
 			if isFocused && m.RowIdx == j {
 				if m.copyFlash {
-					style = style.Copy().Foreground(styles.Special).Bold(true)
+					style = style.Foreground(styles.Special).Bold(true)
 				} else if m.State == Moving {
 					// Use special moving style with highlight background
 					style = styles.MovingTaskStyle
 				} else {
 					// Normal selection highlight
-					style = style.Copy().Foreground(styles.Highlight).Bold(true)
+					style = style.Foreground(styles.Highlight).Bold(true)
 				}
 			}
 
@@ -155,9 +155,9 @@ func (m Model) View() string {
 	for i, content := range colContents {
 		isFocused := m.State != Adding && m.State != SettingDate && (m.ShowFuture || m.ColIdx == i)
 
-		style := styles.ColumnStyle.Copy().Width(colWidth).Height(maxContentHeight)
+		style := styles.ColumnStyle.Width(colWidth).Height(maxContentHeight)
 		if isFocused {
-			style = styles.FocusedColumnStyle.Copy().Width(colWidth).Height(maxContentHeight)
+			style = styles.FocusedColumnStyle.Width(colWidth).Height(maxContentHeight)
 		}
 
 		columns = append(columns, style.Render(content))
