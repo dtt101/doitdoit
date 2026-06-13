@@ -84,7 +84,7 @@ The `doitdoit` binary supports several command-line flags and subcommands:
 
 *   `doitdoit`: Launch the main application.
 *   `doitdoit -days <number>`: Launch the app displaying a specific number of days (default is 3).
-*   `doitdoit -file <path>`: specific a path to the data file for this session.
+*   `doitdoit -file <path>`: specify a path to the data file for this session.
 *   `doitdoit config show`: Display the current path of your data file.
 *   `doitdoit config move <new_path>`: Move your data file to a new location and update the configuration.
 

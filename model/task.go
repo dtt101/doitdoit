@@ -80,8 +80,6 @@ func (d TodoData) importFromTextFile(jsonPath string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	// We defer close, but we also close explicitly before removing
-	defer file.Close()
 
 	var newTasks []Task
 	scanner := bufio.NewScanner(file)
@@ -105,21 +103,22 @@ func (d TodoData) importFromTextFile(jsonPath string) (bool, error) {
 		newTasks = append(newTasks, newTask)
 		idx++
 	}
+	scanErr := scanner.Err()
 
-	if err := scanner.Err(); err != nil {
-		return false, err
+	// Close before removing (required on Windows) and on every return path.
+	if err := file.Close(); err != nil && scanErr == nil {
+		scanErr = err
+	}
+	if scanErr != nil {
+		return false, scanErr
 	}
 
-	// If we found tasks, add them and save
 	if len(newTasks) > 0 {
 		if d["Future"] == nil {
 			d["Future"] = make([]Task, 0)
 		}
 		d["Future"] = append(d["Future"], newTasks...)
 	}
-
-	// Close the file so we can delete it (important on Windows)
-	file.Close()
 
 	// Delete the import file
 	if err := os.Remove(importPath); err != nil {
@@ -130,7 +129,9 @@ func (d TodoData) importFromTextFile(jsonPath string) (bool, error) {
 }
 
 func (d TodoData) rollOverIncompleteTasks() bool {
-	todayStr := time.Now().Format("2006-01-02")
+	now := time.Now()
+	todayStr := now.Format("2006-01-02")
+	normalizedNow := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 	tasksToRollOver := make([]Task, 0)
 	datesToRemove := make([]string, 0)
 	changed := false
@@ -145,8 +146,6 @@ func (d TodoData) rollOverIncompleteTasks() bool {
 			continue // Skip invalid date strings
 		}
 
-		now := time.Now()
-		normalizedNow := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 		normalizedParsedDate := time.Date(parsedDate.Year(), parsedDate.Month(), parsedDate.Day(), 0, 0, 0, 0, parsedDate.Location())
 
 		if normalizedParsedDate.Before(normalizedNow) {
