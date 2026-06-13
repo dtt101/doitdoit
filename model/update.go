@@ -8,6 +8,16 @@ import (
 
 type copyFlashDoneMsg struct{}
 
+type dateTickMsg time.Time
+
+// dateTick schedules a wake-up so the visible date columns can be refreshed
+// when the day rolls over while the app is left running.
+func dateTick() tea.Cmd {
+	return tea.Tick(time.Minute, func(t time.Time) tea.Msg {
+		return dateTickMsg(t)
+	})
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -15,11 +25,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case copyFlashDoneMsg:
 		m.copyFlash = false
 		return m, nil
+	case dateTickMsg:
+		return m.handleDateTick()
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
 	default:
 		return m, nil
 	}
+}
+
+func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
+	if len(m.dateKeys) == 0 || m.dateKeys[0] != time.Now().Format("2006-01-02") {
+		focusedDate := ""
+		if !m.ShowFuture && m.ColIdx >= 0 && m.ColIdx < len(m.dateKeys) {
+			focusedDate = m.dateKeys[m.ColIdx]
+		}
+
+		m.Data.rollOverIncompleteTasks()
+		m.Data.pruneOldTasks()
+		m.Data.DistributeFutureTasks(m.VisibleDays)
+		m.updateDateKeys()
+		for i, dateKey := range m.dateKeys {
+			if dateKey == focusedDate {
+				m.ColIdx = i
+				break
+			}
+		}
+		m.clampRow()
+		m.persist()
+	}
+	return m, dateTick()
 }
 
 func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
