@@ -8,45 +8,54 @@ import (
 	"github.com/dtt101/doitdoit/styles"
 )
 
+// Layout overhead used to size columns against the terminal dimensions.
+const (
+	// appHorizontalMargin is the app's left + right margin (2 each).
+	appHorizontalMargin = 4
+	// columnChromeWidth is the non-content width each column adds:
+	// 2 margin + 2 border + 2 padding.
+	columnChromeWidth = 6
+	// minColumnWidth is the smallest a column may shrink to.
+	minColumnWidth = 10
+
+	// appVerticalOverhead is the app's top + bottom margin (2) plus the
+	// footer (~7 lines).
+	appVerticalOverhead = 9
+	// minTotalColumnHeight is the smallest total column height to target.
+	minTotalColumnHeight = 10
+	// columnChromeHeight is the non-content height each column adds:
+	// 2 border + 2 padding.
+	columnChromeHeight = 4
+)
+
 func (m Model) View() string {
 	var columns []string
 
-	// Calculate dynamic width
-	// App margins: 4 (2 left + 2 right)
-	// Column margins: 2 per column (1 left + 1 right)
-	// Column borders: 2 per column
-	// Column padding: 2 per column
-	// Total extra per column = 6
-
-	availableWidth := m.width - 4
+	availableWidth := m.width - appHorizontalMargin
 	if availableWidth < 0 {
 		availableWidth = 0
 	}
 
-	colWidth := (availableWidth / m.VisibleDays) - 6
-	if colWidth < 10 {
-		colWidth = 10 // Minimum width
+	colWidth := (availableWidth / m.VisibleDays) - columnChromeWidth
+	if colWidth < minColumnWidth {
+		colWidth = minColumnWidth
 	}
 
 	// Pre-calculate column contents to determine max height
 	var colContents []string
 	maxContentHeight := 0
 
-	// Minimum height based on window size
-	// App margins: 2 (1 top + 1 bottom)
-	// Footer overhead: ~7 lines
-	// Column overhead: 4 lines (2 border + 2 padding)
-	minTotalHeight := m.height - 9
-	if minTotalHeight < 10 {
-		minTotalHeight = 10
+	minTotalHeight := m.height - appVerticalOverhead
+	if minTotalHeight < minTotalColumnHeight {
+		minTotalHeight = minTotalColumnHeight
 	}
-	minContentHeight := minTotalHeight - 4 // Subtract border+padding
+	minContentHeight := minTotalHeight - columnChromeHeight
 
 	// If showing future, we just have one column
 	keys := m.dateKeys
 	if m.ShowFuture {
 		keys = []string{"Future"}
-		colWidth = availableWidth - 6
+		colWidth = availableWidth - columnChromeWidth
 	}
 
 	for i, dateStr := range keys {
