@@ -2,9 +2,9 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,68 +58,17 @@ func main() {
 					os.Exit(1)
 				}
 
-				if same, _ := filepath.Abs(oldPath); same != "" {
-					if target, _ := filepath.Abs(newPath); target != "" && same == target {
-						fmt.Println("New path is the same as the current path; nothing to do.")
-						os.Exit(0)
-					}
+				if config.SamePath(oldPath, newPath) {
+					fmt.Println("New path is the same as the current path; nothing to do.")
+					os.Exit(0)
 				}
 
-				// Create destination directory
-				newDir := filepath.Dir(newPath)
-				if err := os.MkdirAll(newDir, 0755); err != nil {
-					fmt.Printf("Error creating directory for new path: %v\n", err)
-					os.Exit(1)
-				}
-
-				// First try simple rename (atomic on same filesystem)
-				if err := os.Rename(oldPath, newPath); err != nil {
-					// Fall back to copy+rename for cross-filesystem moves
-					sourceFile, errOpen := os.Open(oldPath)
-					if errOpen != nil {
-						fmt.Printf("Error opening current storage file: %v\n", errOpen)
+				if err := config.MoveStorage(oldPath, newPath); err != nil {
+					if errors.Is(err, config.ErrOldNotRemoved) {
+						fmt.Printf("Warning: %v\n", err)
+					} else {
+						fmt.Printf("Error moving storage: %v\n", err)
 						os.Exit(1)
-					}
-					defer sourceFile.Close()
-
-					tempFile, errTemp := os.CreateTemp(newDir, "doitdoit-move-*")
-					if errTemp != nil {
-						fmt.Printf("Error creating temp file in destination: %v\n", errTemp)
-						os.Exit(1)
-					}
-					tempPath := tempFile.Name()
-
-					if _, errCopy := io.Copy(tempFile, sourceFile); errCopy != nil {
-						tempFile.Close()
-						os.Remove(tempPath)
-						fmt.Printf("Error copying data: %v\n", errCopy)
-						os.Exit(1)
-					}
-					if errSync := tempFile.Sync(); errSync != nil {
-						tempFile.Close()
-						os.Remove(tempPath)
-						fmt.Printf("Error flushing data: %v\n", errSync)
-						os.Exit(1)
-					}
-					if errClose := tempFile.Close(); errClose != nil {
-						os.Remove(tempPath)
-						fmt.Printf("Error closing temp file: %v\n", errClose)
-						os.Exit(1)
-					}
-					if errChmod := os.Chmod(tempPath, 0600); errChmod != nil {
-						os.Remove(tempPath)
-						fmt.Printf("Error setting permissions: %v\n", errChmod)
-						os.Exit(1)
-					}
-
-					if errRename := os.Rename(tempPath, newPath); errRename != nil {
-						os.Remove(tempPath)
-						fmt.Printf("Error moving temp file into place: %v\n", errRename)
-						os.Exit(1)
-					}
-
-					if errRemove := os.Remove(oldPath); errRemove != nil {
-						fmt.Printf("Warning: Could not remove old file: %v\n", errRemove)
 					}
 				}
 
@@ -129,11 +78,6 @@ func main() {
 					fmt.Printf("Error saving config: %v\n", err)
 					// Try to cleanup? No, better to leave both than lose data.
 					os.Exit(1)
-				}
-
-				// Remove old file
-				if err := os.Remove(oldPath); err != nil {
-					fmt.Printf("Warning: Could not remove old file: %v\n", err)
 				}
 
 				fmt.Printf("Successfully moved storage to: %s\n", newPath)
