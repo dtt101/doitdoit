@@ -13,6 +13,20 @@ import (
 
 const pruneAfterDays = 5
 
+const dateLayout = "2006-01-02"
+
+// startOfDay returns t truncated to midnight in its own location, so dates can
+// be compared without the current clock time skewing the result.
+func startOfDay(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+}
+
+// parseDate parses a YYYY-MM-DD key as a local calendar day (midnight local),
+// so it lines up with startOfDay(time.Now()) rather than a UTC midnight.
+func parseDate(s string) (time.Time, error) {
+	return time.ParseInLocation(dateLayout, s, time.Local)
+}
+
 type Task struct {
 	ID        string    `json:"id"`
 	Title     string    `json:"title"`
@@ -130,8 +144,8 @@ func (d TodoData) importFromTextFile(jsonPath string) (bool, error) {
 
 func (d TodoData) rollOverIncompleteTasks() bool {
 	now := time.Now()
-	todayStr := now.Format("2006-01-02")
-	normalizedNow := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	todayStr := now.Format(dateLayout)
+	normalizedNow := startOfDay(now)
 	tasksToRollOver := make([]Task, 0)
 	datesToRemove := make([]string, 0)
 	changed := false
@@ -141,14 +155,12 @@ func (d TodoData) rollOverIncompleteTasks() bool {
 			continue
 		}
 
-		parsedDate, err := time.Parse("2006-01-02", dateStr)
+		parsedDate, err := parseDate(dateStr)
 		if err != nil {
 			continue // Skip invalid date strings
 		}
 
-		normalizedParsedDate := time.Date(parsedDate.Year(), parsedDate.Month(), parsedDate.Day(), 0, 0, 0, 0, parsedDate.Location())
-
-		if normalizedParsedDate.Before(normalizedNow) {
+		if parsedDate.Before(normalizedNow) {
 			remainingTasks := make([]Task, 0, len(tasks))
 			for _, task := range tasks {
 				if !task.Completed {
@@ -239,7 +251,7 @@ func (d TodoData) Save(path string) error {
 
 func (d TodoData) pruneOldTasks() bool {
 	cutoff := time.Now().AddDate(0, 0, -pruneAfterDays)
-	cutoffStr := cutoff.Format("2006-01-02")
+	cutoffStr := cutoff.Format(dateLayout)
 	changed := false
 
 	for dateStr := range d {
@@ -274,9 +286,9 @@ func (d TodoData) DistributeFutureTasks(visibleDays int) {
 		return
 	}
 
-	today := time.Now()
+	today := startOfDay(time.Now())
 	lastVisible := today.AddDate(0, 0, visibleDays-1)
-	todayStr := today.Format("2006-01-02")
+	todayStr := today.Format(dateLayout)
 
 	remainingFuture := make([]Task, 0)
 
@@ -286,7 +298,7 @@ func (d TodoData) DistributeFutureTasks(visibleDays int) {
 			continue
 		}
 
-		dueDate, err := time.Parse("2006-01-02", task.DueDate)
+		dueDate, err := parseDate(task.DueDate)
 		if err != nil {
 			remainingFuture = append(remainingFuture, task)
 			continue
