@@ -51,6 +51,102 @@ func TestMoveToFuture(t *testing.T) {
 	}
 }
 
+func TestPostponeMovesTaskToNextDay(t *testing.T) {
+	today := time.Now()
+	todayStr := today.Format("2006-01-02")
+	tomorrowStr := today.AddDate(0, 0, 1).Format("2006-01-02")
+
+	m := Model{
+		Data: TodoData{
+			todayStr: {
+				{ID: "1", Title: "Task 1"},
+				{ID: "2", Title: "Task 2"},
+			},
+		},
+		VisibleDays: 3,
+		State:       Browsing,
+	}
+	m.updateDateKeys()
+	m.ColIdx = 0
+	m.RowIdx = 0
+
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'>'}}
+	newM, _ := m.Update(msg)
+	m = newM.(Model)
+
+	if got := len(m.Data[todayStr]); got != 1 {
+		t.Fatalf("Expected 1 task remaining today, got %d", got)
+	}
+	if m.Data[todayStr][0].ID != "2" {
+		t.Errorf("Expected Task 2 to remain today, got %s", m.Data[todayStr][0].ID)
+	}
+
+	tomorrow := m.Data[tomorrowStr]
+	if len(tomorrow) != 1 || tomorrow[0].ID != "1" {
+		t.Fatalf("Expected Task 1 on tomorrow, got %v", tomorrow)
+	}
+	if tomorrow[0].DueDate != tomorrowStr {
+		t.Errorf("Expected due date %s, got %s", tomorrowStr, tomorrow[0].DueDate)
+	}
+}
+
+func TestPostponeFromLastColumnHoldsInFuture(t *testing.T) {
+	today := time.Now()
+	lastVisible := today.AddDate(0, 0, 2) // VisibleDays = 3, so index 2 is the last column
+	lastVisibleStr := lastVisible.Format("2006-01-02")
+	beyondStr := lastVisible.AddDate(0, 0, 1).Format("2006-01-02")
+
+	m := Model{
+		Data: TodoData{
+			lastVisibleStr: {
+				{ID: "1", Title: "Task 1"},
+			},
+		},
+		VisibleDays: 3,
+		State:       Browsing,
+	}
+	m.updateDateKeys()
+	m.ColIdx = 2
+	m.RowIdx = 0
+
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'>'}}
+	newM, _ := m.Update(msg)
+	m = newM.(Model)
+
+	if got := len(m.Data[lastVisibleStr]); got != 0 {
+		t.Errorf("Expected task removed from last column, got %d", got)
+	}
+
+	future := m.Data["Future"]
+	if len(future) != 1 || future[0].ID != "1" {
+		t.Fatalf("Expected task held in Future, got %v", future)
+	}
+	if future[0].DueDate != beyondStr {
+		t.Errorf("Expected due date %s, got %s", beyondStr, future[0].DueDate)
+	}
+}
+
+func TestPostponeNoOpInFutureView(t *testing.T) {
+	m := Model{
+		Data: TodoData{
+			"Future": {{ID: "1", Title: "Task 1"}},
+		},
+		VisibleDays: 3,
+		State:       Browsing,
+		ShowFuture:  true,
+	}
+	m.updateDateKeys()
+	m.RowIdx = 0
+
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'>'}}
+	newM, _ := m.Update(msg)
+	m = newM.(Model)
+
+	if len(m.Data["Future"]) != 1 {
+		t.Errorf("Expected Future task untouched, got %d tasks", len(m.Data["Future"]))
+	}
+}
+
 func TestFutureShortcutMoveToToday(t *testing.T) {
 	today := time.Now().Format("2006-01-02")
 	m := Model{

@@ -134,6 +134,11 @@ func (m Model) handleBrowsingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.persist()
 	case "m":
 		m.State = Moving
+	case ">":
+		if !m.ShowFuture {
+			m.postponeTask()
+			m.persist()
+		}
 	case "f":
 		m.ShowFuture = !m.ShowFuture
 		m.RowIdx = 0

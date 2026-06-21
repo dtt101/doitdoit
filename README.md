@@ -72,6 +72,7 @@ On the first run, `doitdoit` will ask where you want to store your data file (`d
     *   Use **Left/Right** to move the task to a different day.
     *   Use **Up/Down** to reorder the task within the list.
     *   Press **`m`** or **`Esc`** to exit Move Mode.
+*   **`>`**: Postpone the selected task to the next day (Only available in the main view).
 *   **`t`**: Set a due date for a task (Only available in Future view).
 *   **`T`**: Move the selected Future task directly to Today (Future view).
 

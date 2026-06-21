@@ -195,8 +195,11 @@ func (m Model) helpView() string {
 		if m.ShowFuture {
 			items = append(items, group("t", "date"))
 			items = append(items, group("T", "to today"))
+			items = append(items, group("↑/↓/k/j", "nav"))
+		} else {
+			items = append(items, group(">", "postpone"))
+			items = append(items, group("arrows/hjkl", "nav"))
 		}
-		items = append(items, group("arrows/hjkl", "nav"))
 		items = append(items, group("q", "quit"))
 	case Adding:
 		items = append(items, group("enter", "save"))
@@ -206,6 +209,9 @@ func (m Model) helpView() string {
 			items = append(items, group("←/→/h/l", "move day"))
 		}
 		items = append(items, group("↑/↓/k/j", "move up/down"))
+		if !m.ShowFuture {
+			items = append(items, group("f", "to future"))
+		}
 		items = append(items, group("y", "copy"))
 		items = append(items, group("m/esc", "done"))
 	case SettingDate:
