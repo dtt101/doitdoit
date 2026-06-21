@@ -157,6 +157,54 @@ func (m *Model) reorderTask(direction int) {
 	m.RowIdx = newRowIdx
 }
 
+// postponeTask pushes the highlighted task on the main view to the next day,
+// dropping it into the following column when visible or holding it in Future.
+func (m *Model) postponeTask() {
+	if m.ShowFuture {
+		return
+	}
+	currentDate := m.dateKeys[m.ColIdx]
+	tasks := m.Data[currentDate]
+	if len(tasks) == 0 || m.RowIdx >= len(tasks) {
+		return
+	}
+
+	parsed, err := time.Parse("2006-01-02", currentDate)
+	if err != nil {
+		return
+	}
+	nextDate := parsed.AddDate(0, 0, 1).Format("2006-01-02")
+
+	task := tasks[m.RowIdx]
+	task.DueDate = nextDate
+
+	// Remove from the current day.
+	m.Data[currentDate] = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
+
+	if m.ColIdx+1 < m.VisibleDays {
+		// Next day is a visible column: insert above any completed tasks.
+		targetDate := m.dateKeys[m.ColIdx+1]
+		targetTasks := m.Data[targetDate]
+		insertIdx := len(targetTasks)
+		for i, t := range targetTasks {
+			if t.Completed {
+				insertIdx = i
+				break
+			}
+		}
+		if insertIdx == len(targetTasks) {
+			m.Data[targetDate] = append(targetTasks, task)
+		} else {
+			m.Data[targetDate] = insertAt(targetTasks, insertIdx, task)
+		}
+	} else {
+		// Next day is beyond the visible range: hold it in Future.
+		m.Data["Future"] = append(m.Data["Future"], task)
+	}
+
+	m.clampRow()
+}
+
 func (m *Model) moveFutureTaskToToday() {
 	if !m.ShowFuture {
 		return
