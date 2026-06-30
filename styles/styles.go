@@ -46,6 +46,11 @@ var (
 			Bold(true).
 			PaddingBottom(1)
 
+	// FocusedTitleStyle marks the header of the day that currently has focus,
+	// so the active day stands out when several are stacked in one column.
+	FocusedTitleStyle = TitleStyle.
+				Foreground(Highlight)
+
 	HelpStyle = lipgloss.NewStyle().
 			Foreground(Subtle).
 			MarginTop(2).

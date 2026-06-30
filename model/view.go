@@ -29,21 +29,30 @@ const (
 )
 
 func (m Model) View() string {
-	var columns []string
-
 	availableWidth := m.width - appHorizontalMargin
 	if availableWidth < 0 {
 		availableWidth = 0
 	}
 
-	colWidth := (availableWidth / m.VisibleDays) - columnChromeWidth
+	// If showing future, we just have one column.
+	keys := m.dateKeys
+	if m.ShowFuture {
+		keys = []string{"Future"}
+	}
+
+	// Group the visible days into columns. Normally each day is its own
+	// column, but Saturday and Sunday are stacked into a single column when
+	// more than one day is on screen.
+	groups := m.columnGroups(keys)
+
+	numCols := len(groups)
+	if numCols < 1 {
+		numCols = 1
+	}
+	colWidth := (availableWidth / numCols) - columnChromeWidth
 	if colWidth < minColumnWidth {
 		colWidth = minColumnWidth
 	}
-
-	// Pre-calculate column contents to determine max height
-	var colContents []string
-	maxContentHeight := 0
 
 	minTotalHeight := m.height - appVerticalOverhead
 	if minTotalHeight < minTotalColumnHeight {
@@ -51,93 +60,21 @@ func (m Model) View() string {
 	}
 	minContentHeight := minTotalHeight - columnChromeHeight
 
-	// If showing future, we just have one column
-	keys := m.dateKeys
-	if m.ShowFuture {
-		keys = []string{"Future"}
-		colWidth = availableWidth - columnChromeWidth
-	}
+	// Pre-calculate column contents to determine max height.
+	var colContents []string
+	maxContentHeight := 0
 
-	for i, dateStr := range keys {
-		isFocused := m.State != Adding && (m.ShowFuture || m.ColIdx == i)
-
-		// Header
-		header := ""
-		if m.ShowFuture {
-			header = "Future"
-		} else {
-			displayDate, _ := time.Parse("2006-01-02", dateStr)
-			header = displayDate.Format("Mon, Jan 02")
-			if dateStr == time.Now().Format("2006-01-02") {
-				header = "Today"
+	for _, group := range groups {
+		var sections []string
+		for _, dayIdx := range group {
+			// Separate stacked days within a column with a blank line.
+			if len(sections) > 0 {
+				sections = append(sections, "")
 			}
+			sections = append(sections, m.renderDaySection(keys[dayIdx], dayIdx, colWidth))
 		}
 
-		title := styles.TitleStyle.Render(header)
-
-		// Tasks
-		var taskViews []string
-		tasks := m.Data[dateStr]
-
-		for j, task := range tasks {
-			var style lipgloss.Style
-			if task.Completed {
-				style = styles.CompletedTaskStyle
-			} else {
-				style = styles.TaskStyle
-			}
-
-			title := task.Title
-			if m.ShowFuture && task.DueDate != "" {
-				title += fmt.Sprintf(" (%s)", task.DueDate)
-			}
-
-			if isFocused && m.RowIdx == j {
-				if m.copyFlash {
-					style = style.Foreground(styles.Special).Bold(true)
-				} else if m.State == Moving {
-					// Use special moving style with highlight background
-					style = styles.MovingTaskStyle
-				} else {
-					// Normal selection highlight
-					style = style.Foreground(styles.Highlight).Bold(true)
-				}
-			}
-
-			// Calculate title width to ensure proper wrapping
-			titleWidth := colWidth
-			if titleWidth < 1 {
-				titleWidth = 1
-			}
-
-			taskViews = append(taskViews, style.Width(titleWidth).Render(title))
-
-			// Add a blank line between tasks
-			if j < len(tasks)-1 {
-				taskViews = append(taskViews, "")
-			}
-		}
-
-		// Input field if adding to this column
-		if (m.State == Adding || m.State == SettingDate) && (m.ShowFuture || m.ColIdx == i) {
-			// Add spacing before input if there are tasks
-			if len(tasks) > 0 {
-				taskViews = append(taskViews, "")
-			}
-
-			// Match TaskStyle padding
-			inputStyle := lipgloss.NewStyle()
-			prefix := ""
-			if m.State == SettingDate {
-				prefix = "Due Date: "
-			}
-			taskViews = append(taskViews, inputStyle.Render(prefix+m.TextInput.View()))
-		} else if len(tasks) == 0 && !((m.State == Adding || m.State == SettingDate) && (m.ShowFuture || m.ColIdx == i)) {
-			taskViews = append(taskViews, lipgloss.NewStyle().Foreground(styles.Subtle).Render("No tasks"))
-		}
-
-		// Assemble content
-		content := lipgloss.JoinVertical(lipgloss.Left, title, lipgloss.JoinVertical(lipgloss.Left, taskViews...))
+		content := lipgloss.JoinVertical(lipgloss.Left, sections...)
 		colContents = append(colContents, content)
 
 		h := lipgloss.Height(content)
@@ -146,14 +83,15 @@ func (m Model) View() string {
 		}
 	}
 
-	// Ensure we meet the minimum window height
+	// Ensure we meet the minimum window height.
 	if maxContentHeight < minContentHeight {
 		maxContentHeight = minContentHeight
 	}
 
-	// Render columns with unified height
+	// Render columns with unified height.
+	var columns []string
 	for i, content := range colContents {
-		isFocused := m.State != Adding && m.State != SettingDate && (m.ShowFuture || m.ColIdx == i)
+		isFocused := m.State != Adding && m.State != SettingDate && m.groupFocused(groups[i])
 
 		style := styles.ColumnStyle.Width(colWidth).Height(maxContentHeight)
 		if isFocused {
@@ -169,6 +107,147 @@ func (m Model) View() string {
 	}
 
 	return styles.AppStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, columns...) + "\n" + footer)
+}
+
+// columnGroups maps the visible day keys to columns, each column being the day
+// indices stacked within it. Saturday and Sunday share a column once more than
+// one day is shown; the single-day and Future views keep one day per column.
+func (m Model) columnGroups(keys []string) [][]int {
+	if m.ShowFuture || m.VisibleDays <= 1 {
+		groups := make([][]int, len(keys))
+		for i := range keys {
+			groups[i] = []int{i}
+		}
+		return groups
+	}
+
+	var groups [][]int
+	for i := 0; i < len(keys); {
+		if !isWeekend(keys[i]) {
+			groups = append(groups, []int{i})
+			i++
+			continue
+		}
+
+		// Gather the run of consecutive weekend days (Sat, then Sun).
+		var group []int
+		for i < len(keys) && isWeekend(keys[i]) {
+			group = append(group, i)
+			i++
+		}
+		groups = append(groups, group)
+	}
+	return groups
+}
+
+// groupFocused reports whether the focused day falls within the given column.
+func (m Model) groupFocused(group []int) bool {
+	if m.ShowFuture {
+		return true
+	}
+	for _, idx := range group {
+		if m.ColIdx == idx {
+			return true
+		}
+	}
+	return false
+}
+
+// renderDaySection builds the header and task list for a single day, with the
+// selection highlight applied only when that day is the focused one.
+func (m Model) renderDaySection(dateStr string, dayIdx, colWidth int) string {
+	isFocused := m.State != Adding && (m.ShowFuture || m.ColIdx == dayIdx)
+
+	// Header
+	header := ""
+	if m.ShowFuture {
+		header = "Future"
+	} else {
+		displayDate, _ := time.Parse("2006-01-02", dateStr)
+		header = displayDate.Format("Mon, Jan 02")
+		if dateStr == time.Now().Format("2006-01-02") {
+			header = "Today"
+		}
+	}
+
+	titleStyle := styles.TitleStyle
+	if isFocused {
+		titleStyle = styles.FocusedTitleStyle
+	}
+	title := titleStyle.Render(header)
+
+	// Tasks
+	var taskViews []string
+	tasks := m.Data[dateStr]
+
+	for j, task := range tasks {
+		var style lipgloss.Style
+		if task.Completed {
+			style = styles.CompletedTaskStyle
+		} else {
+			style = styles.TaskStyle
+		}
+
+		title := task.Title
+		if m.ShowFuture && task.DueDate != "" {
+			title += fmt.Sprintf(" (%s)", task.DueDate)
+		}
+
+		if isFocused && m.RowIdx == j {
+			if m.copyFlash {
+				style = style.Foreground(styles.Special).Bold(true)
+			} else if m.State == Moving {
+				// Use special moving style with highlight background
+				style = styles.MovingTaskStyle
+			} else {
+				// Normal selection highlight
+				style = style.Foreground(styles.Highlight).Bold(true)
+			}
+		}
+
+		// Calculate title width to ensure proper wrapping
+		titleWidth := colWidth
+		if titleWidth < 1 {
+			titleWidth = 1
+		}
+
+		taskViews = append(taskViews, style.Width(titleWidth).Render(title))
+
+		// Add a blank line between tasks
+		if j < len(tasks)-1 {
+			taskViews = append(taskViews, "")
+		}
+	}
+
+	// Input field if adding to this day
+	if (m.State == Adding || m.State == SettingDate) && (m.ShowFuture || m.ColIdx == dayIdx) {
+		// Add spacing before input if there are tasks
+		if len(tasks) > 0 {
+			taskViews = append(taskViews, "")
+		}
+
+		// Match TaskStyle padding
+		inputStyle := lipgloss.NewStyle()
+		prefix := ""
+		if m.State == SettingDate {
+			prefix = "Due Date: "
+		}
+		taskViews = append(taskViews, inputStyle.Render(prefix+m.TextInput.View()))
+	} else if len(tasks) == 0 {
+		taskViews = append(taskViews, lipgloss.NewStyle().Foreground(styles.Subtle).Render("No tasks"))
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, title, lipgloss.JoinVertical(lipgloss.Left, taskViews...))
+}
+
+// isWeekend reports whether the YYYY-MM-DD date string falls on a weekend.
+func isWeekend(dateStr string) bool {
+	d, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return false
+	}
+	wd := d.Weekday()
+	return wd == time.Saturday || wd == time.Sunday
 }
 
 func (m Model) helpView() string {
