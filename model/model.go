@@ -14,9 +14,22 @@ type State int
 const (
 	Browsing State = iota
 	Adding
-	Moving
-	SettingDate
+	ChoosingMoveDestination
+	SettingMoveDate
 )
+
+// moveTarget is either an exact calendar date or the undated Future list.
+type moveTarget struct {
+	Date   string
+	Future bool
+}
+
+type moveUndoSnapshot struct {
+	Data       TodoData
+	ShowFuture bool
+	ColIdx     int
+	RowIdx     int
+}
 
 type Model struct {
 	Data        TodoData
@@ -46,6 +59,10 @@ type Model struct {
 
 	// Brief flash on copy
 	copyFlash bool
+
+	// Session-only move history.
+	lastMoveTarget *moveTarget
+	moveUndo       *moveUndoSnapshot
 }
 
 func NewModel(filePath string, visibleDays int) (Model, error) {
