@@ -40,22 +40,23 @@ func (m *Model) addTask(title string) {
 	}
 }
 
-func (m *Model) deleteTask() {
+func (m *Model) deleteTask() bool {
 	currentDate := m.getCurrentKey()
 	tasks := m.Data[currentDate]
 	if len(tasks) == 0 || m.RowIdx >= len(tasks) {
-		return
+		return false
 	}
 
 	m.Data[currentDate] = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
 	m.clampRow()
+	return true
 }
 
-func (m *Model) toggleTask() {
+func (m *Model) toggleTask() bool {
 	currentDate := m.getCurrentKey()
 	tasks := m.Data[currentDate]
 	if m.RowIdx >= len(tasks) {
-		return
+		return false
 	}
 
 	// Toggle completion
@@ -98,205 +99,142 @@ func (m *Model) toggleTask() {
 		// Update the map with the reordered slice
 		m.Data[currentDate] = tasks
 	}
+	return true
 }
 
-func (m *Model) moveTask(direction int) {
-	if m.ShowFuture {
-		return
+func cloneTodoData(data TodoData) TodoData {
+	cloned := make(TodoData, len(data))
+	for key, tasks := range data {
+		cloned[key] = append([]Task(nil), tasks...)
 	}
-	currentDate := m.dateKeys[m.ColIdx]
-	tasks := m.Data[currentDate]
-	if len(tasks) == 0 || m.RowIdx >= len(tasks) {
-		return
-	}
-
-	targetColIdx := m.ColIdx + direction
-	if targetColIdx < 0 || targetColIdx >= len(m.dateKeys) {
-		return
-	}
-
-	targetDate := m.dateKeys[targetColIdx]
-	taskToMove := tasks[m.RowIdx]
-	taskToMove.DueDate = targetDate
-
-	// Remove from current
-	m.Data[currentDate] = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
-
-	// Add to target
-	targetTasks := m.Data[targetDate]
-	insertIdx := m.RowIdx
-	if insertIdx > len(targetTasks) {
-		insertIdx = len(targetTasks)
-	}
-
-	if insertIdx == len(targetTasks) {
-		m.Data[targetDate] = append(targetTasks, taskToMove)
-	} else {
-		m.Data[targetDate] = insertAt(targetTasks, insertIdx, taskToMove)
-	}
-
-	// Follow the task
-	m.ColIdx = targetColIdx
-	m.RowIdx = insertIdx
+	return cloned
 }
 
-func (m *Model) reorderTask(direction int) {
+func (m *Model) captureMoveUndo() {
+	m.moveUndo = &moveUndoSnapshot{
+		Data:       cloneTodoData(m.Data),
+		ShowFuture: m.ShowFuture,
+		ColIdx:     m.ColIdx,
+		RowIdx:     m.RowIdx,
+	}
+}
+
+func (m *Model) clearMoveUndo() {
+	m.moveUndo = nil
+}
+
+func (m *Model) undoMove() bool {
+	if m.moveUndo == nil {
+		return false
+	}
+
+	snapshot := m.moveUndo
+	m.Data = cloneTodoData(snapshot.Data)
+	m.ShowFuture = snapshot.ShowFuture
+	m.ColIdx = snapshot.ColIdx
+	m.RowIdx = snapshot.RowIdx
+	m.moveUndo = nil
+	m.clampRow()
+	return true
+}
+
+func (m *Model) reorderTask(direction int) bool {
 	currentDate := m.getCurrentKey()
 	tasks := m.Data[currentDate]
 	if len(tasks) == 0 {
-		return
+		return false
 	}
 
 	newRowIdx := m.RowIdx + direction
 	if newRowIdx < 0 || newRowIdx >= len(tasks) {
-		return
+		return false
 	}
 
-	// Swap
+	m.captureMoveUndo()
 	tasks[m.RowIdx], tasks[newRowIdx] = tasks[newRowIdx], tasks[m.RowIdx]
 	m.RowIdx = newRowIdx
+	return true
 }
 
-// postponeTask pushes the highlighted task on the main view to the next day,
-// dropping it into the following column when visible or holding it in Future.
-func (m *Model) postponeTask() {
-	if m.ShowFuture {
-		return
+func (m Model) moveBaseDate() time.Time {
+	if !m.ShowFuture && m.ColIdx >= 0 && m.ColIdx < len(m.dateKeys) {
+		if parsed, err := parseDate(m.dateKeys[m.ColIdx]); err == nil {
+			return parsed
+		}
 	}
-	currentDate := m.dateKeys[m.ColIdx]
-	tasks := m.Data[currentDate]
-	if len(tasks) == 0 || m.RowIdx >= len(tasks) {
-		return
-	}
+	return startOfDay(time.Now())
+}
 
-	parsed, err := time.Parse("2006-01-02", currentDate)
-	if err != nil {
-		return
+func (m Model) relativeMoveTarget(days int) moveTarget {
+	return moveTarget{Date: m.moveBaseDate().AddDate(0, 0, days).Format(dateLayout)}
+}
+
+func (m *Model) scheduleTask(target moveTarget) bool {
+	sourceKey := m.getCurrentKey()
+	tasks := m.Data[sourceKey]
+	if len(tasks) == 0 || m.RowIdx < 0 || m.RowIdx >= len(tasks) {
+		return false
 	}
-	nextDate := parsed.AddDate(0, 0, 1).Format("2006-01-02")
 
 	task := tasks[m.RowIdx]
-	task.DueDate = nextDate
+	targetKey := "Future"
+	dueDate := ""
+	if !target.Future {
+		parsed, err := parseDate(target.Date)
+		if err != nil {
+			return false
+		}
+		today := startOfDay(time.Now())
+		if parsed.Before(today) {
+			parsed = today
+		}
+		dueDate = parsed.Format(dateLayout)
+		target = moveTarget{Date: dueDate}
 
-	// Remove from the current day.
-	m.Data[currentDate] = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
+		lastVisible := today.AddDate(0, 0, m.VisibleDays-1)
+		if !parsed.After(lastVisible) {
+			targetKey = dueDate
+		}
+	}
 
-	if m.ColIdx+1 < m.VisibleDays {
-		// Next day is a visible column: insert above any completed tasks.
-		targetDate := m.dateKeys[m.ColIdx+1]
-		targetTasks := m.Data[targetDate]
+	if sourceKey == targetKey && task.DueDate == dueDate {
+		return false
+	}
+
+	m.captureMoveUndo()
+	task.DueDate = dueDate
+
+	if sourceKey == targetKey {
+		tasks[m.RowIdx] = task
+		m.Data[sourceKey] = tasks
+	} else {
+		m.Data[sourceKey] = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
+
+		targetTasks := m.Data[targetKey]
 		insertIdx := len(targetTasks)
-		for i, t := range targetTasks {
-			if t.Completed {
+		for i, existing := range targetTasks {
+			if existing.Completed {
 				insertIdx = i
 				break
 			}
 		}
 		if insertIdx == len(targetTasks) {
-			m.Data[targetDate] = append(targetTasks, task)
+			m.Data[targetKey] = append(targetTasks, task)
 		} else {
-			m.Data[targetDate] = insertAt(targetTasks, insertIdx, task)
+			m.Data[targetKey] = insertAt(targetTasks, insertIdx, task)
 		}
-	} else {
-		// Next day is beyond the visible range: hold it in Future.
-		m.Data["Future"] = append(m.Data["Future"], task)
 	}
 
+	m.lastMoveTarget = &target
 	m.clampRow()
+	return true
 }
 
-func (m *Model) moveFutureTaskToToday() {
-	if !m.ShowFuture {
-		return
+func (m *Model) repeatMove() bool {
+	if m.lastMoveTarget == nil {
+		return false
 	}
-
-	futureTasks := m.Data["Future"]
-	if len(futureTasks) == 0 || m.RowIdx >= len(futureTasks) {
-		return
-	}
-
-	todayStr := time.Now().Format("2006-01-02")
-	task := futureTasks[m.RowIdx]
-	task.DueDate = todayStr
-
-	// Remove from Future
-	m.Data["Future"] = append(futureTasks[:m.RowIdx], futureTasks[m.RowIdx+1:]...)
-
-	// Insert into Today, keeping incomplete tasks above completed ones
-	todayTasks := m.Data[todayStr]
-	insertIdx := len(todayTasks)
-	for i, t := range todayTasks {
-		if t.Completed {
-			insertIdx = i
-			break
-		}
-	}
-
-	if insertIdx == len(todayTasks) {
-		m.Data[todayStr] = append(todayTasks, task)
-	} else {
-		m.Data[todayStr] = insertAt(todayTasks, insertIdx, task)
-	}
-
-	// Jump back to today with the moved task focused
-	m.ShowFuture = false
-	m.ColIdx = 0
-	m.RowIdx = insertIdx
-}
-
-func (m *Model) setTaskDate(dateStr string) error {
-	currentDate := m.getCurrentKey()
-	tasks := m.Data[currentDate]
-	if len(tasks) == 0 || m.RowIdx >= len(tasks) {
-		return nil
-	}
-
-	normalizedDate, err := normalizeDueDateInput(dateStr)
-	if err != nil {
-		m.Err = err
-		return err
-	}
-	m.Err = nil
-
-	// Update task
-	taskID := tasks[m.RowIdx].ID
-	tasks[m.RowIdx].DueDate = normalizedDate
-	m.Data[currentDate] = tasks
-
-	// Redistribute
-	m.Data.DistributeFutureTasks(m.VisibleDays)
-	m.updateDateKeys()
-
-	// Check if we need to switch view
-	// We need to find where the task went
-	found := false
-	if !m.ShowFuture {
-		// Already in daily view, nothing to do (though this function is only called in Future view currently)
-	} else {
-		// Check visible days
-		for colIdx, dateKey := range m.dateKeys {
-			for rowIdx, t := range m.Data[dateKey] {
-				if t.ID == taskID {
-					// Found it in a visible day!
-					m.ShowFuture = false
-					m.ColIdx = colIdx
-					m.RowIdx = rowIdx
-					found = true
-					break
-				}
-			}
-			if found {
-				break
-			}
-		}
-	}
-
-	if !found {
-		// Still in future or somewhere else
-		m.clampRow()
-	}
-
-	return nil
+	return m.scheduleTask(*m.lastMoveTarget)
 }
 
 func (m *Model) copyTask() {

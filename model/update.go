@@ -44,6 +44,7 @@ func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
 		m.Data.rollOverIncompleteTasks()
 		m.Data.pruneOldTasks()
 		m.Data.DistributeFutureTasks(m.VisibleDays)
+		m.clearMoveUndo()
 		m.updateDateKeys()
 		for i, dateKey := range m.dateKeys {
 			if dateKey == focusedDate {
@@ -69,10 +70,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleAddingKey(msg)
 	case Browsing:
 		return m.handleBrowsingKey(msg)
-	case Moving:
-		return m.handleMovingKey(msg)
-	case SettingDate:
-		return m.handleSettingDateKey(msg)
+	case ChoosingMoveDestination:
+		return m.handleChoosingMoveDestinationKey(msg)
+	case SettingMoveDate:
+		return m.handleSettingMoveDateKey(msg)
 	default:
 		return m, nil
 	}
@@ -82,6 +83,7 @@ func (m Model) handleAddingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter:
 		if m.TextInput.Value() != "" {
+			m.clearMoveUndo()
 			m.addTask(m.TextInput.Value())
 			m.TextInput.Reset()
 			m.State = Browsing
@@ -127,33 +129,40 @@ func (m Model) handleBrowsingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.configureTextInput("New task...")
 		return m, nil
 	case "d":
-		m.deleteTask()
-		m.persist()
+		if m.deleteTask() {
+			m.clearMoveUndo()
+			m.persist()
+		}
 	case "enter", " ":
-		m.toggleTask()
-		m.persist()
+		if m.toggleTask() {
+			m.clearMoveUndo()
+			m.persist()
+		}
 	case "m":
-		m.State = Moving
-	case ">":
-		if !m.ShowFuture {
-			m.postponeTask()
+		currentKey := m.getCurrentKey()
+		if m.RowIdx >= 0 && m.RowIdx < len(m.Data[currentKey]) {
+			m.State = ChoosingMoveDestination
+		}
+	case "J":
+		if m.reorderTask(1) {
+			m.persist()
+		}
+	case "K":
+		if m.reorderTask(-1) {
+			m.persist()
+		}
+	case ".":
+		if m.repeatMove() {
+			m.persist()
+		}
+	case "u":
+		if m.undoMove() {
 			m.persist()
 		}
 	case "f":
 		m.ShowFuture = !m.ShowFuture
 		m.RowIdx = 0
 		m.clampRow()
-	case "t":
-		if m.ShowFuture {
-			m.State = SettingDate
-			m.configureTextInput("YYYY-MM-DD or MM-DD")
-			return m, nil
-		}
-	case "T":
-		if m.ShowFuture {
-			m.moveFutureTaskToToday()
-			m.persist()
-		}
 	case "y":
 		m.copyTask()
 		if m.copyFlash {
@@ -166,69 +175,57 @@ func (m Model) handleBrowsingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleMovingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleChoosingMoveDestinationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "m":
+	case "esc":
 		m.State = Browsing
-	case "y":
-		m.copyTask()
-		if m.copyFlash {
-			return m, tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg {
-				return copyFlashDoneMsg{}
-			})
-		}
-	case "right", "l":
-		if !m.ShowFuture {
-			m.moveTask(1)
+	case "t":
+		moved := m.scheduleTask(moveTarget{Date: time.Now().Format(dateLayout)})
+		m.State = Browsing
+		if moved {
 			m.persist()
 		}
-	case "left", "h":
-		if !m.ShowFuture {
-			m.moveTask(-1)
-			m.persist()
-		}
-	case "up", "k":
-		m.reorderTask(-1)
-		m.persist()
-	case "down", "j":
-		m.reorderTask(1)
-		m.persist()
 	case "f":
-		if !m.ShowFuture {
-			// Move to Future
-			currentDate := m.getCurrentKey()
-			tasks := m.Data[currentDate]
-			if len(tasks) > 0 && m.RowIdx < len(tasks) {
-				task := tasks[m.RowIdx]
-				// Remove from current
-				m.Data[currentDate] = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
-
-				// Add to Future
-				futureTasks := m.Data["Future"]
-				m.Data["Future"] = append(futureTasks, task)
-
-				m.clampRow()
-				m.State = Browsing
-				m.persist()
-			}
+		moved := m.scheduleTask(moveTarget{Future: true})
+		m.State = Browsing
+		if moved {
+			m.persist()
+		}
+	case "d":
+		m.State = SettingMoveDate
+		m.configureTextInput("YYYY-MM-DD or MM-DD")
+		return m, nil
+	case "1", "2", "3", "4", "5", "6", "7":
+		days := int(msg.String()[0] - '0')
+		moved := m.scheduleTask(m.relativeMoveTarget(days))
+		m.State = Browsing
+		if moved {
+			m.persist()
 		}
 	}
 
 	return m, nil
 }
 
-func (m Model) handleSettingDateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleSettingMoveDateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter:
-		if err := m.setTaskDate(m.TextInput.Value()); err != nil {
+		normalizedDate, err := normalizeDueDateInput(m.TextInput.Value())
+		if err != nil {
+			m.Err = err
 			return m, nil
 		}
+		m.Err = nil
+		moved := m.scheduleTask(moveTarget{Date: normalizedDate})
 		m.TextInput.Reset()
 		m.State = Browsing
-		m.persist()
+		if moved {
+			m.persist()
+		}
 	case tea.KeyEsc:
 		m.TextInput.Reset()
-		m.State = Browsing
+		m.Err = nil
+		m.State = ChoosingMoveDestination
 	default:
 		var cmd tea.Cmd
 		m.TextInput, cmd = m.TextInput.Update(msg)

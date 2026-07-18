@@ -102,14 +102,22 @@ func TestInputConfiguredOnModeSwitch(t *testing.T) {
 		t.Fatalf("expected input to be reset, got %q", m.TextInput.Value())
 	}
 
-	m.ShowFuture = true
+	m.Data[today] = []Task{{ID: "1", Title: "Task"}}
 	m.State = Browsing
-	msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}}
+	msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}
 	updated, _ = m.Update(msg)
 	m = updated.(Model)
 
-	if m.State != SettingDate {
-		t.Fatalf("expected state SettingDate after 't', got %v", m.State)
+	if m.State != ChoosingMoveDestination {
+		t.Fatalf("expected destination picker after 'm', got %v", m.State)
+	}
+
+	msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}
+	updated, _ = m.Update(msg)
+	m = updated.(Model)
+
+	if m.State != SettingMoveDate {
+		t.Fatalf("expected state SettingMoveDate after 'md', got %v", m.State)
 	}
 	if m.TextInput.Placeholder != "YYYY-MM-DD or MM-DD" {
 		t.Fatalf("expected date placeholder, got %q", m.TextInput.Placeholder)

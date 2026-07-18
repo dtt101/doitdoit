@@ -61,20 +61,24 @@ On the first run, `doitdoit` will ask where you want to store your data file (`d
 ### Keybindings
 
 #### Navigation
-*   **Arrow Keys** or **`h` `j` `k` `l`**: Navigate between days (columns) and tasks (rows).
-*   **`f`**: Toggle the "Future" view to see tasks without a due date.
+*   In the main view, use **Arrow Keys** or **`h` `j` `k` `l`** to navigate between dated columns and tasks.
+*   In the Future view, use **Up/Down** or **`j` `k`** to navigate its task list.
+*   **`f`**: Toggle between the main and Future views.
 
 #### Task Management
 *   **`a`**: Add a new task to the currently selected day/column.
 *   **`d`**: Delete the selected task.
 *   **`Space`** or **`Enter`**: Toggle task completion status.
-*   **`m`**: Enter **Move Mode**.
-    *   Use **Left/Right** to move the task to a different day.
-    *   Use **Up/Down** to reorder the task within the list.
-    *   Press **`m`** or **`Esc`** to exit Move Mode.
-*   **`>`**: Postpone the selected task to the next day (Only available in the main view).
-*   **`t`**: Set a due date for a task (Only available in Future view).
-*   **`T`**: Move the selected Future task directly to Today (Future view).
+*   **`m`**: Choose where to move the selected task.
+    *   Press **`t`** for Today or **`f`** for the undated Future list.
+    *   Press **`1`**–**`7`** to move that many calendar days from the task's current date in the main view. Future tasks count from today.
+    *   Press **`d`** to enter a date as `YYYY-MM-DD` or `MM-DD`.
+    *   Press **`Esc`** to cancel.
+*   **`J`** / **`K`**: Move the selected task down or up within its current list.
+*   **`.`**: Move the selected task to the last destination again.
+*   **`u`**: Undo the most recent task move or reorder.
+
+After scheduling a task, focus stays in its source list so the next task can be moved immediately. These task-management keys work in both the main and Future views.
 
 #### Global
 *   **`q`** or **`Ctrl+c`**: Quit the application.

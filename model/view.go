@@ -91,7 +91,7 @@ func (m Model) View() string {
 	// Render columns with unified height.
 	var columns []string
 	for i, content := range colContents {
-		isFocused := m.State != Adding && m.State != SettingDate && m.groupFocused(groups[i])
+		isFocused := m.State != Adding && m.State != SettingMoveDate && m.groupFocused(groups[i])
 
 		style := styles.ColumnStyle.Width(colWidth).Height(maxContentHeight)
 		if isFocused {
@@ -196,7 +196,7 @@ func (m Model) renderDaySection(dateStr string, dayIdx, colWidth int) string {
 		if isFocused && m.RowIdx == j {
 			if m.copyFlash {
 				style = style.Foreground(styles.Special).Bold(true)
-			} else if m.State == Moving {
+			} else if m.State == ChoosingMoveDestination {
 				// Use special moving style with highlight background
 				style = styles.MovingTaskStyle
 			} else {
@@ -220,7 +220,7 @@ func (m Model) renderDaySection(dateStr string, dayIdx, colWidth int) string {
 	}
 
 	// Input field if adding to this day
-	if (m.State == Adding || m.State == SettingDate) && (m.ShowFuture || m.ColIdx == dayIdx) {
+	if (m.State == Adding || m.State == SettingMoveDate) && (m.ShowFuture || m.ColIdx == dayIdx) {
 		// Add spacing before input if there are tasks
 		if len(tasks) > 0 {
 			taskViews = append(taskViews, "")
@@ -229,8 +229,8 @@ func (m Model) renderDaySection(dateStr string, dayIdx, colWidth int) string {
 		// Match TaskStyle padding
 		inputStyle := lipgloss.NewStyle()
 		prefix := ""
-		if m.State == SettingDate {
-			prefix = "Due Date: "
+		if m.State == SettingMoveDate {
+			prefix = "Move to: "
 		}
 		taskViews = append(taskViews, inputStyle.Render(prefix+m.TextInput.View()))
 	} else if len(tasks) == 0 {
@@ -270,32 +270,33 @@ func (m Model) helpView() string {
 		items = append(items, group("y", "copy"))
 		items = append(items, group("space", "toggle"))
 		items = append(items, group("m", "move"))
-		items = append(items, group("f", "future"))
+		items = append(items, group("J/K", "reorder"))
+		items = append(items, group(".", "repeat move"))
+		items = append(items, group("u", "undo move"))
 		if m.ShowFuture {
-			items = append(items, group("t", "date"))
-			items = append(items, group("T", "to today"))
+			items = append(items, group("f", "main view"))
 			items = append(items, group("↑/↓/k/j", "nav"))
 		} else {
-			items = append(items, group(">", "postpone"))
+			items = append(items, group("f", "future"))
 			items = append(items, group("arrows/hjkl", "nav"))
 		}
 		items = append(items, group("q", "quit"))
 	case Adding:
 		items = append(items, group("enter", "save"))
 		items = append(items, group("esc", "cancel"))
-	case Moving:
-		if !m.ShowFuture {
-			items = append(items, group("←/→/h/l", "move day"))
+	case ChoosingMoveDestination:
+		items = append(items, group("t", "today"))
+		base := m.moveBaseDate()
+		for days := 1; days <= 7; days++ {
+			date := base.AddDate(0, 0, days)
+			items = append(items, group(fmt.Sprintf("%d", days), date.Format("Mon 02")))
 		}
-		items = append(items, group("↑/↓/k/j", "move up/down"))
-		if !m.ShowFuture {
-			items = append(items, group("f", "to future"))
-		}
-		items = append(items, group("y", "copy"))
-		items = append(items, group("m/esc", "done"))
-	case SettingDate:
-		items = append(items, group("enter", "save date"))
+		items = append(items, group("f", "future"))
+		items = append(items, group("d", "other date"))
 		items = append(items, group("esc", "cancel"))
+	case SettingMoveDate:
+		items = append(items, group("enter", "move"))
+		items = append(items, group("esc", "back"))
 	}
 
 	var helpStr string
