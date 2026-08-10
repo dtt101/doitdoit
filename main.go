@@ -19,6 +19,10 @@ func main() {
 	if args := flag.Args(); len(args) > 0 && args[0] == "config" {
 		os.Exit(config.RunCommand(args, os.Stdout))
 	}
+	if *visibleDays < 1 {
+		fmt.Fprintln(os.Stderr, "Error: -days must be at least 1")
+		os.Exit(2)
+	}
 
 	var finalPath string
 	if *filePathFlag != "" {

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -66,6 +67,10 @@ type Model struct {
 }
 
 func NewModel(filePath string, visibleDays int) (Model, error) {
+	if visibleDays < 1 {
+		return Model{}, fmt.Errorf("visible days must be at least 1")
+	}
+
 	data, err := Load(filePath)
 	if err != nil {
 		return Model{}, err
