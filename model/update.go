@@ -35,7 +35,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
-	if len(m.dateKeys) == 0 || m.dateKeys[0] != time.Now().Format("2006-01-02") {
+	todayKey := time.Now().Format(dateLayout)
+	dayChanged := m.todayKey != "" && m.todayKey != todayKey
+	if m.todayKey == "" && (len(m.dateKeys) == 0 || m.firstVisibleDate().Before(startOfDay(time.Now()))) {
+		dayChanged = true
+	}
+	if dayChanged {
 		focusedDate := ""
 		if !m.ShowFuture && m.ColIdx >= 0 && m.ColIdx < len(m.dateKeys) {
 			focusedDate = m.dateKeys[m.ColIdx]
@@ -43,9 +48,15 @@ func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
 
 		m.Data.rollOverIncompleteTasks()
 		m.Data.pruneOldTasks()
-		m.Data.DistributeFutureTasks(m.VisibleDays)
 		m.clearMoveUndo()
-		m.updateDateKeys()
+		firstDay := m.firstVisibleDate()
+		if firstDay.Before(startOfDay(time.Now())) {
+			firstDay = startOfDay(time.Now())
+		}
+		m.updateDateKeysFrom(firstDay)
+		m.todayKey = todayKey
+		m.Data.distributeFutureTasksThrough(m.lastVisibleDate())
+		m.ColIdx = 0
 		for i, dateKey := range m.dateKeys {
 			if dateKey == focusedDate {
 				m.ColIdx = i
@@ -106,13 +117,23 @@ func (m Model) handleBrowsingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "right", "l":
-		if !m.ShowFuture && m.ColIdx < m.VisibleDays-1 {
-			m.ColIdx++
+		if !m.ShowFuture {
+			if m.ColIdx < len(m.dateKeys)-1 {
+				m.ColIdx++
+			} else if m.shiftDateWindow(1) {
+				if m.Data.distributeFutureTasksThrough(m.lastVisibleDate()) {
+					m.persist()
+				}
+			}
 			m.clampRow()
 		}
 	case "left", "h":
-		if !m.ShowFuture && m.ColIdx > 0 {
-			m.ColIdx--
+		if !m.ShowFuture {
+			if m.ColIdx > 0 {
+				m.ColIdx--
+			} else {
+				m.shiftDateWindow(-1)
+			}
 			m.clampRow()
 		}
 	case "up", "k":

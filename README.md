@@ -61,7 +61,7 @@ On the first run, `doitdoit` will ask where you want to store your data file (`d
 ### Keybindings
 
 #### Navigation
-*   In the main view, use **Arrow Keys** or **`h` `j` `k` `l`** to navigate between dated columns and tasks.
+*   In the main view, use **Arrow Keys** or **`h` `j` `k` `l`** to navigate between dated columns and tasks. Moving right past the last visible day scrolls the date window forward indefinitely; moving left scrolls back as far as Today.
 *   In the Future view, use **Up/Down** or **`j` `k`** to navigate its task list.
 *   **`f`**: Toggle between the main and Future views.
 
@@ -88,7 +88,7 @@ After scheduling a task, focus stays in its source list so the next task can be 
 The `doitdoit` binary supports several command-line flags and subcommands:
 
 *   `doitdoit`: Launch the main application.
-*   `doitdoit -days <number>`: Launch the app displaying a specific number of days (default is 3).
+*   `doitdoit -days <number>`: Set the number of days in the scrolling viewport (default is 3).
 *   `doitdoit -file <path>`: specify a path to the data file for this session.
 *   `doitdoit config show`: Display the current path of your data file.
 *   `doitdoit config move <new_path>`: Move your data file to a new location and update the configuration.

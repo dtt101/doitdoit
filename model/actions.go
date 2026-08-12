@@ -191,7 +191,7 @@ func (m *Model) scheduleTask(target moveTarget) bool {
 		dueDate = parsed.Format(dateLayout)
 		target = moveTarget{Date: dueDate}
 
-		lastVisible := today.AddDate(0, 0, m.VisibleDays-1)
+		lastVisible := m.lastVisibleDate()
 		if !parsed.After(lastVisible) {
 			targetKey = dueDate
 		}

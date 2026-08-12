@@ -47,6 +47,7 @@ type Model struct {
 
 	// Cache for date keys to keep order stable during a frame
 	dateKeys []string
+	todayKey string
 
 	// Terminal dimensions
 	width  int
@@ -82,6 +83,7 @@ func NewModel(filePath string, visibleDays int) (Model, error) {
 		VisibleDays: visibleDays,
 		State:       Browsing,
 		TextInput:   textinput.New(),
+		todayKey:    time.Now().Format(dateLayout),
 	}
 	m.configureTextInput("New task...")
 	m.Data.DistributeFutureTasks(visibleDays)
@@ -90,14 +92,43 @@ func NewModel(filePath string, visibleDays int) (Model, error) {
 }
 
 func (m *Model) updateDateKeys() {
-	// Generate keys for the next N days starting from today
+	// Reset the viewport to the next N days starting from today.
+	today := startOfDay(time.Now())
+	m.todayKey = today.Format(dateLayout)
+	m.updateDateKeysFrom(today)
+}
+
+func (m *Model) updateDateKeysFrom(firstDay time.Time) {
 	keys := make([]string, m.VisibleDays)
-	today := time.Now()
 	for i := 0; i < m.VisibleDays; i++ {
-		date := today.AddDate(0, 0, i)
+		date := firstDay.AddDate(0, 0, i)
 		keys[i] = date.Format("2006-01-02")
 	}
 	m.dateKeys = keys
+}
+
+func (m Model) firstVisibleDate() time.Time {
+	if len(m.dateKeys) > 0 {
+		if date, err := parseDate(m.dateKeys[0]); err == nil {
+			return date
+		}
+	}
+	return startOfDay(time.Now())
+}
+
+func (m Model) lastVisibleDate() time.Time {
+	return m.firstVisibleDate().AddDate(0, 0, m.VisibleDays-1)
+}
+
+// shiftDateWindow moves the viewport by one day. It never permits dates before
+// today, so navigation is infinite in the forward direction only.
+func (m *Model) shiftDateWindow(days int) bool {
+	firstDay := m.firstVisibleDate().AddDate(0, 0, days)
+	if firstDay.Before(startOfDay(time.Now())) {
+		return false
+	}
+	m.updateDateKeysFrom(firstDay)
+	return true
 }
 
 func (m Model) Init() tea.Cmd {

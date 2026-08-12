@@ -279,18 +279,26 @@ func (d TodoData) pruneOldTasks() bool {
 	return changed
 }
 
-// DistributeFutureTasks moves tasks from "Future" to specific dates if they are due
+// DistributeFutureTasks moves tasks from "Future" to specific dates if they are
+// due within the initial viewport starting today.
 func (d TodoData) DistributeFutureTasks(visibleDays int) {
+	d.distributeFutureTasksThrough(startOfDay(time.Now()).AddDate(0, 0, visibleDays-1))
+}
+
+// distributeFutureTasksThrough moves dated tasks out of Future once their date
+// has been loaded by the scrolling viewport. Undated tasks always remain in the
+// separate Future list.
+func (d TodoData) distributeFutureTasksThrough(lastVisible time.Time) bool {
 	futureTasks, ok := d["Future"]
 	if !ok || len(futureTasks) == 0 {
-		return
+		return false
 	}
 
 	today := startOfDay(time.Now())
-	lastVisible := today.AddDate(0, 0, visibleDays-1)
 	todayStr := today.Format(dateLayout)
 
 	remainingFuture := make([]Task, 0)
+	changed := false
 
 	for _, task := range futureTasks {
 		if task.DueDate == "" {
@@ -314,12 +322,14 @@ func (d TodoData) DistributeFutureTasks(visibleDays int) {
 
 			// Add to target date
 			d[targetDate] = append(d[targetDate], task)
+			changed = true
 		} else {
 			remainingFuture = append(remainingFuture, task)
 		}
 	}
 
 	d["Future"] = remainingFuture
+	return changed
 }
 
 // Helper to get sorted keys
