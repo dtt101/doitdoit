@@ -93,7 +93,9 @@ works similarly via the share sheet.
 
 ```
 web/
+├── icons/          # Android, favicon, and Apple home-screen icons
 ├── index.html      # shell, mustache template, font imports
+├── manifest.webmanifest # install metadata and maskable icon declarations
 ├── style.css       # the entire visual identity (CRT amber on warm black)
 ├── app.js          # OAuth, Dropbox API, rollover/prune, mutations, render
 ├── config.js       # public Dropbox app key + file path
