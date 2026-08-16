@@ -37,6 +37,10 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Author display rules (for example .connect/.board) must not override the
+   semantic hidden state toggled by app.js. */
+[hidden] { display: none !important; }
+
 html {
   background: var(--bg);
   -webkit-text-size-adjust: 100%;
