@@ -199,9 +199,13 @@ code {
 .meta__sync[data-state="error"]   { color: var(--danger); }
 
 .meta__menu {
-  color: var(--fg-dim);
+  color: var(--fg);
   font-size: 18px;
-  padding: 4px 8px;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  background: var(--bg-elev);
+  border: 1px solid var(--rule-bright);
   letter-spacing: 0.1em;
   line-height: 1;
 }
@@ -468,10 +472,10 @@ code {
 .task {
   display: flex;
   align-items: flex-start;
-  gap: var(--s-3);
-  padding: 10px 4px 10px 6px;
+  gap: 10px;
+  padding: 10px 0;
   position: relative;
-  border-bottom: 1px dashed transparent;
+  border-bottom: 1px dashed var(--rule);
   transition: background 180ms;
 }
 .board--animate .task { animation: taskEnter 280ms var(--ease-spring) both; }
@@ -501,15 +505,15 @@ code {
 }
 
 .task__check {
-  background: transparent;
-  border: none;
-  color: var(--fg);
+  background: var(--bg-elev);
+  border: 1px solid var(--rule-bright);
+  color: var(--accent-bright);
   font-family: inherit;
   font-size: 16px;
   cursor: pointer;
-  width: 40px;
-  min-height: 40px;
-  margin: -7px -8px -7px -6px;
+  width: 44px;
+  min-height: 44px;
+  margin: -7px 0;
   user-select: none;
   flex-shrink: 0;
   line-height: 1.4;
@@ -518,8 +522,10 @@ code {
   position: relative;
   z-index: 1;
 }
+.task__check:hover,
+.task__check:focus-visible { border-color: var(--accent); }
 
-.bracket { color: var(--fg-faint); }
+.bracket { color: var(--fg-soft); }
 .task__mark {
   color: var(--fg-soft);
   display: inline-block;
@@ -594,10 +600,12 @@ code {
 .task__del:active { color: var(--danger); transform: scale(0.92); }
 
 .task__drag {
-  color: var(--fg-faint);
-  width: 40px;
-  min-height: 40px;
-  margin: -7px -6px -7px 0;
+  color: var(--accent-bright);
+  background: var(--bg-elev);
+  border: 1px solid var(--rule-bright);
+  width: 44px;
+  min-height: 44px;
+  margin: -7px 0;
   flex-shrink: 0;
   font-size: 20px;
   line-height: 1;
@@ -608,7 +616,12 @@ code {
   -webkit-tap-highlight-color: transparent;
 }
 .task__drag:active,
-.task__drag[aria-pressed="true"] { color: var(--accent); cursor: grabbing; }
+.task__drag[aria-pressed="true"] {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+  cursor: grabbing;
+}
 .task--dragging { visibility: hidden; }
 .task--placeholder {
   border: 1px dashed var(--accent-dim);
@@ -714,19 +727,22 @@ code {
 }
 
 .prompt__submit {
-  background: transparent;
-  border: 1px solid var(--rule);
-  color: var(--fg-soft);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--bg);
   font-family: inherit;
   font-size: 14px;
-  padding: 4px 10px;
+  width: 40px;
+  min-height: 40px;
+  padding: 4px;
   cursor: pointer;
   transition: all 140ms;
   flex-shrink: 0;
 }
 .prompt__submit:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--accent-bright);
+  border-color: var(--accent-bright);
+  color: var(--bg);
 }
 
 .schedule {
@@ -743,8 +759,9 @@ code {
   flex: 0 0 auto;
   min-height: 30px;
   padding: 5px 9px;
-  border: 1px solid var(--rule);
-  color: var(--fg-dim);
+  border: 1px solid var(--rule-bright);
+  background: var(--bg-rise);
+  color: var(--fg-soft);
   font-size: 11px;
   line-height: 1;
   letter-spacing: 0.03em;
@@ -785,7 +802,17 @@ code {
 @media (max-width: 480px) {
   .prompt__hint { display: none; }
   .prompt { padding-top: 9px; }
-  .schedule__chip { min-height: 32px; }
+  .schedule {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+  }
+  .schedule__chip {
+    width: 100%;
+    min-height: 38px;
+    padding-inline: 6px;
+    text-align: center;
+  }
 }
 
 /* ── Toasts ─────────────────────────────────────────── */
@@ -932,7 +959,9 @@ code {
   width: 44px;
   height: 44px;
   margin: -10px -10px -10px 0;
-  color: var(--fg-dim);
+  color: var(--fg);
+  background: var(--bg-rise);
+  border: 1px solid var(--rule-bright);
 }
 .editor__field {
   display: flex;
@@ -1018,7 +1047,6 @@ code {
   .meta__path { display: none; }
   .app { padding-left: 12px; padding-right: 12px; }
   .task { gap: 8px; }
-  .task__del { opacity: 0.55; }
 }
 
 @media (prefers-reduced-motion: reduce) {

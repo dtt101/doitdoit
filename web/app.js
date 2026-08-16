@@ -653,6 +653,12 @@
   }
 
   // ── UI wiring ─────────────────────────────────────────────────────
+  function shortDateLabel(value) {
+    const date = parseDay(value);
+    if (!date) return "date…";
+    return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" }).format(date);
+  }
+
   function paintSchedule(root, attribute, target, dateInput, dateLabel) {
     root.querySelectorAll(`[${attribute}]`).forEach((button) => {
       const selected = button.getAttribute(attribute) === target.kind;
@@ -662,7 +668,7 @@
     const dateChip = dateInput.closest(".schedule__date");
     dateChip.classList.toggle("is-selected", target.kind === "custom");
     dateInput.value = target.date || "";
-    dateLabel.textContent = target.kind === "custom" && target.date ? target.date : "date…";
+    dateLabel.textContent = target.kind === "custom" && target.date ? shortDateLabel(target.date) : "date…";
   }
 
   function chooseSchedule(kind, scope) {
@@ -732,6 +738,7 @@
 
   let pointerDrag = null;
   let keyboardDrag = null;
+  let dragScrollFrame = null;
 
   function announceDrag(message) {
     dragStatus.textContent = "";
@@ -742,11 +749,9 @@
     return findTask(dayKey, id)?.task.title || "task";
   }
 
-  function beginPointerDrag(e, handle) {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
+  function beginDrag(handle, clientX, clientY, input) {
     const row = handle.closest(".task");
     if (!row || pointerDrag || keyboardDrag) return;
-    e.preventDefault();
     const rect = row.getBoundingClientRect();
     const ghost = row.cloneNode(true);
     ghost.classList.add("task-drag-ghost");
@@ -768,33 +773,79 @@
       row,
       ghost,
       placeholder,
-      offsetX: e.clientX - rect.left,
-      offsetY: e.clientY - rect.top,
+      offsetX: clientX - rect.left,
+      offsetY: clientY - rect.top,
+      lastX: clientX,
+      lastY: clientY,
+      input,
     };
-    handle.setPointerCapture?.(e.pointerId);
+    dragScrollFrame = requestAnimationFrame(scrollWhileDragging);
     announceDrag(`Picked up ${taskLabel(row.dataset.key, row.dataset.id)}`);
   }
 
-  function movePointerDrag(e) {
-    if (!pointerDrag) return;
+  function beginPointerDrag(e, handle) {
+    if (e.pointerType === "touch" || (e.pointerType === "mouse" && e.button !== 0)) return;
     e.preventDefault();
-    const drag = pointerDrag;
-    drag.ghost.style.left = (e.clientX - drag.offsetX) + "px";
-    drag.ghost.style.top = (e.clientY - drag.offsetY) + "px";
-    const edge = 72;
-    if (e.clientY < edge) window.scrollBy(0, -10);
-    else if (e.clientY > window.innerHeight - edge) window.scrollBy(0, 10);
+    beginDrag(handle, e.clientX, e.clientY, "pointer");
+    handle.setPointerCapture?.(e.pointerId);
+  }
 
-    const under = document.elementFromPoint(e.clientX, e.clientY);
+  function placeDrag(clientX, clientY) {
+    if (!pointerDrag) return;
+    const drag = pointerDrag;
+    drag.lastX = clientX;
+    drag.lastY = clientY;
+    drag.ghost.style.left = (clientX - drag.offsetX) + "px";
+    drag.ghost.style.top = (clientY - drag.offsetY) + "px";
+
+    const contentTop = document.querySelector(".hdr").getBoundingClientRect().bottom + 8;
+    const contentBottom = (promptBar.hidden ? window.innerHeight : promptBar.getBoundingClientRect().top) - 8;
+    const hitY = Math.max(contentTop, Math.min(clientY, contentBottom));
+    const under = document.elementFromPoint(clientX, hitY);
     const section = under?.closest?.(".day");
     if (!section) return;
     const list = section.querySelector(".tasks");
     const rows = Array.from(list.children).filter(
       (candidate) => candidate !== drag.row && candidate !== drag.placeholder
     );
-    const before = rows.find((candidate) => e.clientY < candidate.getBoundingClientRect().top + candidate.offsetHeight / 2);
+    const before = rows.find((candidate) => hitY < candidate.getBoundingClientRect().top + candidate.offsetHeight / 2);
     if (before) list.insertBefore(drag.placeholder, before);
     else list.appendChild(drag.placeholder);
+  }
+
+  function scrollWhileDragging() {
+    if (!pointerDrag) return;
+    const edge = 88;
+    const contentTop = document.querySelector(".hdr").getBoundingClientRect().bottom;
+    const contentBottom = promptBar.hidden ? window.innerHeight : promptBar.getBoundingClientRect().top;
+    let delta = 0;
+    if (pointerDrag.lastY < contentTop + edge) delta = -12;
+    else if (pointerDrag.lastY > contentBottom - edge) delta = 12;
+    if (delta) {
+      window.scrollBy(0, delta);
+      placeDrag(pointerDrag.lastX, pointerDrag.lastY);
+    }
+    dragScrollFrame = requestAnimationFrame(scrollWhileDragging);
+  }
+
+  function movePointerDrag(e) {
+    if (!pointerDrag || pointerDrag.input !== "pointer") return;
+    e.preventDefault();
+    placeDrag(e.clientX, e.clientY);
+  }
+
+  function beginTouchDrag(e, handle) {
+    if (e.touches.length !== 1) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    beginDrag(handle, touch.clientX, touch.clientY, "touch");
+  }
+
+  function moveTouchDrag(e) {
+    if (!pointerDrag || pointerDrag.input !== "touch" || !e.touches.length) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    placeDrag(touch.clientX, touch.clientY);
   }
 
   function finishPointerDrag(cancelled) {
@@ -814,6 +865,8 @@
     drag.placeholder.remove();
     drag.row.classList.remove("task--dragging");
     board.classList.remove("is-dragging");
+    if (dragScrollFrame) cancelAnimationFrame(dragScrollFrame);
+    dragScrollFrame = null;
     pointerDrag = null;
     state.interactionActive = false;
     if (!cancelled && moveTask(drag.sourceKey, drag.id, destinationKey, destinationIndex)) {
@@ -889,11 +942,18 @@
     focusDragHandle(cancelled ? drag.sourceKey : drag.dayKey, drag.id, false);
   }
 
+  function syncPromptHeight() {
+    if (promptBar.hidden) return;
+    const height = Math.ceil(promptBar.getBoundingClientRect().height);
+    document.documentElement.style.setProperty("--prompt-h", height + "px");
+  }
+
   function showBoard() {
     connectEl.hidden = true;
     board.hidden = false;
     promptBar.hidden = false;
     menuBtn.hidden = false;
+    requestAnimationFrame(syncPromptHeight);
   }
   function showConnect() {
     connectEl.hidden = false;
@@ -925,9 +985,24 @@
     const handle = e.target.closest(".task__drag");
     if (handle) beginPointerDrag(e, handle);
   });
+  board.addEventListener("touchstart", (e) => {
+    const handle = e.target.closest(".task__drag");
+    if (handle) beginTouchDrag(e, handle);
+  }, { passive: false });
   window.addEventListener("pointermove", movePointerDrag, { passive: false });
-  window.addEventListener("pointerup", () => finishPointerDrag(false));
-  window.addEventListener("pointercancel", () => finishPointerDrag(true));
+  window.addEventListener("pointerup", () => {
+    if (pointerDrag?.input === "pointer") finishPointerDrag(false);
+  });
+  window.addEventListener("pointercancel", () => {
+    if (pointerDrag?.input === "pointer") finishPointerDrag(true);
+  });
+  window.addEventListener("touchmove", moveTouchDrag, { passive: false });
+  window.addEventListener("touchend", () => {
+    if (pointerDrag?.input === "touch") finishPointerDrag(false);
+  });
+  window.addEventListener("touchcancel", () => {
+    if (pointerDrag?.input === "touch") finishPointerDrag(true);
+  });
 
   board.addEventListener("keydown", (e) => {
     const handle = e.target.closest(".task__drag");
@@ -1093,5 +1168,7 @@
   addDate.min = todayStr();
   editDate.min = todayStr();
   paintSchedule(addSchedule, "data-add-schedule", addTarget, addDate, addDateLabel);
+  if ("ResizeObserver" in window) new ResizeObserver(syncPromptHeight).observe(promptBar);
+  window.addEventListener("resize", syncPromptHeight);
   boot();
 })();

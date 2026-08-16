@@ -83,7 +83,7 @@ five-day window stay in Future until they come into range.
 - Drag the `≡` handle to reorder a task or move it between visible days and
   Future. With a keyboard, focus the handle, press Space or Enter to pick up,
   use the arrow keys to move, then press Space or Enter again to save.
-- Tap `[ ]` to toggle completion and `✕` to delete.
+- Tap `[ ]` to toggle completion. Delete is available inside the task editor.
 
 The original optional `!target` prefixes remain available as shortcuts and
 override the selected date control:
