@@ -73,15 +73,26 @@ npx http-server -p 8000
 Then open http://localhost:8000/. Add `http://localhost:8000/` to your
 Dropbox app's redirect URIs to test the OAuth round-trip locally.
 
-## Add-task syntax
+## Managing tasks
 
-The bottom prompt accepts plain text plus an optional `!target` prefix:
+Use the controls under the bottom prompt to add a task to Today, Tomorrow,
+Future, or a date from the device's date picker. Dates beyond the visible
+five-day window stay in Future until they come into range.
+
+- Tap a task title to edit its title or schedule.
+- Drag the `≡` handle to reorder a task or move it between visible days and
+  Future. With a keyboard, focus the handle, press Space or Enter to pick up,
+  use the arrow keys to move, then press Space or Enter again to save.
+- Tap `[ ]` to toggle completion and `✕` to delete.
+
+The original optional `!target` prefixes remain available as shortcuts and
+override the selected date control:
 
 | Input                          | Result                                |
 | ------------------------------ | ------------------------------------- |
 | `buy bread`                    | adds to today                         |
 | `!future write a postcard`     | adds to the Future bucket             |
-| `!2026-06-01 dentist`          | adds to that specific date            |
+| `!2027-06-01 dentist`          | schedules for that specific date      |
 
 ## Mobile install
 

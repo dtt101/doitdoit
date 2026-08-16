@@ -81,30 +81,42 @@
 
 <footer class="prompt" id="prompt-bar" hidden>
   <form id="add-form" class="prompt__form" autocomplete="off">
-    <span class="prompt__caret" aria-hidden="true">&gt;</span>
-    <input
-      id="add-input"
-      class="prompt__input"
-      type="text"
-      autocomplete="off"
-      autocapitalize="off"
-      autocorrect="off"
-      spellcheck="false"
-      placeholder="add a task… use !future or !YYYY-MM-DD to schedule"
-      aria-label="new task"
-    />
-    <button class="prompt__submit" type="submit" aria-label="add task">⏎</button>
+    <div class="prompt__entry">
+      <span class="prompt__caret" aria-hidden="true">&gt;</span>
+      <input
+        id="add-input"
+        class="prompt__input"
+        type="text"
+        autocomplete="off"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
+        placeholder="add a task…"
+        aria-label="new task"
+      />
+      <button class="prompt__submit" type="submit" aria-label="add task">⏎</button>
+    </div>
+    <div class="schedule" id="add-schedule" aria-label="schedule task">
+      <button class="schedule__chip is-selected" type="button" data-add-schedule="today" aria-pressed="true">today</button>
+      <button class="schedule__chip" type="button" data-add-schedule="tomorrow" aria-pressed="false">tomorrow</button>
+      <button class="schedule__chip" type="button" data-add-schedule="future" aria-pressed="false">future</button>
+      <label class="schedule__chip schedule__date">
+        <span id="add-date-label">date…</span>
+        <input id="add-date" type="date" aria-label="choose a custom task date" />
+      </label>
+    </div>
   </form>
   <div class="prompt__hint">
+    <span>tap a task to edit</span>
+    <span class="dot">·</span>
+    <span>drag ≡ to reorder</span>
+    <span class="dot">·</span>
     <span>tap [&nbsp;] to toggle</span>
-    <span class="dot">·</span>
-    <span>tap ✕ to remove</span>
-    <span class="dot">·</span>
-    <span>!future · !YYYY-MM-DD to schedule</span>
   </div>
 </footer>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
+<div class="sr-only" id="drag-status" aria-live="assertive"></div>
 
 <dialog id="menu-dialog" class="menu">
   <div class="menu__hdr">menu</div>
@@ -114,31 +126,60 @@
   <button class="menu__close" data-act="close">close</button>
 </dialog>
 
+<dialog id="edit-dialog" class="editor">
+  <form id="edit-form" class="editor__form" autocomplete="off">
+    <div class="editor__handle" aria-hidden="true"></div>
+    <div class="editor__hdr">
+      <span>edit task</span>
+      <button class="editor__close" type="button" data-edit-action="cancel" aria-label="close editor">✕</button>
+    </div>
+    <label class="editor__field">
+      <span class="editor__label">task</span>
+      <input id="edit-title" type="text" autocomplete="off" aria-label="task title" required />
+    </label>
+    <fieldset class="editor__field">
+      <legend class="editor__label">schedule</legend>
+      <div class="schedule schedule--editor" id="edit-schedule">
+        <button class="schedule__chip" type="button" data-edit-schedule="today" aria-pressed="false">today</button>
+        <button class="schedule__chip" type="button" data-edit-schedule="tomorrow" aria-pressed="false">tomorrow</button>
+        <button class="schedule__chip" type="button" data-edit-schedule="future" aria-pressed="false">future</button>
+        <label class="schedule__chip schedule__date">
+          <span id="edit-date-label">date…</span>
+          <input id="edit-date" type="date" aria-label="choose a custom task date" />
+        </label>
+      </div>
+    </fieldset>
+    <div class="editor__actions">
+      <button class="editor__delete" type="button" data-edit-action="delete">delete</button>
+      <span class="editor__spacer"></span>
+      <button class="editor__cancel" type="button" data-edit-action="cancel">cancel</button>
+      <button class="editor__save" type="submit">save</button>
+    </div>
+  </form>
+</dialog>
+
 <template id="tmpl-board">
 {{#days}}
 <section class="day day--{{cls}}" data-key="{{key}}">
   <h2 class="day__head">
     <span class="day__rule"></span>
     <span class="day__label">{{label}}</span>
-    {{#count}}<span class="day__count">{{count}}</span>{{/count}}
+    <span class="day__count">{{count}}</span>
     <span class="day__rule day__rule--fill"></span>
   </h2>
-  {{#hasTasks}}
   <ul class="tasks">
     {{#tasks}}
     <li class="task{{#completed}} task--done{{/completed}}" data-id="{{id}}" data-key="{{dayKey}}">
       <button class="task__check" data-action="toggle" aria-label="toggle complete">
         <span class="bracket">[</span><span class="task__mark">{{mark}}</span><span class="bracket">]</span>
       </button>
-      <span class="task__title">{{title}}</span>
+      <button class="task__title" data-action="edit" aria-label="edit {{title}}">{{title}}</button>
       <button class="task__del" data-action="delete" aria-label="delete">✕</button>
+      <button class="task__drag" data-action="drag" aria-label="reorder {{title}}" aria-pressed="false">≡</button>
     </li>
     {{/tasks}}
   </ul>
-  {{/hasTasks}}
-  {{^hasTasks}}
-  <div class="day__empty">— nothing here —</div>
-  {{/hasTasks}}
+  <div class="day__empty{{#hasTasks}} is-hidden{{/hasTasks}}">— nothing here —</div>
 </section>
 {{/days}}
 </template>

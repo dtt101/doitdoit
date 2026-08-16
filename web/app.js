@@ -31,6 +31,16 @@
   const metaPath = $("meta-path");
   const menuBtn = $("btn-menu");
   const menuDialog = $("menu-dialog");
+  const addSchedule = $("add-schedule");
+  const addDate = $("add-date");
+  const addDateLabel = $("add-date-label");
+  const editDialog = $("edit-dialog");
+  const editForm = $("edit-form");
+  const editTitle = $("edit-title");
+  const editSchedule = $("edit-schedule");
+  const editDate = $("edit-date");
+  const editDateLabel = $("edit-date-label");
+  const dragStatus = $("drag-status");
 
   const tmplBoard = $("tmpl-board").innerHTML;
   Mustache.parse(tmplBoard);
@@ -46,7 +56,13 @@
     tokenExp: 0,
     dirty: false,
     saving: false,
+    rendered: false,
+    interactionActive: false,
+    editing: null,
   };
+
+  let addTarget = { kind: "today", date: "" };
+  let editTarget = { kind: "today", date: "" };
 
   // ── Sync indicator ─────────────────────────────────────────────────
   const SPIN = ["[|]", "[/]", "[-]", "[\\]"];
@@ -275,7 +291,8 @@
   function parseDay(s) {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || "");
     if (!m) return null;
-    return new Date(+m[1], +m[2] - 1, +m[3]);
+    const d = new Date(+m[1], +m[2] - 1, +m[3]);
+    return todayStr(d) === s ? d : null;
   }
   function addDays(d, n) {
     const x = new Date(d);
@@ -284,6 +301,37 @@
   }
   function startOfDay(d) {
     return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+
+  function lastVisibleDate() {
+    return startOfDay(addDays(new Date(), VISIBLE_DAYS - 1));
+  }
+
+  function storageTarget(target) {
+    if (target.kind === "future") return { key: "Future", due: "" };
+
+    let date = target.kind === "tomorrow"
+      ? addDays(new Date(), 1)
+      : target.kind === "custom"
+        ? parseDay(target.date)
+        : new Date();
+    if (!date) return { error: "choose a valid date" };
+    date = startOfDay(date);
+    const today = startOfDay(new Date());
+    if (date < today) date = today;
+    const due = todayStr(date);
+    return {
+      key: date > lastVisibleDate() ? "Future" : due,
+      due,
+    };
+  }
+
+  function targetForTask(dayKey, task) {
+    if (dayKey === "Future" && !task.due_date) return { kind: "future", date: "" };
+    const due = task.due_date || dayKey;
+    if (due === todayStr()) return { kind: "today", date: due };
+    if (due === todayStr(addDays(new Date(), 1))) return { kind: "tomorrow", date: due };
+    return { kind: "custom", date: due };
   }
 
   // model/task.go:132 — rollOverIncompleteTasks
@@ -410,16 +458,35 @@
     };
   }
 
-  function render() {
+  function render(opts = {}) {
     if (!state.data) return;
+    const preserveScroll = opts.preserveScroll !== false && state.rendered;
+    const scrollY = preserveScroll ? window.scrollY : 0;
     // re-distribute on each render so future-dated tasks flow into visible days
     distributeFutureTasks(state.data, VISIBLE_DAYS);
     const view = buildView(state.data);
+    board.classList.toggle("board--animate", !!opts.animate);
     board.innerHTML = Mustache.render(tmplBoard, view);
+    state.rendered = true;
 
     // Empty state if literally no tasks anywhere
     const totalTasks = view.days.reduce((n, d) => n + d.tasks.length, 0);
     emptyState.hidden = totalTasks > 0;
+    if (preserveScroll) requestAnimationFrame(() => window.scrollTo(0, scrollY));
+  }
+
+  function daySection(dayKey) {
+    return Array.from(board.querySelectorAll(".day")).find((el) => el.dataset.key === dayKey) || null;
+  }
+
+  function updateDayChrome(dayKey) {
+    const section = daySection(dayKey);
+    if (!section) return;
+    const count = (state.data[dayKey] || []).length;
+    section.querySelector(".day__count").textContent = count || "";
+    section.querySelector(".day__empty").classList.toggle("is-hidden", count > 0);
+    const total = buildView(state.data).days.reduce((n, d) => n + d.tasks.length, 0);
+    emptyState.hidden = total > 0;
   }
 
   // ── Mutations ─────────────────────────────────────────────────────
@@ -427,31 +494,31 @@
     return Date.now() + "-" + Math.floor(Math.random() * 1e7);
   }
 
-  function parseAddInput(raw) {
+  function parseAddInput(raw, selectedTarget) {
     let title = raw.trim();
-    let key = todayStr();
-    let due = "";
+    let target = selectedTarget;
 
     // !target prefix: !future or !YYYY-MM-DD
     const m = /^!(\S+)\s+(.+)$/.exec(title);
     if (m) {
-      const target = m[1].toLowerCase();
+      const prefix = m[1].toLowerCase();
       title = m[2].trim();
-      if (target === "future") {
-        key = "Future";
-      } else if (/^\d{4}-\d{2}-\d{2}$/.test(target)) {
-        key = target;
-        due = target;
+      if (prefix === "future") {
+        target = { kind: "future", date: "" };
+      } else if (/^\d{4}-\d{2}-\d{2}$/.test(prefix)) {
+        target = { kind: "custom", date: prefix };
       } else {
         return { error: "unknown target — use !future or !YYYY-MM-DD" };
       }
     }
     if (!title) return { error: "task title cannot be empty" };
-    return { title, key, due };
+    const destination = storageTarget(target);
+    if (destination.error) return destination;
+    return { title, key: destination.key, due: destination.due };
   }
 
-  function addTask(rawInput) {
-    const parsed = parseAddInput(rawInput);
+  function addTask(rawInput, selectedTarget) {
+    const parsed = parseAddInput(rawInput, selectedTarget);
     if (parsed.error) { toast(parsed.error, "err"); return; }
     const t = {
       id: genId(),
@@ -461,9 +528,14 @@
     };
     if (parsed.due) t.due_date = parsed.due;
     if (!state.data[parsed.key]) state.data[parsed.key] = [];
-    state.data[parsed.key].push(t);
-    render();
+    insertBeforeCompleted(state.data[parsed.key], t);
+    render({ preserveScroll: true });
     queueSave();
+  }
+
+  function insertBeforeCompleted(list, task) {
+    const idx = list.findIndex((candidate) => candidate.completed);
+    list.splice(idx < 0 ? list.length : idx, 0, task);
   }
 
   function findTask(dayKey, id) {
@@ -477,7 +549,13 @@
     const f = findTask(dayKey, id);
     if (!f) return;
     f.task.completed = !f.task.completed;
-    render();
+    const row = Array.from(board.querySelectorAll(".task")).find(
+      (el) => el.dataset.key === dayKey && el.dataset.id === String(id)
+    );
+    if (row) {
+      row.classList.toggle("task--done", f.task.completed);
+      row.querySelector(".task__mark").textContent = f.task.completed ? "x" : " ";
+    }
     queueSave();
   }
 
@@ -486,8 +564,27 @@
     if (!f) return;
     f.list.splice(f.idx, 1);
     if (f.list.length === 0 && dayKey !== "Future") delete state.data[dayKey];
-    render();
+    const row = Array.from(board.querySelectorAll(".task")).find(
+      (el) => el.dataset.key === dayKey && el.dataset.id === String(id)
+    );
+    row?.remove();
+    updateDayChrome(dayKey);
     queueSave();
+  }
+
+  function moveTask(dayKey, id, destinationKey, destinationIndex) {
+    const found = findTask(dayKey, id);
+    if (!found) return false;
+    const task = found.task;
+    found.list.splice(found.idx, 1);
+    if (found.list.length === 0 && dayKey !== "Future") delete state.data[dayKey];
+
+    if (destinationKey === "Future") delete task.due_date;
+    else task.due_date = destinationKey;
+    const targetList = state.data[destinationKey] || (state.data[destinationKey] = []);
+    const index = Math.max(0, Math.min(destinationIndex, targetList.length));
+    targetList.splice(index, 0, task);
+    return true;
   }
 
   // ── Save (debounced + conflict-aware) ─────────────────────────────
@@ -500,6 +597,7 @@
   }
 
   async function doSave() {
+    if (state.interactionActive) { saveTimer = setTimeout(doSave, 400); return; }
     if (state.saving) { saveTimer = setTimeout(doSave, 400); return; }
     state.saving = true;
     setSync("syncing");
@@ -523,9 +621,11 @@
   }
 
   async function reload(opts = {}) {
+    if (state.interactionActive) return;
     setSync("syncing");
     try {
       const { data, rev } = await dbxDownload();
+      const before = state.data ? JSON.stringify(state.data) : null;
       state.data = data;
       state.rev = rev;
       const r1 = rollOverIncompleteTasks(state.data);
@@ -534,7 +634,12 @@
         // persist rollover/prune so the CLI sees a consistent file too
         state.rev = await dbxUpload(state.data, state.rev);
       }
-      render();
+      // Normalize the in-memory view before comparing so an unchanged focus
+      // reload does not rebuild the board just because dated Future tasks moved.
+      distributeFutureTasks(state.data, VISIBLE_DAYS);
+      if (before !== JSON.stringify(state.data) || !state.rendered) {
+        render({ animate: !state.rendered, preserveScroll: state.rendered });
+      }
       setSync("idle");
       if (!opts.silent) {
         // subtle confirm only on explicit reloads
@@ -548,12 +653,247 @@
   }
 
   // ── UI wiring ─────────────────────────────────────────────────────
+  function paintSchedule(root, attribute, target, dateInput, dateLabel) {
+    root.querySelectorAll(`[${attribute}]`).forEach((button) => {
+      const selected = button.getAttribute(attribute) === target.kind;
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
+    const dateChip = dateInput.closest(".schedule__date");
+    dateChip.classList.toggle("is-selected", target.kind === "custom");
+    dateInput.value = target.date || "";
+    dateLabel.textContent = target.kind === "custom" && target.date ? target.date : "date…";
+  }
+
+  function chooseSchedule(kind, scope) {
+    if (scope === "add") {
+      addTarget = { kind, date: kind === "custom" ? addDate.value : "" };
+      paintSchedule(addSchedule, "data-add-schedule", addTarget, addDate, addDateLabel);
+    } else {
+      editTarget = { kind, date: kind === "custom" ? editDate.value : "" };
+      paintSchedule(editSchedule, "data-edit-schedule", editTarget, editDate, editDateLabel);
+    }
+  }
+
+  function openEditor(dayKey, id) {
+    const found = findTask(dayKey, id);
+    if (!found) return;
+    state.editing = { dayKey, id };
+    state.interactionActive = true;
+    editTitle.value = found.task.title;
+    editTarget = targetForTask(dayKey, found.task);
+    paintSchedule(editSchedule, "data-edit-schedule", editTarget, editDate, editDateLabel);
+    if (typeof editDialog.showModal === "function") editDialog.showModal();
+    else editDialog.setAttribute("open", "");
+    requestAnimationFrame(() => editTitle.focus({ preventScroll: true }));
+  }
+
+  function focusTaskTitle(dayKey, id) {
+    requestAnimationFrame(() => {
+      const row = Array.from(board.querySelectorAll(".task")).find(
+        (candidate) => candidate.dataset.key === dayKey && candidate.dataset.id === String(id)
+      );
+      row?.querySelector(".task__title")?.focus({ preventScroll: true });
+    });
+  }
+
+  function closeEditor(returnTarget = state.editing) {
+    state.editing = null;
+    state.interactionActive = false;
+    if (editDialog.open && typeof editDialog.close === "function") editDialog.close();
+    else editDialog.removeAttribute("open");
+    if (returnTarget) focusTaskTitle(returnTarget.dayKey, returnTarget.id);
+  }
+
+  function saveEditor() {
+    if (!state.editing) return;
+    const title = editTitle.value.trim();
+    if (!title) { toast("task title cannot be empty", "err"); editTitle.focus(); return; }
+    const destination = storageTarget(editTarget);
+    if (destination.error) { toast(destination.error, "err"); return; }
+    const { dayKey, id } = state.editing;
+    const found = findTask(dayKey, id);
+    if (!found) { closeEditor(); return; }
+    const task = found.task;
+    task.title = title;
+    if (destination.due) task.due_date = destination.due;
+    else delete task.due_date;
+
+    if (destination.key !== dayKey) {
+      found.list.splice(found.idx, 1);
+      if (found.list.length === 0 && dayKey !== "Future") delete state.data[dayKey];
+      const targetList = state.data[destination.key] || (state.data[destination.key] = []);
+      insertBeforeCompleted(targetList, task);
+    }
+    closeEditor({ dayKey: destination.key, id });
+    render({ preserveScroll: true });
+    queueSave();
+  }
+
+  let pointerDrag = null;
+  let keyboardDrag = null;
+
+  function announceDrag(message) {
+    dragStatus.textContent = "";
+    requestAnimationFrame(() => { dragStatus.textContent = message; });
+  }
+
+  function taskLabel(dayKey, id) {
+    return findTask(dayKey, id)?.task.title || "task";
+  }
+
+  function beginPointerDrag(e, handle) {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const row = handle.closest(".task");
+    if (!row || pointerDrag || keyboardDrag) return;
+    e.preventDefault();
+    const rect = row.getBoundingClientRect();
+    const ghost = row.cloneNode(true);
+    ghost.classList.add("task-drag-ghost");
+    ghost.setAttribute("aria-hidden", "true");
+    ghost.style.width = rect.width + "px";
+    ghost.style.left = rect.left + "px";
+    ghost.style.top = rect.top + "px";
+    const placeholder = document.createElement("li");
+    placeholder.className = "task task--placeholder";
+    placeholder.style.height = rect.height + "px";
+    row.parentNode.insertBefore(placeholder, row);
+    row.classList.add("task--dragging");
+    document.body.appendChild(ghost);
+    board.classList.add("is-dragging");
+    state.interactionActive = true;
+    pointerDrag = {
+      id: row.dataset.id,
+      sourceKey: row.dataset.key,
+      row,
+      ghost,
+      placeholder,
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+    };
+    handle.setPointerCapture?.(e.pointerId);
+    announceDrag(`Picked up ${taskLabel(row.dataset.key, row.dataset.id)}`);
+  }
+
+  function movePointerDrag(e) {
+    if (!pointerDrag) return;
+    e.preventDefault();
+    const drag = pointerDrag;
+    drag.ghost.style.left = (e.clientX - drag.offsetX) + "px";
+    drag.ghost.style.top = (e.clientY - drag.offsetY) + "px";
+    const edge = 72;
+    if (e.clientY < edge) window.scrollBy(0, -10);
+    else if (e.clientY > window.innerHeight - edge) window.scrollBy(0, 10);
+
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const section = under?.closest?.(".day");
+    if (!section) return;
+    const list = section.querySelector(".tasks");
+    const rows = Array.from(list.children).filter(
+      (candidate) => candidate !== drag.row && candidate !== drag.placeholder
+    );
+    const before = rows.find((candidate) => e.clientY < candidate.getBoundingClientRect().top + candidate.offsetHeight / 2);
+    if (before) list.insertBefore(drag.placeholder, before);
+    else list.appendChild(drag.placeholder);
+  }
+
+  function finishPointerDrag(cancelled) {
+    if (!pointerDrag) return;
+    const drag = pointerDrag;
+    let destinationKey = drag.sourceKey;
+    let destinationIndex = 0;
+    if (!cancelled) {
+      const section = drag.placeholder.closest(".day");
+      destinationKey = section?.dataset.key || drag.sourceKey;
+      destinationIndex = Array.from(drag.placeholder.parentNode.children)
+        .filter((candidate) => candidate !== drag.row && candidate !== drag.placeholder)
+        .filter((candidate) => candidate.compareDocumentPosition(drag.placeholder) & Node.DOCUMENT_POSITION_FOLLOWING)
+        .length;
+    }
+    drag.ghost.remove();
+    drag.placeholder.remove();
+    drag.row.classList.remove("task--dragging");
+    board.classList.remove("is-dragging");
+    pointerDrag = null;
+    state.interactionActive = false;
+    if (!cancelled && moveTask(drag.sourceKey, drag.id, destinationKey, destinationIndex)) {
+      render({ preserveScroll: true });
+      queueSave();
+      announceDrag(`Moved ${taskLabel(destinationKey, drag.id)} to ${destinationKey === "Future" ? "Future" : destinationKey}`);
+    } else {
+      announceDrag("Move cancelled");
+    }
+  }
+
+  function focusDragHandle(dayKey, id, grabbed) {
+    requestAnimationFrame(() => {
+      const row = Array.from(board.querySelectorAll(".task")).find(
+        (candidate) => candidate.dataset.key === dayKey && candidate.dataset.id === String(id)
+      );
+      const handle = row?.querySelector(".task__drag");
+      if (handle) {
+        handle.setAttribute("aria-pressed", String(!!grabbed));
+        handle.focus({ preventScroll: true });
+      }
+    });
+  }
+
+  function beginKeyboardDrag(row) {
+    keyboardDrag = {
+      id: row.dataset.id,
+      dayKey: row.dataset.key,
+      sourceKey: row.dataset.key,
+      snapshot: JSON.stringify(state.data),
+    };
+    state.interactionActive = true;
+    row.querySelector(".task__drag").setAttribute("aria-pressed", "true");
+    announceDrag(`Picked up ${taskLabel(keyboardDrag.dayKey, keyboardDrag.id)}. Use arrow keys to move.`);
+  }
+
+  function keyboardMove(key) {
+    const drag = keyboardDrag;
+    const found = findTask(drag.dayKey, drag.id);
+    if (!found) return;
+    let destinationKey = drag.dayKey;
+    let destinationIndex = found.idx;
+    if (key === "ArrowUp") destinationIndex--;
+    else if (key === "ArrowDown") destinationIndex++;
+    else {
+      const keys = Array.from(board.querySelectorAll(".day")).map((section) => section.dataset.key);
+      const sectionIndex = keys.indexOf(drag.dayKey) + (key === "ArrowLeft" ? -1 : 1);
+      if (sectionIndex < 0 || sectionIndex >= keys.length) return;
+      destinationKey = keys[sectionIndex];
+      destinationIndex = Math.min(found.idx, (state.data[destinationKey] || []).length);
+    }
+    if (destinationKey === drag.dayKey && (destinationIndex < 0 || destinationIndex >= found.list.length)) return;
+    if (!moveTask(drag.dayKey, drag.id, destinationKey, destinationIndex)) return;
+    drag.dayKey = destinationKey;
+    render({ preserveScroll: true });
+    focusDragHandle(drag.dayKey, drag.id, true);
+    announceDrag(`Moved to ${destinationKey === "Future" ? "Future" : destinationKey}, position ${destinationIndex + 1}`);
+  }
+
+  function finishKeyboardDrag(cancelled) {
+    if (!keyboardDrag) return;
+    const drag = keyboardDrag;
+    if (cancelled) {
+      state.data = JSON.parse(drag.snapshot);
+      render({ preserveScroll: true });
+      announceDrag("Move cancelled");
+    } else {
+      queueSave();
+      announceDrag("Task position saved");
+    }
+    keyboardDrag = null;
+    state.interactionActive = false;
+    focusDragHandle(cancelled ? drag.sourceKey : drag.dayKey, drag.id, false);
+  }
+
   function showBoard() {
     connectEl.hidden = true;
     board.hidden = false;
     promptBar.hidden = false;
     menuBtn.hidden = false;
-    requestAnimationFrame(() => addInput && addInput.focus({ preventScroll: true }));
   }
   function showConnect() {
     connectEl.hidden = false;
@@ -573,6 +913,7 @@
     const dayKey = li.dataset.key;
     const action = btn.dataset.action;
     if (action === "toggle") toggleTask(dayKey, id);
+    else if (action === "edit") openEditor(dayKey, id);
     else if (action === "delete") {
       li.classList.add("task--exit");
       // wait for exit animation, then mutate
@@ -580,12 +921,77 @@
     }
   });
 
+  board.addEventListener("pointerdown", (e) => {
+    const handle = e.target.closest(".task__drag");
+    if (handle) beginPointerDrag(e, handle);
+  });
+  window.addEventListener("pointermove", movePointerDrag, { passive: false });
+  window.addEventListener("pointerup", () => finishPointerDrag(false));
+  window.addEventListener("pointercancel", () => finishPointerDrag(true));
+
+  board.addEventListener("keydown", (e) => {
+    const handle = e.target.closest(".task__drag");
+    if (!handle) return;
+    const row = handle.closest(".task");
+    if ((e.key === " " || e.key === "Enter") && !keyboardDrag) {
+      e.preventDefault();
+      beginKeyboardDrag(row);
+    } else if ((e.key === " " || e.key === "Enter") && keyboardDrag) {
+      e.preventDefault();
+      finishKeyboardDrag(false);
+    } else if (e.key === "Escape" && keyboardDrag) {
+      e.preventDefault();
+      finishKeyboardDrag(true);
+    } else if (keyboardDrag && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+      e.preventDefault();
+      keyboardMove(e.key);
+    }
+  });
+
   addForm.addEventListener("submit", (e) => {
     e.preventDefault();
     const v = addInput.value;
     if (!v.trim()) return;
-    addTask(v);
+    addTask(v, addTarget);
     addInput.value = "";
+  });
+
+  addSchedule.addEventListener("click", (e) => {
+    const button = e.target.closest("[data-add-schedule]");
+    if (button) chooseSchedule(button.dataset.addSchedule, "add");
+  });
+  addDate.addEventListener("change", () => {
+    if (!addDate.value) return;
+    addTarget = { kind: "custom", date: addDate.value };
+    paintSchedule(addSchedule, "data-add-schedule", addTarget, addDate, addDateLabel);
+  });
+
+  editSchedule.addEventListener("click", (e) => {
+    const button = e.target.closest("[data-edit-schedule]");
+    if (button) chooseSchedule(button.dataset.editSchedule, "edit");
+  });
+  editDate.addEventListener("change", () => {
+    if (!editDate.value) return;
+    editTarget = { kind: "custom", date: editDate.value };
+    paintSchedule(editSchedule, "data-edit-schedule", editTarget, editDate, editDateLabel);
+  });
+  editForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveEditor();
+  });
+  editDialog.addEventListener("click", (e) => {
+    const action = e.target.closest("[data-edit-action]")?.dataset.editAction;
+    if (action === "cancel") closeEditor();
+    else if (action === "delete" && state.editing) {
+      const { dayKey, id } = state.editing;
+      closeEditor();
+      deleteTask(dayKey, id);
+    }
+    else if (e.target === editDialog) closeEditor();
+  });
+  editDialog.addEventListener("cancel", (e) => {
+    e.preventDefault();
+    closeEditor();
   });
 
   $("btn-connect").addEventListener("click", startOAuth);
@@ -638,7 +1044,13 @@
 
   // Keyboard shortcut: `/` focuses input (when not already typing)
   document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && pointerDrag) {
+      e.preventDefault();
+      finishPointerDrag(true);
+      return;
+    }
     if (e.key === "/" && document.activeElement !== addInput) {
+      if (state.interactionActive) return;
       const tag = document.activeElement?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       e.preventDefault();
@@ -676,7 +1088,10 @@
   }
 
   // expose minimal debug surface
-  window.doitdoit = { reload, logout, state };
+  window.doitdoit = { reload, logout, state, storageTarget, parseAddInput };
 
+  addDate.min = todayStr();
+  editDate.min = todayStr();
+  paintSchedule(addSchedule, "data-add-schedule", addTarget, addDate, addDateLabel);
   boot();
 })();
