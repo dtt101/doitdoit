@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -49,6 +50,11 @@ type Model struct {
 	dateKeys []string
 	todayKey string
 
+	// Last observed state of the data file, so background reload checks can
+	// tell external writes apart from our own.
+	dataModTime time.Time
+	dataSize    int64
+
 	// Terminal dimensions
 	width  int
 	height int
@@ -88,7 +94,17 @@ func NewModel(filePath string, visibleDays int) (Model, error) {
 	m.configureTextInput("New task...")
 	m.Data.DistributeFutureTasks(visibleDays)
 	m.updateDateKeys()
+	m.trackFileState()
 	return m, nil
+}
+
+// trackFileState records the data file's mtime and size so the reload ticker
+// can ignore writes made by this process.
+func (m *Model) trackFileState() {
+	if fi, err := os.Stat(m.FilePath); err == nil {
+		m.dataModTime = fi.ModTime()
+		m.dataSize = fi.Size()
+	}
 }
 
 func (m *Model) updateDateKeys() {
@@ -132,15 +148,19 @@ func (m *Model) shiftDateWindow(days int) bool {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(textinput.Blink, dateTick())
+	return tea.Batch(textinput.Blink, dateTick(), reloadTick())
 }
 
+// persist is last-writer-wins: an external edit landing between the previous
+// reload check and this save is overwritten, the same trade-off the web app
+// makes. The reload ticker keeps that window to a few seconds.
 func (m *Model) persist() {
 	if err := m.Data.Save(m.FilePath); err != nil {
 		m.Err = err
 		return
 	}
 	m.Err = nil
+	m.trackFileState()
 }
 
 func (m Model) getCurrentKey() string {

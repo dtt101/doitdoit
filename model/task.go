@@ -38,11 +38,11 @@ type Task struct {
 // TodoData maps a date string (YYYY-MM-DD) to a list of tasks
 type TodoData map[string][]Task
 
-func Load(path string) (TodoData, error) {
+// loadRaw reads and parses the JSON file without any side effects (no text
+// import, no rollover, no save-back). A missing file yields an empty map.
+func loadRaw(path string) (TodoData, error) {
 	data := make(TodoData)
-	dirty := false
 
-	// Check if file exists
 	if _, err := os.Stat(path); err == nil {
 		bytes, err := os.ReadFile(path)
 		if err != nil {
@@ -53,6 +53,16 @@ func Load(path string) (TodoData, error) {
 			return nil, err
 		}
 	}
+
+	return data, nil
+}
+
+func Load(path string) (TodoData, error) {
+	data, err := loadRaw(path)
+	if err != nil {
+		return nil, err
+	}
+	dirty := false
 
 	// Import tasks from text file if it exists
 	imported, err := data.importFromTextFile(path)
