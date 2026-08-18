@@ -14,7 +14,8 @@ import (
 // the roles the UI needs rather than a full terminal palette.
 type Theme struct {
 	Text      lipgloss.TerminalColor // regular task text
-	Subtle    lipgloss.TerminalColor // borders, completed tasks, help text
+	Subtle    lipgloss.TerminalColor // completed tasks, help text
+	Border    lipgloss.TerminalColor // unfocused column borders
 	Highlight lipgloss.TerminalColor // selection, focused column
 	Key       lipgloss.TerminalColor // key hints in the help bar
 	Special   lipgloss.TerminalColor // day titles
@@ -29,6 +30,7 @@ func DefaultTheme() Theme {
 	return Theme{
 		Text:      lipgloss.AdaptiveColor{Light: "#191919", Dark: "#F8F8F2"},
 		Subtle:    lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#6272A4"},
+		Border:    lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#6272A4"},
 		Highlight: lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#FF79C6"},
 		Key:       lipgloss.AdaptiveColor{Light: "#9B9B9B", Dark: "#BD93F9"},
 		Special:   lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#50FA7B"},
@@ -75,9 +77,17 @@ func ThemeFromPalette(palette map[string]string) (Theme, error) {
 			return Theme{}, fmt.Errorf("palette is missing %q", key)
 		}
 	}
+	// Omarchy's `muted` is a background-tier grey (selections, borders); the
+	// dim *text* colour is `dark_foreground`. Use it for subtle text so
+	// completed tasks and help stay readable, keeping `muted` for borders.
+	subtle := palette["dark_foreground"]
+	if subtle == "" {
+		subtle = palette["muted"]
+	}
 	return Theme{
 		Text:      lipgloss.Color(palette["foreground"]),
-		Subtle:    lipgloss.Color(palette["muted"]),
+		Subtle:    lipgloss.Color(subtle),
+		Border:    lipgloss.Color(palette["muted"]),
 		Highlight: lipgloss.Color(palette["accent"]),
 		Key:       lipgloss.Color(palette["magenta"]),
 		Special:   lipgloss.Color(palette["green"]),

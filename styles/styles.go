@@ -48,7 +48,7 @@ func Apply(t Theme) {
 
 	ColumnStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(Subtle).
+		BorderForeground(t.Border).
 		Padding(1, 1).
 		Margin(0, 1).
 		Width(30)

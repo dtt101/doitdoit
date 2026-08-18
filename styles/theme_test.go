@@ -72,6 +72,22 @@ func TestBuiltinThemeTokyoNight(t *testing.T) {
 	if theme.Text != lipgloss.Color("#a9b1d6") {
 		t.Errorf("Text = %v, want the tokyo-night foreground #a9b1d6", theme.Text)
 	}
+	if theme.Subtle != lipgloss.Color("#565f89") {
+		t.Errorf("Subtle = %v, want the tokyo-night dark_foreground #565f89", theme.Subtle)
+	}
+	if theme.Border != lipgloss.Color("#414868") {
+		t.Errorf("Border = %v, want the tokyo-night muted #414868", theme.Border)
+	}
+}
+
+func TestThemeFromPaletteSubtleFallsBackToMuted(t *testing.T) {
+	theme, err := ThemeFromPalette(ParsePalette([]byte(sampleColors)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if theme.Subtle != lipgloss.Color("#414868") {
+		t.Errorf("Subtle = %v, want fallback to muted #414868", theme.Subtle)
+	}
 }
 
 // writeOmarchyColors creates a fake Omarchy current-theme state under a temp

@@ -98,23 +98,42 @@ The `doitdoit` binary supports several command-line flags and subcommands:
 
 ## Theming
 
-`doitdoit` supports [Omarchy](https://omarchy.org) theming and ships the Omarchy stock palettes for use anywhere else.
+`doitdoit` supports [Omarchy](https://omarchy.org) theming (Omarchy 4 "Quattro" and later) and ships the Omarchy stock palettes as built-in themes for every other platform.
 
-*   **On Omarchy:** with no theme configured, `doitdoit` automatically follows the current Omarchy theme by reading `~/.local/state/omarchy/current/theme/colors.toml` (the generated theme state introduced in Omarchy 4 "Quattro"). This also works for user-installed themes, since Omarchy generates a `colors.toml` for every applied theme.
-*   **Live reload:** `doitdoit` re-applies its theme on `SIGUSR2` — the same reload convention Omarchy uses for btop, Helix, and friends. To retint running instances when you switch Omarchy themes, add a theme-set hook at `~/.config/omarchy/hooks/theme-set`:
-    ```bash
-    #!/bin/bash
-    pkill -SIGUSR2 doitdoit
-    ```
-    (Without the hook, `doitdoit` simply picks up the new theme next time it starts.)
-*   **Everywhere else (e.g. macOS):** pick any of the embedded Omarchy stock palettes by name:
-    ```bash
-    doitdoit config theme            # show current theme + list available ones
-    doitdoit config theme tokyo-night
-    ```
+### On Omarchy
+
+With no theme configured, `doitdoit` automatically follows the current Omarchy theme by reading `~/.local/state/omarchy/current/theme/colors.toml` — the generated theme state Omarchy keeps for the applied theme. This works for user-installed themes too, since Omarchy generates a `colors.toml` for every theme it applies.
+
+To retint running instances the moment you switch Omarchy themes, add a theme-set hook at `~/.config/omarchy/hooks/theme-set`:
+
+```bash
+#!/bin/bash
+pkill -SIGUSR2 doitdoit
+```
+
+`doitdoit` re-applies its theme on `SIGUSR2` — the same reload convention Omarchy uses for btop, Helix, and friends. Without the hook, it simply picks up the new theme next time it starts.
+
+### Everywhere else (e.g. macOS)
+
+Pick any of the embedded Omarchy stock palettes by name:
+
+```bash
+doitdoit config theme            # show current theme + list available ones
+doitdoit config theme tokyo-night
+```
+
+Available themes: `catppuccin`, `catppuccin-latte`, `ethereal`, `everforest`, `flexoki-light`, `gruvbox`, `hackerman`, `kanagawa`, `last-horizon`, `lumon`, `lupine`, `matte-black`, `miasma`, `nord`, `osaka-jade`, `retro-82`, `ristretto`, `rose-pine`, `solitude`, `tokyo-night`, `vantablack`, `white`.
+
+`doitdoit` doesn't paint its own background — it renders on your terminal's. On Omarchy the terminal is themed in lockstep so everything matches; elsewhere, pick a palette that suits your terminal background (`catppuccin-latte`, `flexoki-light`, `lupine`, `rose-pine`, and `white` are the light ones).
+
+### How colours are mapped
+
+Each palette's `foreground` becomes task text, `accent` the selection and focused column, `magenta` the key hints, `green` the day titles, and `red` errors. Dim text (completed tasks, help) uses the palette's `dark_foreground` — the "comment colour" — while unfocused column borders use the background-tier `muted`, so subdued text stays readable on every theme.
+
+### Configuration
+
 *   `doitdoit config theme system` returns to the automatic behaviour after a fixed palette was set: follow the live Omarchy theme when present, otherwise use the built-in adaptive palette.
-
-The theme is stored in `~/.doitdoit_config.json` alongside the storage path, so each machine can have its own theme while sharing the same task data.
+*   The theme is stored in `~/.doitdoit_config.json` alongside the storage path, so each machine can have its own theme while sharing the same task data.
 
 ## Bulk Import
 
