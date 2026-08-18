@@ -38,7 +38,7 @@ func runShow(out io.Writer) int {
 	fmt.Fprintf(out, "Storage Path: %s\n", cfg.StoragePath)
 	theme := cfg.Theme
 	if theme == "" {
-		theme = "auto (omarchy when present, otherwise default)"
+		theme = "system (follows Omarchy when present)"
 	}
 	fmt.Fprintf(out, "Theme: %s\n", theme)
 	return 0
@@ -54,10 +54,10 @@ func runTheme(args []string, out io.Writer) int {
 	if len(args) < 1 {
 		current := cfg.Theme
 		if current == "" {
-			current = "auto (omarchy when present, otherwise default)"
+			current = "system (follows Omarchy when present)"
 		}
 		fmt.Fprintf(out, "Current theme: %s\n", current)
-		names := append([]string{styles.ThemeNameOmarchy, styles.ThemeNameDefault}, styles.BuiltinThemeNames()...)
+		names := append([]string{styles.ThemeNameSystem}, styles.BuiltinThemeNames()...)
 		fmt.Fprintf(out, "Available themes: %s\n", strings.Join(names, ", "))
 		return 0
 	}
@@ -66,9 +66,6 @@ func runTheme(args []string, out io.Writer) int {
 	if !styles.ValidThemeName(name) {
 		fmt.Fprintf(out, "Unknown theme %q. Run 'doitdoit config theme' to list available themes.\n", name)
 		return 1
-	}
-	if name == styles.ThemeNameOmarchy && !styles.OmarchyAvailable() {
-		fmt.Fprintln(out, "Warning: no current Omarchy theme found on this machine; the default palette will be used until one exists.")
 	}
 
 	cfg.Theme = name

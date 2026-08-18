@@ -112,7 +112,7 @@ The `doitdoit` binary supports several command-line flags and subcommands:
     doitdoit config theme            # show current theme + list available ones
     doitdoit config theme tokyo-night
     ```
-*   `doitdoit config theme omarchy` forces following the live Omarchy theme; `doitdoit config theme default` restores the original built-in palette (which adapts to light/dark terminals).
+*   `doitdoit config theme system` returns to the automatic behaviour after a fixed palette was set: follow the live Omarchy theme when present, otherwise use the built-in adaptive palette.
 
 The theme is stored in `~/.doitdoit_config.json` alongside the storage path, so each machine can have its own theme while sharing the same task data.
 

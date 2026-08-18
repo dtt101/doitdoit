@@ -12,8 +12,8 @@ func TestRunCommandThemeShow(t *testing.T) {
 	if code := RunCommand([]string{"config", "theme"}, &out); code != 0 {
 		t.Fatalf("code = %d, want 0; output %q", code, out.String())
 	}
-	if !strings.Contains(out.String(), "auto") {
-		t.Errorf("expected auto theme by default, got %q", out.String())
+	if !strings.Contains(out.String(), "system") {
+		t.Errorf("expected system theme by default, got %q", out.String())
 	}
 	if !strings.Contains(out.String(), "tokyo-night") {
 		t.Errorf("expected available themes listed, got %q", out.String())
@@ -73,20 +73,17 @@ func TestRunCommandThemeSetUnknown(t *testing.T) {
 	}
 }
 
-func TestRunCommandThemeSetOmarchyWithoutOmarchyWarns(t *testing.T) {
+func TestRunCommandThemeSetSystem(t *testing.T) {
 	withTempHome(t)
 	var out bytes.Buffer
-	if code := RunCommand([]string{"config", "theme", "omarchy"}, &out); code != 0 {
+	if code := RunCommand([]string{"config", "theme", "system"}, &out); code != 0 {
 		t.Fatalf("code = %d, want 0; output %q", code, out.String())
-	}
-	if !strings.Contains(out.String(), "Warning") {
-		t.Errorf("expected a warning when omarchy state is absent, got %q", out.String())
 	}
 	cfg, err := LoadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Theme != "omarchy" {
-		t.Errorf("theme = %q, want omarchy", cfg.Theme)
+	if cfg.Theme != "system" {
+		t.Errorf("theme = %q, want system", cfg.Theme)
 	}
 }

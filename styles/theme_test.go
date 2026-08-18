@@ -144,11 +144,8 @@ func TestResolveTheme(t *testing.T) {
 	}
 
 	// Explicit names resolve too.
-	if _, err := ResolveTheme(ThemeNameOmarchy); err != nil {
-		t.Errorf("omarchy: %v", err)
-	}
-	if _, err := ResolveTheme(ThemeNameDefault); err != nil {
-		t.Errorf("default: %v", err)
+	if _, err := ResolveTheme(ThemeNameSystem); err != nil {
+		t.Errorf("system: %v", err)
 	}
 	if _, err := ResolveTheme("nord"); err != nil {
 		t.Errorf("nord: %v", err)
@@ -158,24 +155,26 @@ func TestResolveTheme(t *testing.T) {
 	}
 }
 
-func TestResolveThemeAutoWithoutOmarchy(t *testing.T) {
+func TestResolveThemeSystemWithoutOmarchy(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	theme, err := ResolveTheme("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if theme != DefaultTheme() {
-		t.Error("auto without omarchy should be the default theme")
+	for _, name := range []string{"", ThemeNameSystem} {
+		theme, err := ResolveTheme(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if theme != DefaultTheme() {
+			t.Errorf("ResolveTheme(%q) without omarchy should be the default theme", name)
+		}
 	}
 }
 
 func TestValidThemeName(t *testing.T) {
-	for _, name := range []string{"omarchy", "default", "tokyo-night", "nord"} {
+	for _, name := range []string{"system", "tokyo-night", "nord"} {
 		if !ValidThemeName(name) {
 			t.Errorf("ValidThemeName(%q) = false, want true", name)
 		}
 	}
-	for _, name := range []string{"", "bogus", "Tokyo Night"} {
+	for _, name := range []string{"", "bogus", "Tokyo Night", "omarchy", "default"} {
 		if ValidThemeName(name) {
 			t.Errorf("ValidThemeName(%q) = true, want false", name)
 		}
