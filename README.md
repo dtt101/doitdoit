@@ -100,7 +100,13 @@ The `doitdoit` binary supports several command-line flags and subcommands:
 
 `doitdoit` supports [Omarchy](https://omarchy.org) theming and ships the Omarchy stock palettes for use anywhere else.
 
-*   **On Omarchy:** with no theme configured, `doitdoit` automatically follows the current Omarchy theme by reading `~/.local/state/omarchy/current/theme/colors.toml` (the generated theme state introduced in Omarchy 4 "Quattro"). Switch your Omarchy theme and restart `doitdoit` to pick it up. This also works for user-installed themes, since Omarchy generates a `colors.toml` for every applied theme.
+*   **On Omarchy:** with no theme configured, `doitdoit` automatically follows the current Omarchy theme by reading `~/.local/state/omarchy/current/theme/colors.toml` (the generated theme state introduced in Omarchy 4 "Quattro"). This also works for user-installed themes, since Omarchy generates a `colors.toml` for every applied theme.
+*   **Live reload:** `doitdoit` re-applies its theme on `SIGUSR2` — the same reload convention Omarchy uses for btop, Helix, and friends. To retint running instances when you switch Omarchy themes, add a theme-set hook at `~/.config/omarchy/hooks/theme-set`:
+    ```bash
+    #!/bin/bash
+    pkill -SIGUSR2 doitdoit
+    ```
+    (Without the hook, `doitdoit` simply picks up the new theme next time it starts.)
 *   **Everywhere else (e.g. macOS):** pick any of the embedded Omarchy stock palettes by name:
     ```bash
     doitdoit config theme            # show current theme + list available ones
