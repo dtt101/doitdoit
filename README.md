@@ -22,7 +22,7 @@ Inspired by the O'SaaSy License from [37signals](https://www.fizzy.do/license).
 ## Installation & Running
 
 ### Prerequisites
-*   [Go](https://go.dev/dl/) (1.19 or later recommended)
+*   [Go](https://go.dev/dl/) 1.24 or later
 
 ### Install via `go install`
 ```bash
@@ -34,7 +34,7 @@ This builds and places the binary in `$GOPATH/bin` (usually `~/go/bin`); ensure 
 ```bash
 git clone https://github.com/dtt101/doitdoit.git
 cd doitdoit
-go run main.go
+go run .
 ```
 
 ### Building
@@ -46,11 +46,10 @@ go build -o doitdoit
 
 ## Running Tests
 
-Ensure you have Go 1.24+ available, then run all tests with:
 ```bash
 go test ./...
 ```
-For a fresh run that skips cache, use `go test ./... -count=1`, and add `-cover` if you want a quick coverage summary.
+Add `-count=1` to skip the cache, or `-cover` for a coverage summary.
 
 ## Usage
 
@@ -70,6 +69,7 @@ On the first run, `doitdoit` will ask where you want to store your data file (`d
 *   **`a`**: Add a new task to the currently selected day/column.
 *   **`d`**: Delete the selected task.
 *   **`Space`** or **`Enter`**: Toggle task completion status.
+*   **`y`**: Copy the selected task's text to the clipboard.
 *   **`m`**: Choose where to move the selected task.
     *   Press **`t`** for Today or **`f`** for the undated Future list.
     *   Press **`1`**–**`7`** to move that many calendar days from the task's current date in the main view. Future tasks count from today.
@@ -90,7 +90,7 @@ The `doitdoit` binary supports several command-line flags and subcommands:
 
 *   `doitdoit`: Launch the main application.
 *   `doitdoit -days <number>`: Set the number of days in the scrolling viewport (default is 3).
-*   `doitdoit -file <path>`: specify a path to the data file for this session.
+*   `doitdoit -file <path>`: Specify a path to the data file for this session.
 *   `doitdoit config show`: Display the current path of your data file and the configured theme.
 *   `doitdoit config move <new_path>`: Move your data file to a new location and update the configuration.
 *   `doitdoit config theme`: Show the current theme and list all available themes.
@@ -102,16 +102,14 @@ The `doitdoit` binary supports several command-line flags and subcommands:
 
 ### On Omarchy
 
-With no theme configured, `doitdoit` automatically follows the current Omarchy theme by reading `~/.local/state/omarchy/current/theme/colors.toml` — the generated theme state Omarchy keeps for the applied theme. This works for user-installed themes too, since Omarchy generates a `colors.toml` for every theme it applies.
-
-To retint running instances the moment you switch Omarchy themes, add a theme-set hook at `~/.config/omarchy/hooks/theme-set`:
+With no theme configured, `doitdoit` follows the currently applied Omarchy theme — stock or user-installed — by reading `~/.local/state/omarchy/current/theme/colors.toml`. To retint running instances the moment you switch themes, add a hook at `~/.config/omarchy/hooks/theme-set`:
 
 ```bash
 #!/bin/bash
 pkill -SIGUSR2 doitdoit
 ```
 
-`doitdoit` re-applies its theme on `SIGUSR2` — the same reload convention Omarchy uses for btop, Helix, and friends. Without the hook, it simply picks up the new theme next time it starts.
+`SIGUSR2` triggers a theme reload, the same convention Omarchy uses for btop and Helix. Without the hook, the new theme applies next time `doitdoit` starts.
 
 ### Everywhere else (e.g. macOS)
 
@@ -126,13 +124,13 @@ Available themes: `catppuccin`, `catppuccin-latte`, `ethereal`, `everforest`, `f
 
 `doitdoit` doesn't paint its own background — it renders on your terminal's. On Omarchy the terminal is themed in lockstep so everything matches; elsewhere, pick a palette that suits your terminal background (`catppuccin-latte`, `flexoki-light`, `lupine`, `rose-pine`, and `white` are the light ones).
 
-### How colours are mapped
+### Colour mapping
 
-Each palette's `foreground` becomes task text, `accent` the selection and focused column, `magenta` the key hints, `green` the day titles, and `red` errors. Dim text (completed tasks, help) uses the palette's `dark_foreground` — the "comment colour" — while unfocused column borders use the background-tier `muted`, so subdued text stays readable on every theme.
+Each palette's `foreground` becomes task text, `accent` the selection and focused column, `magenta` the key hints, `green` the day titles, and `red` errors. Dim text (completed tasks, help) uses `dark_foreground`, the palette's comment colour, while unfocused column borders use the background-tier `muted`.
 
 ### Configuration
 
-*   `doitdoit config theme system` returns to the automatic behaviour after a fixed palette was set: follow the live Omarchy theme when present, otherwise use the built-in adaptive palette.
+*   `doitdoit config theme system` returns to the automatic behaviour: follow the live Omarchy theme when present, otherwise use the built-in adaptive palette.
 *   The theme is stored in `~/.doitdoit_config.json` alongside the storage path, so each machine can have its own theme while sharing the same task data.
 
 ## Bulk Import
