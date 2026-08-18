@@ -549,13 +549,12 @@
     const f = findTask(dayKey, id);
     if (!f) return;
     f.task.completed = !f.task.completed;
-    const row = Array.from(board.querySelectorAll(".task")).find(
-      (el) => el.dataset.key === dayKey && el.dataset.id === String(id)
-    );
-    if (row) {
-      row.classList.toggle("task--done", f.task.completed);
-      row.querySelector(".task__mark").textContent = f.task.completed ? "x" : " ";
-    }
+    // Reorder to match the CLI: completed tasks sink to the bottom of the
+    // day, uncompleted tasks move back above the completed block.
+    f.list.splice(f.idx, 1);
+    if (f.task.completed) f.list.push(f.task);
+    else insertBeforeCompleted(f.list, f.task);
+    render({ preserveScroll: true });
     queueSave();
   }
 
