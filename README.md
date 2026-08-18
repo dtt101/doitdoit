@@ -16,12 +16,13 @@ Inspired by the O'SaaSy License from [37signals](https://www.fizzy.do/license).
 *   **Bulk Import:** Easily import a list of tasks from a text file.
 *   **Data Pruning:** Automatically cleans up tasks older than 5 days to keep your data file lightweight.
 *   **Cloud Sync Friendly:** All data is stored in a single JSON file, making it easy to sync across devices using your preferred file sync service.
+*   **Omarchy Theming:** Automatically follows the current [Omarchy](https://omarchy.org) theme, and ships the Omarchy stock palettes as built-in themes for other platforms (see [Theming](#theming)).
 *   **Mobile Companion:** A static web app under [`web/`](./web) reads and writes the same Dropbox JSON file from a phone. See [web/README.md](./web/README.md).
 
 ## Installation & Running
 
 ### Prerequisites
-*   [Go](https://go.dev/dl/) (1.19 or later recommended)
+*   [Go](https://go.dev/dl/) 1.24 or later
 
 ### Install via `go install`
 ```bash
@@ -33,7 +34,7 @@ This builds and places the binary in `$GOPATH/bin` (usually `~/go/bin`); ensure 
 ```bash
 git clone https://github.com/dtt101/doitdoit.git
 cd doitdoit
-go run main.go
+go run .
 ```
 
 ### Building
@@ -45,11 +46,10 @@ go build -o doitdoit
 
 ## Running Tests
 
-Ensure you have Go 1.24+ available, then run all tests with:
 ```bash
 go test ./...
 ```
-For a fresh run that skips cache, use `go test ./... -count=1`, and add `-cover` if you want a quick coverage summary.
+Add `-count=1` to skip the cache, or `-cover` for a coverage summary.
 
 ## Usage
 
@@ -69,6 +69,7 @@ On the first run, `doitdoit` will ask where you want to store your data file (`d
 *   **`a`**: Add a new task to the currently selected day/column.
 *   **`d`**: Delete the selected task.
 *   **`Space`** or **`Enter`**: Toggle task completion status.
+*   **`y`**: Copy the selected task's text to the clipboard.
 *   **`m`**: Choose where to move the selected task.
     *   Press **`t`** for Today or **`f`** for the undated Future list.
     *   Press **`1`**–**`7`** to move that many calendar days from the task's current date in the main view. Future tasks count from today.
@@ -89,9 +90,48 @@ The `doitdoit` binary supports several command-line flags and subcommands:
 
 *   `doitdoit`: Launch the main application.
 *   `doitdoit -days <number>`: Set the number of days in the scrolling viewport (default is 3).
-*   `doitdoit -file <path>`: specify a path to the data file for this session.
-*   `doitdoit config show`: Display the current path of your data file.
+*   `doitdoit -file <path>`: Specify a path to the data file for this session.
+*   `doitdoit config show`: Display the current path of your data file and the configured theme.
 *   `doitdoit config move <new_path>`: Move your data file to a new location and update the configuration.
+*   `doitdoit config theme`: Show the current theme and list all available themes.
+*   `doitdoit config theme <name>`: Set the theme.
+
+## Theming
+
+`doitdoit` supports [Omarchy](https://omarchy.org) theming (Omarchy 4 "Quattro" and later) and ships the Omarchy stock palettes as built-in themes for every other platform.
+
+### On Omarchy
+
+With no theme configured, `doitdoit` follows the currently applied Omarchy theme — stock or user-installed — by reading `~/.local/state/omarchy/current/theme/colors.toml`. To retint running instances the moment you switch themes, add a hook at `~/.config/omarchy/hooks/theme-set`:
+
+```bash
+#!/bin/bash
+pkill -SIGUSR2 doitdoit
+```
+
+`SIGUSR2` triggers a theme reload, the same convention Omarchy uses for btop and Helix. Without the hook, the new theme applies next time `doitdoit` starts.
+
+### Everywhere else (e.g. macOS)
+
+Pick any of the embedded Omarchy stock palettes by name:
+
+```bash
+doitdoit config theme            # show current theme + list available ones
+doitdoit config theme tokyo-night
+```
+
+Available themes: `catppuccin`, `catppuccin-latte`, `ethereal`, `everforest`, `flexoki-light`, `gruvbox`, `hackerman`, `kanagawa`, `last-horizon`, `lumon`, `lupine`, `matte-black`, `miasma`, `nord`, `osaka-jade`, `retro-82`, `ristretto`, `rose-pine`, `solitude`, `tokyo-night`, `vantablack`, `white`.
+
+`doitdoit` doesn't paint its own background — it renders on your terminal's. On Omarchy the terminal is themed in lockstep so everything matches; elsewhere, pick a palette that suits your terminal background (`catppuccin-latte`, `flexoki-light`, `lupine`, `rose-pine`, and `white` are the light ones).
+
+### Colour mapping
+
+Each palette's `foreground` becomes task text, `accent` the selection and focused column, `magenta` the key hints, `green` the day titles, and `red` errors. Dim text (completed tasks, help) uses `dark_foreground`, the palette's comment colour, while unfocused column borders use the background-tier `muted`.
+
+### Configuration
+
+*   `doitdoit config theme system` returns to the automatic behaviour: follow the live Omarchy theme when present, otherwise use the built-in adaptive palette.
+*   The theme is stored in `~/.doitdoit_config.json` alongside the storage path, so each machine can have its own theme while sharing the same task data.
 
 ## Bulk Import
 

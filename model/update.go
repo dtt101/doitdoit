@@ -31,6 +31,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleReloadTick()
 	case dataFileCheckedMsg:
 		return m.handleDataFileChecked(msg)
+	case ThemeReloadMsg:
+		return m.handleThemeReload(msg)
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
 	default:

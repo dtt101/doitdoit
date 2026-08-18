@@ -4,13 +4,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
+
+	"github.com/dtt101/doitdoit/styles"
 )
 
 // RunCommand executes a `config` subcommand (args[0] is expected to be
 // "config") and returns the process exit code. All output is written to out.
 func RunCommand(args []string, out io.Writer) int {
 	if len(args) < 2 {
-		fmt.Fprintln(out, "Usage: doitdoit config show | move <path>")
+		fmt.Fprintln(out, "Usage: doitdoit config show | move <path> | theme [name]")
 		return 1
 	}
 	switch args[1] {
@@ -18,8 +21,10 @@ func RunCommand(args []string, out io.Writer) int {
 		return runShow(out)
 	case "move":
 		return runMove(args[2:], out)
+	case "theme":
+		return runTheme(args[2:], out)
 	default:
-		fmt.Fprintln(out, "Usage: doitdoit config show | move <path>")
+		fmt.Fprintln(out, "Usage: doitdoit config show | move <path> | theme [name]")
 		return 1
 	}
 }
@@ -31,6 +36,44 @@ func runShow(out io.Writer) int {
 		return 1
 	}
 	fmt.Fprintf(out, "Storage Path: %s\n", cfg.StoragePath)
+	theme := cfg.Theme
+	if theme == "" {
+		theme = "system (follows Omarchy when present)"
+	}
+	fmt.Fprintf(out, "Theme: %s\n", theme)
+	return 0
+}
+
+func runTheme(args []string, out io.Writer) int {
+	cfg, err := LoadConfig()
+	if err != nil {
+		fmt.Fprintf(out, "Error loading config: %v\n", err)
+		return 1
+	}
+
+	if len(args) < 1 {
+		current := cfg.Theme
+		if current == "" {
+			current = "system (follows Omarchy when present)"
+		}
+		fmt.Fprintf(out, "Current theme: %s\n", current)
+		names := append([]string{styles.ThemeNameSystem}, styles.BuiltinThemeNames()...)
+		fmt.Fprintf(out, "Available themes: %s\n", strings.Join(names, ", "))
+		return 0
+	}
+
+	name := args[0]
+	if !styles.ValidThemeName(name) {
+		fmt.Fprintf(out, "Unknown theme %q. Run 'doitdoit config theme' to list available themes.\n", name)
+		return 1
+	}
+
+	cfg.Theme = name
+	if err := SaveConfig(cfg); err != nil {
+		fmt.Fprintf(out, "Error saving config: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(out, "Theme set to: %s\n", name)
 	return 0
 }
 

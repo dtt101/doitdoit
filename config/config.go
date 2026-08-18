@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	StoragePath string `json:"storage_path"`
+	Theme       string `json:"theme,omitempty"`
 }
 
 func GetConfigPath() (string, error) {
