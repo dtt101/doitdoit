@@ -4,62 +4,93 @@ import "github.com/charmbracelet/lipgloss"
 
 var (
 	// Colors
-	Subtle    = lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#6272A4"}
-	Highlight = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#FF79C6"}
-	KeyColor  = lipgloss.AdaptiveColor{Light: "#9B9B9B", Dark: "#BD93F9"}
-	Text      = lipgloss.AdaptiveColor{Light: "#191919", Dark: "#F8F8F2"}
-	Special   = lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#50FA7B"}
-	Warning   = lipgloss.AdaptiveColor{Light: "#F25D94", Dark: "#FF5555"}
+	Subtle    lipgloss.TerminalColor
+	Highlight lipgloss.TerminalColor
+	KeyColor  lipgloss.TerminalColor
+	Text      lipgloss.TerminalColor
+	Special   lipgloss.TerminalColor
+	Warning   lipgloss.TerminalColor
 
 	// Column Styles
-	ColumnStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(Subtle).
-			Padding(1, 1).
-			Margin(0, 1).
-			Width(30)
-
-	FocusedColumnStyle = ColumnStyle.
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(Highlight)
+	ColumnStyle        lipgloss.Style
+	FocusedColumnStyle lipgloss.Style
 
 	// Task Styles
-	TaskStyle = lipgloss.NewStyle().
-			Foreground(Text)
+	TaskStyle          lipgloss.Style
+	SelectedTaskStyle  lipgloss.Style
+	CompletedTaskStyle lipgloss.Style
+	MovingTaskStyle    lipgloss.Style
 
-	SelectedTaskStyle = TaskStyle.
-				Foreground(Highlight).
-				Bold(true)
-
-	CompletedTaskStyle = TaskStyle.
-				Foreground(Subtle).
-				Strikethrough(true)
-
-	MovingTaskStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(lipgloss.Color("#FF79C6")).
-			Bold(true).
-			Padding(0, 1)
-
-	TitleStyle = lipgloss.NewStyle().
-			Foreground(Special).
-			Bold(true).
-			PaddingBottom(1)
+	TitleStyle lipgloss.Style
 
 	// FocusedTitleStyle marks the header of the day that currently has focus,
 	// so the active day stands out when several are stacked in one column.
+	FocusedTitleStyle lipgloss.Style
+
+	HelpStyle lipgloss.Style
+	KeyStyle  lipgloss.Style
+	AppStyle  lipgloss.Style
+)
+
+func init() {
+	Apply(DefaultTheme())
+}
+
+// Apply rebuilds every style from the given theme. Call it before the model
+// is created; styles are read at render time so the whole UI follows.
+func Apply(t Theme) {
+	Subtle = t.Subtle
+	Highlight = t.Highlight
+	KeyColor = t.Key
+	Text = t.Text
+	Special = t.Special
+	Warning = t.Warning
+
+	ColumnStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(Subtle).
+		Padding(1, 1).
+		Margin(0, 1).
+		Width(30)
+
+	FocusedColumnStyle = ColumnStyle.
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(Highlight)
+
+	TaskStyle = lipgloss.NewStyle().
+		Foreground(Text)
+
+	SelectedTaskStyle = TaskStyle.
+		Foreground(Highlight).
+		Bold(true)
+
+	CompletedTaskStyle = TaskStyle.
+		Foreground(Subtle).
+		Strikethrough(true)
+
+	MovingTaskStyle = lipgloss.NewStyle().
+		Foreground(t.MovingFg).
+		Background(t.MovingBg).
+		Bold(true).
+		Padding(0, 1)
+
+	TitleStyle = lipgloss.NewStyle().
+		Foreground(Special).
+		Bold(true).
+		PaddingBottom(1)
+
 	FocusedTitleStyle = TitleStyle.
-				Foreground(Highlight)
+		Foreground(Highlight)
 
 	HelpStyle = lipgloss.NewStyle().
-			Foreground(Subtle).
-			MarginTop(2).
-			MarginLeft(1)
+		Foreground(Subtle).
+		MarginTop(2).
+		MarginLeft(1)
 
 	KeyStyle = lipgloss.NewStyle().
-			Foreground(KeyColor).
-			Bold(true)
+		Foreground(KeyColor).
+		Bold(true)
 
 	AppStyle = lipgloss.NewStyle().
-			Margin(1, 2)
-)
+		Margin(1, 2)
+}

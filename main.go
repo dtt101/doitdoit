@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dtt101/doitdoit/config"
 	"github.com/dtt101/doitdoit/model"
+	"github.com/dtt101/doitdoit/styles"
 )
 
 func main() {
@@ -24,6 +25,11 @@ func main() {
 		os.Exit(2)
 	}
 
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		cfg = &config.Config{}
+	}
+
 	var finalPath string
 	if *filePathFlag != "" {
 		expanded, err := config.ExpandPath(*filePathFlag)
@@ -33,16 +39,19 @@ func main() {
 		}
 		finalPath = expanded
 	} else {
-		cfg, err := config.LoadConfig()
-		if err != nil {
-			cfg = &config.Config{}
-		}
 		finalPath, err = config.ResolveStoragePath(cfg, os.Stdin, os.Stdout)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
 		}
 	}
+
+	theme, err := styles.ResolveTheme(cfg.Theme)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not load theme %q (%v); using default\n", cfg.Theme, err)
+		theme = styles.DefaultTheme()
+	}
+	styles.Apply(theme)
 
 	// Ensure directory exists
 	dir := filepath.Dir(finalPath)

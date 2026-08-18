@@ -16,6 +16,7 @@ Inspired by the O'SaaSy License from [37signals](https://www.fizzy.do/license).
 *   **Bulk Import:** Easily import a list of tasks from a text file.
 *   **Data Pruning:** Automatically cleans up tasks older than 5 days to keep your data file lightweight.
 *   **Cloud Sync Friendly:** All data is stored in a single JSON file, making it easy to sync across devices using your preferred file sync service.
+*   **Omarchy Theming:** Automatically follows the current [Omarchy](https://omarchy.org) theme, and ships the Omarchy stock palettes as built-in themes for other platforms (see [Theming](#theming)).
 *   **Mobile Companion:** A static web app under [`web/`](./web) reads and writes the same Dropbox JSON file from a phone. See [web/README.md](./web/README.md).
 
 ## Installation & Running
@@ -90,8 +91,24 @@ The `doitdoit` binary supports several command-line flags and subcommands:
 *   `doitdoit`: Launch the main application.
 *   `doitdoit -days <number>`: Set the number of days in the scrolling viewport (default is 3).
 *   `doitdoit -file <path>`: specify a path to the data file for this session.
-*   `doitdoit config show`: Display the current path of your data file.
+*   `doitdoit config show`: Display the current path of your data file and the configured theme.
 *   `doitdoit config move <new_path>`: Move your data file to a new location and update the configuration.
+*   `doitdoit config theme`: Show the current theme and list all available themes.
+*   `doitdoit config theme <name>`: Set the theme.
+
+## Theming
+
+`doitdoit` supports [Omarchy](https://omarchy.org) theming and ships the Omarchy stock palettes for use anywhere else.
+
+*   **On Omarchy:** with no theme configured, `doitdoit` automatically follows the current Omarchy theme by reading `~/.local/state/omarchy/current/theme/colors.toml` (the generated theme state introduced in Omarchy 4 "Quattro"). Switch your Omarchy theme and restart `doitdoit` to pick it up. This also works for user-installed themes, since Omarchy generates a `colors.toml` for every applied theme.
+*   **Everywhere else (e.g. macOS):** pick any of the embedded Omarchy stock palettes by name:
+    ```bash
+    doitdoit config theme            # show current theme + list available ones
+    doitdoit config theme tokyo-night
+    ```
+*   `doitdoit config theme omarchy` forces following the live Omarchy theme; `doitdoit config theme default` restores the original built-in palette (which adapts to light/dark terminals).
+
+The theme is stored in `~/.doitdoit_config.json` alongside the storage path, so each machine can have its own theme while sharing the same task data.
 
 ## Bulk Import
 
