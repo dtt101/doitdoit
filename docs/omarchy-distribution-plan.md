@@ -34,13 +34,15 @@ and plain Arch is supported.
   aarch64 executables are statically linked and have the expected architecture.
 - [x] Recheck the official Arch repositories and AUR for package-name conflicts.
 - [x] Commit and push the release-readiness changes to `main`.
-- [ ] Wait for GitHub CI on the final release commit to pass.
-- [ ] Create and push the annotated `v0.2.0` tag from that exact commit.
+- [x] Wait for GitHub CI on the final release commit to pass.
+- [x] Create and push the annotated `v0.2.0` tag from that exact commit.
+- [x] Confirm the tag-triggered GoReleaser workflow passes and publishes the
+  release archives and checksum file.
 
 ## Remaining initial-publication steps
 
-1. Wait for the tag-triggered GitHub release workflow to finish, then apply
-   `docs/releases/v0.2.0.md` as the public GitHub release notes if necessary.
+1. Review the generated public GitHub release description and apply
+   `docs/releases/v0.2.0.md` as the release notes if necessary.
 2. Download every published v0.2.0 artifact and verify the GoReleaser checksum
    file with `sha256sum -c`. Inspect both Linux archives again for `doitdoit`,
    `README.md`, `LICENSE`, and `THIRD_PARTY_NOTICES.md`; confirm static linkage
