@@ -23,18 +23,52 @@ and plain Arch is supported.
 - Tests, race tests, vet, vulnerability scanning, licence inventory validation,
   and GoReleaser validation pass with an isolated home directory.
 
-## Initial publication
+## Publication status
 
-1. Recheck official Arch package names and the AUR immediately before release.
-2. Create and register a dedicated revocable Ed25519 AUR key.
-3. Leave `AUR_PUBLISH_ENABLED` unset.
-4. Merge the release-readiness changes and create the new v0.2.0 tag.
-5. Inspect the published archives and hashes, including static linkage and the
-   aarch64 ELF architecture.
-6. Render the AUR files, run `makepkg --verifysource`, build in a clean x86_64
-   chroot, inspect contents, smoke-test install/removal, and run `namcap`.
-7. Push the first separate AUR `master` commit manually with only `PKGBUILD`,
-   `.SRCINFO`, its 0BSD packaging licence, and necessary helpers.
+- [x] Implement and locally verify the release-readiness changes.
+- [x] Confirm the README describes retention, overwrite-safe moves, the
+  opt-in Omarchy hook, removal, backup guidance, privacy, and AUR installation.
+- [x] Run tests, race tests, vet, vulnerability scanning, licence inventory
+  validation, GoReleaser validation, and a snapshot release.
+- [x] Inspect both snapshot Linux archives and confirm that the x86-64 and
+  aarch64 executables are statically linked and have the expected architecture.
+- [x] Recheck the official Arch repositories and AUR for package-name conflicts.
+- [x] Commit and push the release-readiness changes to `main`.
+- [ ] Wait for GitHub CI on the final release commit to pass.
+- [ ] Create and push the annotated `v0.2.0` tag from that exact commit.
+
+## Remaining initial-publication steps
+
+1. Wait for the tag-triggered GitHub release workflow to finish, then apply
+   `docs/releases/v0.2.0.md` as the public GitHub release notes if necessary.
+2. Download every published v0.2.0 artifact and verify the GoReleaser checksum
+   file with `sha256sum -c`. Inspect both Linux archives again for `doitdoit`,
+   `README.md`, `LICENSE`, and `THIRD_PARTY_NOTICES.md`; confirm static linkage
+   and the x86-64/aarch64 ELF architectures.
+3. Create a dedicated revocable Ed25519 AUR publishing key and register only
+   its public key with the maintainer's AUR account. Verify the AUR SSH host
+   fingerprint independently. Keep `AUR_PUBLISH_ENABLED` unset.
+4. Render `PKGBUILD`, `.SRCINFO`, and the 0BSD packaging licence from the
+   published checksums with `packaging/aur/render.sh`.
+5. Run `makepkg --verifysource`, `namcap`, package-content inspection, and an
+   x86-64 clean-chroot build. Verify the aarch64 source URL, checksum, metadata,
+   and extracted binary architecture separately.
+6. On a disposable Arch environment, install the built package, smoke-test
+   `doitdoit`, remove the package, and confirm package removal preserves task
+   data and user configuration.
+7. Clone `ssh://aur@aur.archlinux.org/doitdoit-bin.git` and manually push the
+   first `master` commit. Commit only `PKGBUILD`, `.SRCINFO`, and the packaging
+   `LICENSE`; do not copy source-repository or release-build files into the AUR
+   repository.
+8. On a disposable clean Omarchy installation, install with
+   `omarchy pkg aur add doitdoit-bin`, confirm the safe retention default, then
+   install the hook explicitly. Start multiple instances, change the theme,
+   and confirm every instance retints. Remove the hook and package and verify
+   that user data remains intact.
+9. After the manual first publication is accepted, create the protected GitHub
+   `aur` Environment with required reviewer approval, add the dedicated key as
+   `AUR_SSH_PRIVATE_KEY`, and set `AUR_PUBLISH_ENABLED=true` for later stable
+   releases only.
 
 ## Later automated updates
 
