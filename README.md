@@ -6,7 +6,8 @@
 
 Put that file in Dropbox, iCloud Drive, or Google Drive and your task list can travel with you.
 
-![doitdoit showing tasks in its multi-column terminal interface](https://github.com/user-attachments/assets/f91436e2-55e5-4c3f-8eee-742b2057265a)
+<img width="1400" height="770" alt="Screenshot 2026-08-20 at 09 20 20" src="https://github.com/user-attachments/assets/fa6758d4-92a9-4853-824c-b4e0cd873095" />
+
 
 ## Why doitdoit?
 
