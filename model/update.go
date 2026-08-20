@@ -3,18 +3,34 @@ package model
 import (
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 type copyFlashDoneMsg struct{}
 
 type dateTickMsg time.Time
 
+type brandAnimationMsg struct {
+	id    uint64
+	frame int
+}
+
+const (
+	brandAnimationFrames = 12
+	brandFrameDuration   = 60 * time.Millisecond
+)
+
 // dateTick schedules a wake-up so the visible date columns can be refreshed
 // when the day rolls over while the app is left running.
 func dateTick() tea.Cmd {
 	return tea.Tick(time.Minute, func(t time.Time) tea.Msg {
 		return dateTickMsg(t)
+	})
+}
+
+func brandAnimationTick(id uint64, frame int) tea.Cmd {
+	return tea.Tick(brandFrameDuration, func(time.Time) tea.Msg {
+		return brandAnimationMsg{id: id, frame: frame}
 	})
 }
 
@@ -25,6 +41,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case copyFlashDoneMsg:
 		m.copyFlash = false
 		return m, nil
+	case brandAnimationMsg:
+		if msg.id != m.brandAnimationID {
+			return m, nil
+		}
+		if msg.frame > brandAnimationFrames {
+			m.brandFrame = 0
+			return m, nil
+		}
+		m.brandFrame = msg.frame
+		return m, brandAnimationTick(msg.id, msg.frame+1)
 	case dateTickMsg:
 		return m.handleDateTick()
 	case reloadTickMsg:
@@ -33,11 +59,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleDataFileChecked(msg)
 	case ThemeReloadMsg:
 		return m.handleThemeReload(msg)
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.handleKeyMsg(msg)
+	case tea.MouseClickMsg:
+		return m.handleMouseClick(msg)
 	default:
 		return m, nil
 	}
+}
+
+func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	if m.ShowHelp || msg.Button != tea.MouseLeft {
+		return m, nil
+	}
+
+	x, y, width, ok := m.brandBounds()
+	if !ok || msg.X < x || msg.X >= x+width || msg.Y != y {
+		return m, nil
+	}
+
+	m.brandAnimationID++
+	m.brandFrame = 1
+	return m, brandAnimationTick(m.brandAnimationID, 2)
 }
 
 func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
@@ -81,7 +124,18 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.ShowHelp {
+		if msg.String() == "?" || msg.Code == tea.KeyEsc {
+			m.ShowHelp = false
+		}
+		return m, nil
+	}
+	if m.State == Browsing && msg.String() == "?" {
+		m.ShowHelp = true
+		return m, nil
+	}
+
 	switch m.State {
 	case Adding:
 		return m.handleAddingKey(msg)
@@ -96,8 +150,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m Model) handleAddingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
+func (m Model) handleAddingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.Code {
 	case tea.KeyEnter:
 		if m.TextInput.Value() != "" {
 			m.clearMoveUndo()
@@ -118,7 +172,7 @@ func (m Model) handleAddingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleBrowsingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -160,7 +214,7 @@ func (m Model) handleBrowsingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.clearMoveUndo()
 			m.persist()
 		}
-	case "enter", " ":
+	case "enter", "space":
 		if m.toggleTask() {
 			m.clearMoveUndo()
 			m.persist()
@@ -202,7 +256,7 @@ func (m Model) handleBrowsingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleChoosingMoveDestinationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleChoosingMoveDestinationKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.State = Browsing
@@ -234,8 +288,8 @@ func (m Model) handleChoosingMoveDestinationKey(msg tea.KeyMsg) (tea.Model, tea.
 	return m, nil
 }
 
-func (m Model) handleSettingMoveDateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
+func (m Model) handleSettingMoveDateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.Code {
 	case tea.KeyEnter:
 		normalizedDate, err := normalizeDueDateInput(m.TextInput.Value())
 		if err != nil {

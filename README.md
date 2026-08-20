@@ -95,6 +95,8 @@ Press `f` for the separate Future list. Tasks with a specific future date remain
 
 ### Keybindings
 
+Press `?` in the main view to open the keyboard-shortcuts modal; press `?` again or `Esc` to close it. After pressing `m`, the available destinations appear directly in the footer.
+
 | Key | Action |
 | --- | --- |
 | `h` `j` `k` `l` or arrows | Move between days and tasks |
@@ -107,6 +109,7 @@ Press `f` for the separate Future list. Tasks with a specific future date remain
 | `y` | Copy the task text to the clipboard |
 | `d` | Delete the selected task |
 | `f` | Toggle the Future view |
+| `?` | Open keyboard shortcuts |
 | `q` or `Ctrl+c` | Quit |
 
 After pressing `m`, choose a destination:

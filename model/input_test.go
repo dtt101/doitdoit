@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestAddingTask_Enter(t *testing.T) {
@@ -25,7 +25,7 @@ func TestAddingTask_Enter(t *testing.T) {
 	// Simulate typing "Hello"
 	runes := []rune("Hello")
 	for _, r := range runes {
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
+		msg := tea.KeyPressMsg{Code: r, Text: string(r)}
 		newM, _ := m.Update(msg)
 		m = newM.(Model)
 	}
@@ -35,7 +35,7 @@ func TestAddingTask_Enter(t *testing.T) {
 	}
 
 	// Simulate Enter
-	msg := tea.KeyMsg{Type: tea.KeyEnter}
+	msg := tea.KeyPressMsg{Code: tea.KeyEnter}
 	newM, _ := m.Update(msg)
 	m = newM.(Model)
 
@@ -65,7 +65,7 @@ func TestAddingTask_Esc(t *testing.T) {
 	m.TextInput.SetValue("Partial")
 
 	// Simulate Esc
-	msg := tea.KeyMsg{Type: tea.KeyEsc}
+	msg := tea.KeyPressMsg{Code: tea.KeyEsc}
 	newM, _ := m.Update(msg)
 	m = newM.(Model)
 
@@ -88,7 +88,7 @@ func TestInputConfiguredOnModeSwitch(t *testing.T) {
 	}
 	m.configureTextInput("initial")
 
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
+	msg := tea.KeyPressMsg{Code: 'a', Text: "a"}
 	updated, _ := m.Update(msg)
 	m = updated.(Model)
 
@@ -104,7 +104,7 @@ func TestInputConfiguredOnModeSwitch(t *testing.T) {
 
 	m.Data[today] = []Task{{ID: "1", Title: "Task"}}
 	m.State = Browsing
-	msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}
+	msg = tea.KeyPressMsg{Code: 'm', Text: "m"}
 	updated, _ = m.Update(msg)
 	m = updated.(Model)
 
@@ -112,7 +112,7 @@ func TestInputConfiguredOnModeSwitch(t *testing.T) {
 		t.Fatalf("expected destination picker after 'm', got %v", m.State)
 	}
 
-	msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}
+	msg = tea.KeyPressMsg{Code: 'd', Text: "d"}
 	updated, _ = m.Update(msg)
 	m = updated.(Model)
 

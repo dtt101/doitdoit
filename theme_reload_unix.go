@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dtt101/doitdoit/config"
 	"github.com/dtt101/doitdoit/model"
 	"github.com/dtt101/doitdoit/styles"

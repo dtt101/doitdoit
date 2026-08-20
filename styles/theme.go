@@ -3,38 +3,40 @@ package styles
 import (
 	"embed"
 	"fmt"
+	"image/color"
 	"io/fs"
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/compat"
 )
 
 // Theme holds the colors used to build the app styles. The fields map onto
 // the roles the UI needs rather than a full terminal palette.
 type Theme struct {
-	Text      lipgloss.TerminalColor // regular task text
-	Subtle    lipgloss.TerminalColor // completed tasks, help text
-	Border    lipgloss.TerminalColor // unfocused column borders
-	Highlight lipgloss.TerminalColor // selection, focused column
-	Key       lipgloss.TerminalColor // key hints in the help bar
-	Special   lipgloss.TerminalColor // day titles
-	Warning   lipgloss.TerminalColor // errors
-	MovingFg  lipgloss.TerminalColor // task being moved (foreground)
-	MovingBg  lipgloss.TerminalColor // task being moved (background)
+	Text      color.Color // regular task text
+	Subtle    color.Color // completed tasks, help text
+	Border    color.Color // unfocused column borders
+	Highlight color.Color // selection, focused column
+	Key       color.Color // key hints in the help bar
+	Special   color.Color // day titles
+	Warning   color.Color // errors
+	MovingFg  color.Color // task being moved (foreground)
+	MovingBg  color.Color // task being moved (background)
 }
 
 // DefaultTheme is the original adaptive palette, used when no theme is
 // configured and no Omarchy install is present.
 func DefaultTheme() Theme {
 	return Theme{
-		Text:      lipgloss.AdaptiveColor{Light: "#191919", Dark: "#F8F8F2"},
-		Subtle:    lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#6272A4"},
-		Border:    lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#6272A4"},
-		Highlight: lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#FF79C6"},
-		Key:       lipgloss.AdaptiveColor{Light: "#9B9B9B", Dark: "#BD93F9"},
-		Special:   lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#50FA7B"},
-		Warning:   lipgloss.AdaptiveColor{Light: "#F25D94", Dark: "#FF5555"},
+		Text:      compat.AdaptiveColor{Light: lipgloss.Color("#191919"), Dark: lipgloss.Color("#F8F8F2")},
+		Subtle:    compat.AdaptiveColor{Light: lipgloss.Color("#D9DCCF"), Dark: lipgloss.Color("#6272A4")},
+		Border:    compat.AdaptiveColor{Light: lipgloss.Color("#D9DCCF"), Dark: lipgloss.Color("#6272A4")},
+		Highlight: compat.AdaptiveColor{Light: lipgloss.Color("#874BFD"), Dark: lipgloss.Color("#FF79C6")},
+		Key:       compat.AdaptiveColor{Light: lipgloss.Color("#9B9B9B"), Dark: lipgloss.Color("#BD93F9")},
+		Special:   compat.AdaptiveColor{Light: lipgloss.Color("#43BF6D"), Dark: lipgloss.Color("#50FA7B")},
+		Warning:   compat.AdaptiveColor{Light: lipgloss.Color("#F25D94"), Dark: lipgloss.Color("#FF5555")},
 		MovingFg:  lipgloss.Color("#FFFFFF"),
 		MovingBg:  lipgloss.Color("#FF79C6"),
 	}

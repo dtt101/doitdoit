@@ -6,12 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/dtt101/doitdoit/styles"
 )
 
 func pressRune(m Model, r rune) Model {
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	return updated.(Model)
 }
 
@@ -234,7 +236,7 @@ func TestMoveDateEscapeReturnsToPicker(t *testing.T) {
 	}
 	m = pressRune(pressRune(m, 'm'), 'd')
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	m = updated.(Model)
 	if m.State != ChoosingMoveDestination {
 		t.Fatalf("expected Esc to return to picker, got %v", m.State)
@@ -255,7 +257,7 @@ func TestMoveDateInputSchedulesExactDate(t *testing.T) {
 	m = pressRune(pressRune(m, 'm'), 'd')
 	m.TextInput.SetValue(target)
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(Model)
 	if m.State != Browsing || m.Err != nil {
 		t.Fatalf("expected valid date to close cleanly, got state=%v err=%v", m.State, m.Err)
@@ -299,34 +301,74 @@ func TestMoveAndRepeatNoOpWithoutTaskOrTarget(t *testing.T) {
 	}
 }
 
-func TestBrowsingHelpIsSpecificToMainAndFutureViews(t *testing.T) {
+func TestBrowsingHelpUsesCompactModalHint(t *testing.T) {
 	mainHelp := (Model{State: Browsing}).helpView()
-	if !strings.Contains(mainHelp, "future") || !strings.Contains(mainHelp, "arrows/hjkl") {
-		t.Fatalf("expected main help to describe Future toggle and full navigation, got %q", mainHelp)
+	if !strings.Contains(mainHelp, "help") || !strings.Contains(mainHelp, "?") {
+		t.Fatalf("expected compact help hint, got %q", mainHelp)
 	}
-	if strings.Contains(mainHelp, "postpone") || strings.Contains(mainHelp, "to today") {
-		t.Fatalf("expected main help not to mention removed shortcuts, got %q", mainHelp)
+	if strings.Contains(mainHelp, "add") || strings.Contains(mainHelp, "navigate") || strings.Contains(mainHelp, "quit") {
+		t.Fatalf("expected shortcut details to stay out of the footer, got %q", mainHelp)
 	}
 
-	futureHelp := (Model{State: Browsing, ShowFuture: true}).helpView()
-	if !strings.Contains(futureHelp, "main view") || !strings.Contains(futureHelp, "↑/↓/k/j") {
-		t.Fatalf("expected Future help to describe main-view toggle and vertical navigation, got %q", futureHelp)
+	mainModal := (Model{State: Browsing, width: 80}).helpModalView()
+	if !strings.Contains(mainModal, "Future view") || !strings.Contains(mainModal, "arrows / hjkl") {
+		t.Fatalf("expected main modal to describe Future toggle and full navigation, got %q", mainModal)
 	}
-	if strings.Contains(futureHelp, "arrows/hjkl") || strings.Contains(futureHelp, "to today") {
-		t.Fatalf("expected Future help not to show main-only or removed shortcuts, got %q", futureHelp)
+
+	futureModal := (Model{State: Browsing, ShowFuture: true, width: 80}).helpModalView()
+	if !strings.Contains(futureModal, "main view") || !strings.Contains(futureModal, "↑/↓ / k/j") {
+		t.Fatalf("expected Future modal to describe main-view toggle and vertical navigation, got %q", futureModal)
 	}
 }
 
-func TestMoveHelpShowsExactTargetsInFutureView(t *testing.T) {
+func TestMoveFooterShowsExactTargetsInFutureView(t *testing.T) {
 	base := startOfDay(time.Now())
-	help := (Model{State: ChoosingMoveDestination, ShowFuture: true}).helpView()
-	for days := 1; days <= 7; days++ {
-		label := base.AddDate(0, 0, days).Format("Mon 02")
-		if !strings.Contains(help, label) {
-			t.Fatalf("expected Future move help to contain %q, got %q", label, help)
+	for _, width := range []int{80, 48} {
+		m := Model{State: ChoosingMoveDestination, ShowFuture: true, width: width}
+		help := m.helpView()
+		for days := 1; days <= 7; days++ {
+			label := base.AddDate(0, 0, days).Format("Mon 02")
+			if !strings.Contains(help, label) {
+				t.Fatalf("expected Future move footer at width %d to contain %q, got %q", width, label, help)
+			}
+		}
+		if !strings.Contains(help, "today") || !strings.Contains(help, "other date") || !strings.Contains(help, "future") {
+			t.Fatalf("expected all move destinations in footer at width %d, got %q", width, help)
+		}
+		if got := lipgloss.Width(help); got > m.width-styles.AppStyle.GetHorizontalFrameSize() {
+			t.Fatalf("move footer width = %d at terminal width %d, exceeds available width", got, width)
 		}
 	}
-	if !strings.Contains(help, "today") || !strings.Contains(help, "other date") || !strings.Contains(help, "future") {
-		t.Fatalf("expected all move destinations in help, got %q", help)
+
+	m := Model{State: ChoosingMoveDestination, ShowFuture: true, width: 80}
+	m.ShowHelp = false
+	m = pressRune(m, '?')
+	if m.ShowHelp {
+		t.Fatal("expected move destinations to stay in the footer instead of opening the help modal")
+	}
+}
+
+func TestHelpModalCapturesInputUntilClosed(t *testing.T) {
+	today := time.Now().Format(dateLayout)
+	m := Model{
+		Data:        TodoData{today: {{ID: "1", Title: "Task"}}},
+		VisibleDays: 1,
+		State:       Browsing,
+		dateKeys:    []string{today},
+	}
+
+	m = pressRune(m, '?')
+	if !m.ShowHelp {
+		t.Fatal("expected ? to open help")
+	}
+	m = pressRune(m, 'd')
+	if !m.ShowHelp || len(m.Data[today]) != 1 {
+		t.Fatal("expected help modal to capture task shortcuts")
+	}
+
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+	m = updated.(Model)
+	if m.ShowHelp {
+		t.Fatal("expected Esc to close help")
 	}
 }
