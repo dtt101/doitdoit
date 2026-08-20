@@ -6,8 +6,7 @@
 
 Put that file in Dropbox, iCloud Drive, or Google Drive and your task list can travel with you.
 
-<img width="1400" height="770" alt="Screenshot 2026-08-20 at 09 20 20" src="https://github.com/user-attachments/assets/fa6758d4-92a9-4853-824c-b4e0cd873095" />
-
+<img width="1467" height="799" alt="Screenshot 2026-08-20 at 16 50 28" src="https://github.com/user-attachments/assets/e374314c-424e-460c-ae8e-fa3ee19d9dd5" />
 
 ## Why doitdoit?
 
