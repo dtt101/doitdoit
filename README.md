@@ -12,7 +12,7 @@ Put that file in Dropbox, iCloud Drive, or Google Drive and your task list can t
 
 - **See the days ahead.** Work from a clean, scrolling multi-day view instead of a long, undifferentiated list. Weekends are intelligently stacked to save space.
 - **Keep your data yours.** Everything lives in a single portable, human-readable JSON file. Back it up, inspect it, script against it, or sync it with the service you already use.
-- **Never lose an unfinished task.** Anything incomplete automatically rolls forward to Today, while old history is pruned to keep the file lean.
+- **Never lose an unfinished task.** Anything incomplete automatically rolls forward to Today. You choose whether completed history is kept forever or pruned after a positive number of days.
 - **Plan quickly from the keyboard.** Add, complete, delete, copy, reorder, schedule, repeat a move, and undo without leaving the terminal.
 - **Capture now, decide later.** Drop ideas into Future, then schedule them for tomorrow, the next seven days, or an exact date when you are ready.
 - **Looks at home on Omarchy.** `doitdoit` follows your active Omarchy theme and includes every stock Omarchy 4 (Quattro) palette.
@@ -24,23 +24,29 @@ Put that file in Dropbox, iCloud Drive, or Google Drive and your task list can t
 
 With no extra configuration, it reads the currently active Omarchy 4 (Quattro) theme — including user-installed themes — from `~/.local/state/omarchy/current/theme/colors.toml`. It also bundles all 22 stock Quattro palettes, so they are available on macOS, other Linux distributions, and Windows too.
 
-> **AUR package coming soon** for an even easier install on Omarchy and Arch Linux.
-
-Add the optional theme hook below and any running `doitdoit` instance will retint as soon as you switch your Omarchy theme:
+After the v0.2.0 package is published, install the prebuilt static binary from the AUR on Omarchy with:
 
 ```bash
-mkdir -p ~/.config/omarchy/hooks
-$EDITOR ~/.config/omarchy/hooks/theme-set
+omarchy pkg aur add doitdoit-bin
 ```
 
-Add:
+Theme-change integration is explicitly opt-in. Install the managed hook and any running `doitdoit` instances will retint as soon as you switch your Omarchy theme:
 
 ```bash
-#!/bin/bash
-pkill -SIGUSR2 doitdoit
+doitdoit config omarchy-hook install
+doitdoit config omarchy-hook status
 ```
 
-Without the hook, `doitdoit` simply picks up the new theme on its next launch.
+The managed hook contains:
+
+```bash
+#!/bin/sh
+pkill -SIGUSR2 -x doitdoit
+```
+
+Remove the integration with `doitdoit config omarchy-hook remove`. Installation refuses to overwrite an existing modified file, directory, or symlink, and removal deletes only the exact managed hook. Without the hook, `doitdoit` simply picks up the new theme on its next launch.
+
+`doitdoit` is an independent project and is not affiliated with or endorsed by Omarchy, 37signals, or their creators.
 
 ## Try it
 
@@ -51,7 +57,7 @@ go install github.com/dtt101/doitdoit@latest
 doitdoit
 ```
 
-On first launch, choose where `doitdoit.json` should live. Accept a normal local path, or point it straight at a synced folder:
+On first launch, choose where `doitdoit.json` should live and how long completed history should be retained. The retention prompt defaults to keeping history forever, including when input reaches EOF. Accept a normal local path, or point it straight at a synced folder:
 
 ```text
 ~/Dropbox/doitdoit/doitdoit.json
@@ -74,6 +80,8 @@ go build -o doitdoit
 
 There is no server to maintain and no proprietary data store. Task data is saved atomically to one `doitdoit.json` file with owner-only permissions, while machine-specific settings such as the file location and theme stay separately in `~/.doitdoit_config.json`.
 
+The terminal application has no ads or telemetry and sends no task data to the maintainer. It accesses the network only indirectly when you deliberately place its JSON file in a third-party synced folder; that provider's terms then apply.
+
 This makes a few useful workflows almost effortless:
 
 - Put the data file in a Dropbox, iCloud Drive, or Google Drive folder to sync it between machines.
@@ -84,7 +92,9 @@ This makes a few useful workflows almost effortless:
 
 The TUI checks for external changes every few seconds and reloads them without disturbing you while you are typing. Like most file-sync workflows, simultaneous edits are last-write-wins, so avoid changing the same file from two devices at exactly the same moment.
 
-Need to relocate an existing task file later? `doitdoit config move <new_path>` moves it and updates your configuration safely.
+Back up both the task JSON file and `~/.doitdoit_config.json` before migrations or major upgrades, and test that the backup can be read. Need to relocate an existing task file later? `doitdoit config move <new_path>` moves it and updates your configuration, but refuses any existing file, directory, or symlink at the destination so it cannot overwrite data.
+
+Completed history is preserved forever by default. Choose a positive pruning period during first-run setup or change it later with `doitdoit config retention <days>`. Pruning never occurs until that choice has been saved. `doitdoit config retention forever` returns to non-pruning mode.
 
 ## Daily workflow
 
@@ -145,25 +155,19 @@ Bundled themes:
 doitdoit                         Launch the TUI
 doitdoit -days <number>          Set the number of visible days (default: 3)
 doitdoit -file <path>            Use a different data file for this session
-doitdoit config show             Show the configured data file and theme
+doitdoit config show             Show the data file, theme, and retention
 doitdoit config move <new_path>  Move the data file and update the config
 doitdoit config theme            Show the current and available themes
 doitdoit config theme <name>     Select a theme
-```
-
-## Bulk import
-
-To turn a plain list into tasks, create `import.txt` beside your `doitdoit.json`, with one task per line, and launch `doitdoit`. The tasks are added to Future and the import file is removed after a successful import.
-
-```text
-book dentist
-renew passport
-plan weekend trip
+doitdoit config retention        Show the completed-history retention
+doitdoit config retention forever
+doitdoit config retention <days> Set a positive retention period
+doitdoit config omarchy-hook install|status|remove
 ```
 
 ## Mobile companion
 
-The [`web/`](./web) directory contains a small installable web app for adding, editing, scheduling, reordering, and completing tasks from a phone. It connects directly to the same JSON file through Dropbox: no application server, framework, or build step required.
+The [`web/`](./web) directory contains an experimental installable web app for adding, editing, scheduling, reordering, and completing tasks from a phone. It connects directly to the same JSON file through Dropbox. It is outside the `doitdoit-bin` AUR release and its security/privacy assurance; review its separate documentation and threat model before using it with real data.
 
 See [web/README.md](./web/README.md) for Dropbox setup and deployment instructions.
 
@@ -178,4 +182,6 @@ Use `go test -count=1 ./...` to bypass the test cache or `go test -cover ./...` 
 
 ## Licence
 
-This software is licensed under the terms in [LICENCE.md](./LICENCE.md), inspired by the O'SaaSy License from [37signals](https://www.fizzy.do/license).
+This software is licensed under the [MIT License](./LICENSE). Third-party attributions and licence terms are in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
+
+To uninstall on Omarchy, first run `doitdoit config omarchy-hook remove`, then `omarchy pkg drop doitdoit-bin`. Package removal intentionally leaves your task JSON file and `~/.doitdoit_config.json` in place; back them up and remove them manually only if you no longer want the data.

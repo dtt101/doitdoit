@@ -37,6 +37,9 @@ type Model struct {
 	Data        TodoData
 	FilePath    string
 	VisibleDays int
+	// RetentionDays is zero for forever and positive for pruning completed
+	// history older than that many days.
+	RetentionDays int
 
 	// Navigation
 	ColIdx int
@@ -79,22 +82,29 @@ type Model struct {
 }
 
 func NewModel(filePath string, visibleDays int) (Model, error) {
+	return NewModelWithRetention(filePath, visibleDays, 0)
+}
+
+// NewModelWithRetention creates a model after applying the explicit retention
+// period selected by the user. Zero means completed history is kept forever.
+func NewModelWithRetention(filePath string, visibleDays, retentionDays int) (Model, error) {
 	if visibleDays < 1 {
 		return Model{}, fmt.Errorf("visible days must be at least 1")
 	}
 
-	data, err := Load(filePath)
+	data, err := Load(filePath, retentionDays)
 	if err != nil {
 		return Model{}, err
 	}
 
 	m := Model{
-		Data:        data,
-		FilePath:    filePath,
-		VisibleDays: visibleDays,
-		State:       Browsing,
-		TextInput:   textinput.New(),
-		todayKey:    time.Now().Format(dateLayout),
+		Data:          data,
+		FilePath:      filePath,
+		VisibleDays:   visibleDays,
+		RetentionDays: retentionDays,
+		State:         Browsing,
+		TextInput:     textinput.New(),
+		todayKey:      time.Now().Format(dateLayout),
 	}
 	m.configureTextInput("New task...")
 	m.Data.DistributeFutureTasks(visibleDays)

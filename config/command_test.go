@@ -35,7 +35,9 @@ func TestRunCommandUsage(t *testing.T) {
 
 func TestRunCommandShow(t *testing.T) {
 	withTempHome(t)
-	if err := SaveConfig(&Config{StoragePath: "/tmp/tasks.json"}); err != nil {
+	cfg := &Config{StoragePath: "/tmp/tasks.json"}
+	cfg.SetRetention(30)
+	if err := SaveConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -45,6 +47,9 @@ func TestRunCommandShow(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "/tmp/tasks.json") {
 		t.Errorf("expected storage path in output, got %q", out.String())
+	}
+	if !strings.Contains(out.String(), "Retention: 30 days") {
+		t.Errorf("expected retention in output, got %q", out.String())
 	}
 }
 

@@ -63,6 +63,89 @@ func TestMoveStorageMissingSource(t *testing.T) {
 	}
 }
 
+func TestMoveStorageCrossFilesystemFallback(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.json")
+	dst := filepath.Join(dir, "destination", "dst.json")
+	writeFile(t, src, "cross-device payload")
+
+	err := moveStorage(src, dst, func(string, string) error { return errors.New("simulated cross-device link failure") })
+	if err != nil {
+		t.Fatalf("moveStorage fallback: %v", err)
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Fatalf("source still exists: %v", err)
+	}
+	if got, err := os.ReadFile(dst); err != nil || string(got) != "cross-device payload" {
+		t.Fatalf("destination=%q err=%v", got, err)
+	}
+}
+
+func TestMoveStorageRefusesExistingDestinations(t *testing.T) {
+	for _, kind := range []string{"file", "directory", "symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			src := filepath.Join(dir, "src.json")
+			dst := filepath.Join(dir, "dst")
+			writeFile(t, src, "source")
+			switch kind {
+			case "file":
+				writeFile(t, dst, "destination")
+			case "directory":
+				if err := os.Mkdir(dst, 0700); err != nil {
+					t.Fatal(err)
+				}
+			case "symlink":
+				if err := os.Symlink(filepath.Join(dir, "missing"), dst); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := MoveStorage(src, dst); !errors.Is(err, ErrDestinationExists) {
+				t.Fatalf("error=%v, want ErrDestinationExists", err)
+			}
+			if got, err := os.ReadFile(src); err != nil || string(got) != "source" {
+				t.Fatalf("source changed: %q err=%v", got, err)
+			}
+			if kind == "file" {
+				if got, _ := os.ReadFile(dst); string(got) != "destination" {
+					t.Fatalf("destination overwritten: %q", got)
+				}
+			}
+		})
+	}
+}
+
+func TestCopyFileConcurrentDestinationCreation(t *testing.T) {
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "dst.json")
+	sources := []string{filepath.Join(dir, "one"), filepath.Join(dir, "two")}
+	writeFile(t, sources[0], "one")
+	writeFile(t, sources[1], "two")
+	errs := make(chan error, 2)
+	for _, src := range sources {
+		go func() { errs <- copyFile(src, dst) }()
+	}
+	first, second := <-errs, <-errs
+	wins := 0
+	loses := 0
+	for _, err := range []error{first, second} {
+		if err == nil {
+			wins++
+		} else if errors.Is(err, ErrDestinationExists) {
+			loses++
+		} else {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	if wins != 1 || loses != 1 {
+		t.Fatalf("wins=%d losses=%d, want 1 each", wins, loses)
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil || (string(got) != "one" && string(got) != "two") {
+		t.Fatalf("destination=%q err=%v", got, err)
+	}
+}
+
 func TestMoveStorageOldNotRemoved(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("running as root bypasses directory permissions")

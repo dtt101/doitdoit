@@ -88,7 +88,7 @@ func (m *Model) applyReloadedData(data TodoData) {
 
 	m.Data = data
 	m.Data.rollOverIncompleteTasks()
-	m.Data.pruneOldTasks()
+	m.Data.pruneOldTasks(m.RetentionDays)
 	m.Data.distributeFutureTasksThrough(m.lastVisibleDate())
 	m.clearMoveUndo()
 

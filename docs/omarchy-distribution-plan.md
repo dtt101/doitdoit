@@ -1,56 +1,50 @@
-# Publish doitdoit for Omarchy through the AUR
+# Publish doitdoit v0.2.0 through the AUR
 
-## Summary
-
-Publish the prebuilt app as `doitdoit-bin` in the public AUR. Users install it with:
+The first AUR release is the newly built v0.2.0 `doitdoit-bin` package. It must
+not reuse the v0.1.8 tag, archives, or checksums. Users install it with:
 
 ```bash
 omarchy pkg aur add doitdoit-bin
 ```
 
-The installed command remains `doitdoit`. Version v0.1.8 will be reviewed and published manually; later stable GitHub tags will update the AUR automatically.
+The installed command remains `doitdoit`; Omarchy is an optional integration
+and plain Arch is supported.
 
-## Application and package changes
+## Release gates
 
-- Add an explicit Omarchy first-run prompt before the TUI starts. It will show the exact destination and ask permission to install `~/.config/omarchy/hooks/theme-set.d/doitdoit`.
-- Install the hook through the supported `omarchy hook install` command. The hook sends `SIGUSR2` to running `doitdoit` processes; declining makes no changes and prompts again on the next launch.
-- Add `doitdoit config omarchy-hook install|status|remove`. Removal only deletes the managed hook and refuses to delete a user-modified file.
-- Expand GoReleaser archives to include `LICENCE.md`.
-- Add an AUR `PKGBUILD` template for x86_64 and ARM64. It will download the matching GitHub release archive, verify its SHA-256 checksum, install `/usr/bin/doitdoit`, README, and licence, and declare `provides/conflicts=('doitdoit')`.
-- Document Omarchy installation, first-run theme integration, removal, and the maintainer release process.
+- MIT `LICENSE` and complete `THIRD_PARTY_NOTICES.md` ship in every archive.
+- Retention is explicitly chosen and persisted before data loading; forever is
+  the safe default. Storage moves never overwrite an existing destination.
+- The Omarchy hook has no launch-time prompt or automatic mutation. Users opt
+  in with `doitdoit config omarchy-hook install`; status and exact managed-file
+  removal are also available.
+- The experimental Dropbox companion remains outside this AUR release's
+  security/privacy assurance until its tracked follow-up is complete.
+- Tests, race tests, vet, vulnerability scanning, licence inventory validation,
+  and GoReleaser validation pass with an isolated home directory.
 
 ## Initial publication
 
-1. Create an AUR account and a dedicated, revocable Ed25519 key as recommended by the [AUR submission guide](https://wiki.archlinux.org/title/AUR_submission_guidelines).
-2. Add the public key to the AUR account.
-3. Merge the packaging changes while leaving `AUR_PUBLISH_ENABLED` unset.
-4. Tag `v0.1.8`; the existing GoReleaser workflow creates the release archives and checksum file.
-5. Render `PKGBUILD` and `.SRCINFO` for v0.1.8, build the x86_64 package locally without installing it, run package checks, and inspect its contents.
-6. Clone the initially empty `ssh://aur@aur.archlinux.org/doitdoit-bin.git` repository, commit the reviewed metadata, and push the first version manually.
-7. Add the dedicated private key and verified AUR host entry as GitHub secrets, add Git author details as repository variables, then set `AUR_PUBLISH_ENABLED=true`.
+1. Recheck official Arch package names and the AUR immediately before release.
+2. Create and register a dedicated revocable Ed25519 AUR key.
+3. Leave `AUR_PUBLISH_ENABLED` unset.
+4. Merge the release-readiness changes and create the new v0.2.0 tag.
+5. Inspect the published archives and hashes, including static linkage and the
+   aarch64 ELF architecture.
+6. Render the AUR files, run `makepkg --verifysource`, build in a clean x86_64
+   chroot, inspect contents, smoke-test install/removal, and run `namcap`.
+7. Push the first separate AUR `master` commit manually with only `PKGBUILD`,
+   `.SRCINFO`, its 0BSD packaging licence, and necessary helpers.
 
-## Automated updates
+## Later automated updates
 
-- Add an AUR publication job after the existing GoReleaser job.
-- Run it only for final tags matching `vMAJOR.MINOR.PATCH`; prereleases will not update the stable AUR package.
-- Read the x86_64 and ARM64 hashes from GoReleaser's published checksum file, render `PKGBUILD`, generate `.SRCINFO` as a non-root user in an Arch container, and validate both sources.
-- Clone the separate AUR repository over SSH, commit as `doitdoit-bin VERSION-1`, and push only when metadata changed.
-- Use repository-owned shell steps rather than a third-party AUR publishing action.
-- A failed AUR update will fail only the publication job; the GitHub release remains available and the job can be rerun.
+Only stable `vMAJOR.MINOR.PATCH` releases generate updates. Publication stays
+disabled unless `AUR_PUBLISH_ENABLED=true`, is serialized, and runs through a
+protected `aur` GitHub Environment with required reviewer approval. It uses a
+dedicated SSH key, verifies the AUR host's published Ed25519 fingerprint,
+refuses equal versions and downgrades, and uses minimal workflow permissions.
+Automation does not replace maintainer review.
 
-## Test and acceptance plan
-
-- Run all Go tests with a temporary `HOME`.
-- Test Omarchy absent, hook accepted, hook declined, hook installation failure, existing current hook, outdated managed hook, and user-modified hook.
-- Confirm tests never touch the developer's real `~/.config/omarchy`.
-- Run `goreleaser check` and a snapshot release; inspect both Linux archives for the executable, README, and licence.
-- Build and inspect the x86_64 Arch package, validate the ARM64 archive and checksum, and run `namcap`.
-- Acceptance: a clean Omarchy user installs `doitdoit-bin`, runs `doitdoit`, approves the disclosed hook, switches themes, and sees every running instance recolour without restarting.
-
-## Assumptions
-
-- v0.1.8 is the first AUR release.
-- Both x86_64 and ARM64 are supported.
-- The package remains usable on plain Arch; Omarchy is an optional runtime integration.
-- No implementation or test command will edit the current machine's live Omarchy, Hyprland, terminal, or theme configuration.
-- AUR is the initial channel; proposing inclusion in Omarchy's curated repository can happen later after the package has users and release history.
+No implementation or test command may edit the developer's live Omarchy,
+Hyprland, terminal, or theme configuration. Final end-to-end acceptance runs
+only on a disposable clean Omarchy installation.

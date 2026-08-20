@@ -1,17 +1,12 @@
 package model
 
 import (
-	"bufio"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 )
-
-const pruneAfterDays = 5
 
 const dateLayout = "2006-01-02"
 
@@ -38,8 +33,8 @@ type Task struct {
 // TodoData maps a date string (YYYY-MM-DD) to a list of tasks
 type TodoData map[string][]Task
 
-// loadRaw reads and parses the JSON file without any side effects (no text
-// import, no rollover, no save-back). A missing file yields an empty map.
+// loadRaw reads and parses the JSON file without any side effects. A missing
+// file yields an empty map.
 func loadRaw(path string) (TodoData, error) {
 	data := make(TodoData)
 
@@ -57,27 +52,20 @@ func loadRaw(path string) (TodoData, error) {
 	return data, nil
 }
 
-func Load(path string) (TodoData, error) {
+func Load(path string, retentionDays int) (TodoData, error) {
 	data, err := loadRaw(path)
 	if err != nil {
 		return nil, err
 	}
 	dirty := false
 
-	// Import tasks from text file if it exists
-	imported, err := data.importFromTextFile(path)
-	if err != nil {
-		return nil, err
-	}
-	dirty = dirty || imported
-
 	// Roll over incomplete tasks
 	if data.rollOverIncompleteTasks() {
 		dirty = true
 	}
 
-	// Prune old tasks
-	if data.pruneOldTasks() {
+	// Prune only after a positive retention period has been explicitly passed.
+	if retentionDays > 0 && data.pruneOldTasks(retentionDays) {
 		dirty = true
 	}
 
@@ -89,67 +77,6 @@ func Load(path string) (TodoData, error) {
 	}
 
 	return data, nil
-}
-
-func (d TodoData) importFromTextFile(jsonPath string) (bool, error) {
-	// Look for import.txt in the same directory as the JSON file
-	dir := filepath.Dir(jsonPath)
-	importPath := filepath.Join(dir, "import.txt")
-
-	if _, err := os.Stat(importPath); os.IsNotExist(err) {
-		return false, nil
-	}
-
-	file, err := os.Open(importPath)
-	if err != nil {
-		return false, err
-	}
-
-	var newTasks []Task
-	scanner := bufio.NewScanner(file)
-
-	// Seed for unique IDs in this batch
-	baseTime := time.Now().UnixNano()
-	idx := 0
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-
-		newTask := Task{
-			ID:        fmt.Sprintf("%d-%d", baseTime, idx),
-			Title:     line,
-			Completed: false,
-			CreatedAt: time.Now(),
-		}
-		newTasks = append(newTasks, newTask)
-		idx++
-	}
-	scanErr := scanner.Err()
-
-	// Close before removing (required on Windows) and on every return path.
-	if err := file.Close(); err != nil && scanErr == nil {
-		scanErr = err
-	}
-	if scanErr != nil {
-		return false, scanErr
-	}
-
-	if len(newTasks) > 0 {
-		if d["Future"] == nil {
-			d["Future"] = make([]Task, 0)
-		}
-		d["Future"] = append(d["Future"], newTasks...)
-	}
-
-	// Delete the import file
-	if err := os.Remove(importPath); err != nil {
-		return false, err
-	}
-
-	return len(newTasks) > 0, nil
 }
 
 func (d TodoData) rollOverIncompleteTasks() bool {
@@ -259,8 +186,11 @@ func (d TodoData) Save(path string) error {
 	return nil
 }
 
-func (d TodoData) pruneOldTasks() bool {
-	cutoff := time.Now().AddDate(0, 0, -pruneAfterDays)
+func (d TodoData) pruneOldTasks(retentionDays int) bool {
+	if retentionDays <= 0 {
+		return false
+	}
+	cutoff := time.Now().AddDate(0, 0, -retentionDays)
 	cutoffStr := cutoff.Format(dateLayout)
 	changed := false
 

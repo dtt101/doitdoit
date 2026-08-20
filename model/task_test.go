@@ -8,76 +8,33 @@ import (
 	"time"
 )
 
-func TestImportTasks(t *testing.T) {
-	// Create temp directory
-	tmpDir, err := os.MkdirTemp("", "doitdoit_test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
+func TestImportTextIsIgnoredAndPreserved(t *testing.T) {
+	tmpDir := t.TempDir()
 	jsonPath := filepath.Join(tmpDir, "tasks.json")
 	importPath := filepath.Join(tmpDir, "import.txt")
-
-	// Create initial JSON
-	initialData := TodoData{
-		"Future": []Task{
-			{ID: "1", Title: "Existing Task", Completed: false},
-		},
-	}
+	initialData := TodoData{"Future": {{ID: "1", Title: "Existing Task"}}}
 	bytes, _ := json.Marshal(initialData)
-	if err := os.WriteFile(jsonPath, bytes, 0644); err != nil {
+	if err := os.WriteFile(jsonPath, bytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	importContent := []byte("must remain untouched\n")
+	if err := os.WriteFile(importPath, importContent, 0600); err != nil {
 		t.Fatal(err)
 	}
 
-	// Create import.txt
-	importContent := "New Task 1\nNew Task 2\n   Trimmed Task   \n"
-	if err := os.WriteFile(importPath, []byte(importContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Load (should trigger import)
-	data, err := Load(jsonPath)
+	data, err := Load(jsonPath, 0)
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
-
-	// Verify tasks in memory
-	futureTasks := data["Future"]
-	if len(futureTasks) != 4 { // 1 existing + 3 new
-		t.Errorf("Expected 4 future tasks, got %d", len(futureTasks))
+	if got := data["Future"]; len(got) != 1 || got[0].Title != "Existing Task" {
+		t.Fatalf("import.txt affected tasks: %#v", got)
 	}
-
-	// Verify titles
-	titles := make(map[string]bool)
-	for _, t := range futureTasks {
-		titles[t.Title] = true
+	gotImport, err := os.ReadFile(importPath)
+	if err != nil {
+		t.Fatalf("import.txt was removed: %v", err)
 	}
-
-	if !titles["New Task 1"] {
-		t.Error("Missing 'New Task 1'")
-	}
-	if !titles["New Task 2"] {
-		t.Error("Missing 'New Task 2'")
-	}
-	if !titles["Trimmed Task"] {
-		t.Error("Missing 'Trimmed Task'")
-	}
-
-	// Verify import.txt is deleted
-	if _, err := os.Stat(importPath); !os.IsNotExist(err) {
-		t.Error("import.txt was not deleted")
-	}
-
-	// Verify JSON file on disk is updated
-	// Re-load raw file to check persistence
-	// Note: Load might do rollover/prune, but our data is simple enough that it shouldn't change much unless dates are involved.
-	// But we specifically want to check if the NEW tasks are saved.
-	bytes, _ = os.ReadFile(jsonPath)
-	var savedData TodoData
-	json.Unmarshal(bytes, &savedData)
-	if len(savedData["Future"]) != 4 {
-		t.Errorf("Persisted data has %d future tasks, expected 4", len(savedData["Future"]))
+	if string(gotImport) != string(importContent) {
+		t.Errorf("import.txt changed: %q", gotImport)
 	}
 }
 
@@ -105,7 +62,7 @@ func TestPruningAndRollover(t *testing.T) {
 
 	// Execute the logic in the same order as Load()
 	_ = data.rollOverIncompleteTasks()
-	_ = data.pruneOldTasks()
+	_ = data.pruneOldTasks(5)
 
 	// Assertions
 

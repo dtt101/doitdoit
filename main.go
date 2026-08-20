@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
@@ -27,8 +28,10 @@ func main() {
 
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		cfg = &config.Config{}
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
 	}
+	input := bufio.NewReader(os.Stdin)
 
 	var finalPath string
 	if *filePathFlag != "" {
@@ -39,11 +42,17 @@ func main() {
 		}
 		finalPath = expanded
 	} else {
-		finalPath, err = config.ResolveStoragePath(cfg, os.Stdin, os.Stdout)
+		finalPath, err = config.ResolveStoragePath(cfg, input, os.Stdout)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
 		}
+	}
+
+	retentionDays, err := config.ResolveRetention(cfg, input, os.Stdout)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error configuring retention: %v\n", err)
+		os.Exit(1)
 	}
 
 	theme, err := styles.ResolveTheme(cfg.Theme)
@@ -60,7 +69,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	m, err := model.NewModel(finalPath, *visibleDays)
+	m, err := model.NewModelWithRetention(finalPath, *visibleDays, retentionDays)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing model: %v\n", err)
 		os.Exit(1)

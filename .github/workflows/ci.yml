@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: Create isolated home
+        run: mkdir -p "$RUNNER_TEMP/doitdoit-home"
+
+      - name: Test
+        env:
+          HOME: ${{ runner.temp }}/doitdoit-home
+        run: go test -count=1 ./...
+
+      - name: Race test
+        env:
+          HOME: ${{ runner.temp }}/doitdoit-home
+        run: go test -race ./...
+
+      - name: Vet
+        env:
+          HOME: ${{ runner.temp }}/doitdoit-home
+        run: go vet ./...
+
+      - name: Vulnerability scan
+        env:
+          HOME: ${{ runner.temp }}/doitdoit-home
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+
+      - name: Validate licence inventory
+        env:
+          HOME: ${{ runner.temp }}/doitdoit-home
+        run: go test -count=1 ./releasecheck
+
+      - name: Validate GoReleaser configuration
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: v2.17.1
+          args: check

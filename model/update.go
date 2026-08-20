@@ -96,7 +96,7 @@ func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
 		}
 
 		m.Data.rollOverIncompleteTasks()
-		m.Data.pruneOldTasks()
+		m.Data.pruneOldTasks(m.RetentionDays)
 		m.clearMoveUndo()
 		firstDay := m.firstVisibleDate()
 		if firstDay.Before(startOfDay(time.Now())) {

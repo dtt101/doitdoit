@@ -1,12 +1,36 @@
 package config
 
 import (
+	"bufio"
 	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestFirstRunStorageAndRetentionShareInput(t *testing.T) {
+	withTempHome(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tasks.json")
+	if err := os.WriteFile(path, []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &Config{}
+	input := bufio.NewReader(strings.NewReader(path + "\n21\n"))
+	var out bytes.Buffer
+	gotPath, err := ResolveStoragePath(cfg, input, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	days, err := ResolveRetention(cfg, input, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != path || days != 21 {
+		t.Fatalf("path=%q days=%d, want %q and 21", gotPath, days, path)
+	}
+}
 
 func TestResolveStoragePathExistingConfiguredFile(t *testing.T) {
 	withTempHome(t)

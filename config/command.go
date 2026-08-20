@@ -4,16 +4,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/dtt101/doitdoit/styles"
 )
 
+const configUsage = "Usage: doitdoit config show | move <path> | theme [name] | retention [forever|days] | omarchy-hook install|status|remove"
+
 // RunCommand executes a `config` subcommand (args[0] is expected to be
 // "config") and returns the process exit code. All output is written to out.
 func RunCommand(args []string, out io.Writer) int {
 	if len(args) < 2 {
-		fmt.Fprintln(out, "Usage: doitdoit config show | move <path> | theme [name]")
+		fmt.Fprintln(out, configUsage)
 		return 1
 	}
 	switch args[1] {
@@ -23,8 +26,12 @@ func RunCommand(args []string, out io.Writer) int {
 		return runMove(args[2:], out)
 	case "theme":
 		return runTheme(args[2:], out)
+	case "retention":
+		return runRetention(args[2:], out)
+	case "omarchy-hook":
+		return runOmarchyHook(args[2:], out)
 	default:
-		fmt.Fprintln(out, "Usage: doitdoit config show | move <path> | theme [name]")
+		fmt.Fprintln(out, configUsage)
 		return 1
 	}
 }
@@ -41,6 +48,50 @@ func runShow(out io.Writer) int {
 		theme = "system (follows Omarchy when present)"
 	}
 	fmt.Fprintf(out, "Theme: %s\n", theme)
+	fmt.Fprintf(out, "Retention: %s\n", retentionDescription(cfg))
+	return 0
+}
+
+func retentionDescription(cfg *Config) string {
+	days, decided := cfg.Retention()
+	if !decided {
+		return "not set (you will be asked before task data is loaded)"
+	}
+	if days == 0 {
+		return "forever"
+	}
+	return fmt.Sprintf("%d days", days)
+}
+
+func runRetention(args []string, out io.Writer) int {
+	cfg, err := LoadConfig()
+	if err != nil {
+		fmt.Fprintf(out, "Error loading config: %v\n", err)
+		return 1
+	}
+	if len(args) == 0 {
+		fmt.Fprintf(out, "Retention: %s\n", retentionDescription(cfg))
+		return 0
+	}
+	if len(args) != 1 {
+		fmt.Fprintln(out, "Usage: doitdoit config retention [forever|days]")
+		return 1
+	}
+
+	days := 0
+	if strings.ToLower(args[0]) != "forever" {
+		days, err = strconv.Atoi(args[0])
+		if err != nil || days <= 0 {
+			fmt.Fprintln(out, "Retention must be 'forever' or a positive whole number of days.")
+			return 1
+		}
+	}
+	cfg.SetRetention(days)
+	if err := SaveConfig(cfg); err != nil {
+		fmt.Fprintf(out, "Error saving config: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(out, "Retention set to: %s\n", retentionDescription(cfg))
 	return 0
 }
 

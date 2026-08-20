@@ -1,4 +1,10 @@
-# doitdoit · web companion
+# doitdoit · web companion (experimental)
+
+> This Dropbox companion is experimental, is not included in the
+> `doitdoit-bin` AUR package, and is outside that release's security and
+> privacy assurance. Review the open follow-up items in
+> [`../docs/web-companion-follow-up.md`](../docs/web-companion-follow-up.md)
+> before using it with sensitive or irreplaceable task data.
 
 A small static web app that reads and writes the same Dropbox JSON file the
 CLI uses. Designed for adding and ticking off tasks from a phone, but works
@@ -14,8 +20,9 @@ HTML + CSS + a single vanilla JS file + [mustache.js] for templates.
   `/Apps/doitdoit/doitdoit.json`). Reads via `/2/files/download`, writes via
   `/2/files/upload` with `mode: { update: <rev> }` so concurrent CLI writes
   surface as a 409 and the page reloads instead of clobbering.
-- **Domain logic**: `rollOverIncompleteTasks` and `pruneOldTasks` are ported
-  from `model/task.go`. Keep them in sync if the CLI's rules change.
+- **Domain logic**: `rollOverIncompleteTasks` and `pruneOldTasks` predate the
+  CLI's persisted retention setting and are not currently at feature parity.
+  This is a tracked release-separation issue, not a compatibility guarantee.
 
 ## One-time setup
 
