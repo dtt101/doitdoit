@@ -1,8 +1,8 @@
 package model
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/dtt101/doitdoit/styles"
 )
 
@@ -15,6 +15,9 @@ type ThemeReloadMsg struct {
 func (m Model) handleThemeReload(msg ThemeReloadMsg) (tea.Model, tea.Cmd) {
 	styles.Apply(msg.Theme)
 	// The text input captures its style at configure time, so refresh it.
-	m.TextInput.TextStyle = lipgloss.NewStyle().Foreground(styles.Text)
+	textInputStyles := m.TextInput.Styles()
+	textInputStyles.Focused.Text = lipgloss.NewStyle().Foreground(styles.Text)
+	textInputStyles.Blurred.Text = textInputStyles.Focused.Text
+	m.TextInput.SetStyles(textInputStyles)
 	return m, nil
 }

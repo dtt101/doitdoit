@@ -5,9 +5,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/dtt101/doitdoit/styles"
 )
 
@@ -64,9 +64,14 @@ type Model struct {
 
 	// Future View
 	ShowFuture bool
+	ShowHelp   bool
 
 	// Brief flash on copy
 	copyFlash bool
+
+	// Click-only animation for the footer wordmark.
+	brandFrame       int
+	brandAnimationID uint64
 
 	// Session-only move history.
 	lastMoveTarget *moveTarget
@@ -184,9 +189,13 @@ func (m *Model) clampRow() {
 func (m *Model) configureTextInput(placeholder string) {
 	m.TextInput.Reset()
 	m.TextInput.Placeholder = placeholder
-	m.TextInput.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-	m.TextInput.TextStyle = lipgloss.NewStyle().Foreground(styles.Text)
+	textInputStyles := m.TextInput.Styles()
+	textInputStyles.Focused.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	textInputStyles.Focused.Text = lipgloss.NewStyle().Foreground(styles.Text)
+	textInputStyles.Blurred.Placeholder = textInputStyles.Focused.Placeholder
+	textInputStyles.Blurred.Text = textInputStyles.Focused.Text
+	m.TextInput.SetStyles(textInputStyles)
 	m.TextInput.Prompt = ""
-	m.TextInput.Width = 30
+	m.TextInput.SetWidth(30)
 	m.TextInput.Focus()
 }

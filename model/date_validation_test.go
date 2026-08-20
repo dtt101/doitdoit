@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestSetTaskDateRejectsInvalidDate(t *testing.T) {
@@ -19,7 +19,7 @@ func TestSetTaskDateRejectsInvalidDate(t *testing.T) {
 	}
 	m.TextInput.SetValue("24-11")
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(Model)
 
 	if m.Data["Future"][0].DueDate != "" {

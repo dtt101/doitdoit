@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 func pressBrowsingKey(t *testing.T, m Model, key rune) Model {
 	t.Helper()
-	updated, _ := m.handleBrowsingKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
+	updated, _ := m.handleBrowsingKey(tea.KeyPressMsg{Code: key, Text: string(key)})
 	return updated.(Model)
 }
 

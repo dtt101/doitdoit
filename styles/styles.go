@@ -1,15 +1,19 @@
 package styles
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"image/color"
+
+	"charm.land/lipgloss/v2"
+)
 
 var (
 	// Colors
-	Subtle    lipgloss.TerminalColor
-	Highlight lipgloss.TerminalColor
-	KeyColor  lipgloss.TerminalColor
-	Text      lipgloss.TerminalColor
-	Special   lipgloss.TerminalColor
-	Warning   lipgloss.TerminalColor
+	Subtle    color.Color
+	Highlight color.Color
+	KeyColor  color.Color
+	Text      color.Color
+	Special   color.Color
+	Warning   color.Color
 
 	// Column Styles
 	ColumnStyle        lipgloss.Style
