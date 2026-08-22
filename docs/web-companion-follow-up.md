@@ -1,6 +1,6 @@
 # Experimental web companion follow-up
 
-The Dropbox web companion is separate from the v0.2.0 CLI/AUR release gate.
+The Dropbox web companion is separate from the v0.2.0 CLI release gate.
 Before it can share that release's security or privacy claims, complete and
 review all of the following:
 
@@ -18,4 +18,4 @@ review all of the following:
 - Add backup/recovery guidance and concurrent-edit tests for Dropbox sync.
 
 Until those items are complete, do not describe the web companion as covered
-by the AUR package's security review or data-handling guarantees.
+by the CLI release's security review or data-handling guarantees.

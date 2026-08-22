@@ -24,11 +24,16 @@ Put that file in Dropbox, iCloud Drive, or Google Drive and your task list can t
 
 With no extra configuration, it reads the currently active Omarchy 4 (Quattro) theme — including user-installed themes — from `~/.local/state/omarchy/current/theme/colors.toml`. It also bundles all 22 stock Quattro palettes, so they are available on macOS, other Linux distributions, and Windows too.
 
-After the v0.2.0 package is published, install the prebuilt static binary from the AUR on Omarchy with:
+### Install on Omarchy
+
+Omarchy 4 (Quattro) already includes mise. Install and activate `doitdoit` directly from its GitHub releases with:
 
 ```bash
-omarchy pkg aur add doitdoit-bin
+mise use -g github:dtt101/doitdoit
+doitdoit
 ```
+
+The `github:` prefix selects mise's GitHub backend, which chooses the appropriate prebuilt release for the current platform. Because the tool is in your global mise configuration, `omarchy update` updates it with the rest of your mise-managed tools. You can also update it directly with `mise up github:dtt101/doitdoit`.
 
 Theme-change integration is explicitly opt-in. Install the managed hook and any running `doitdoit` instances will retint as soon as you switch your Omarchy theme:
 
@@ -46,14 +51,44 @@ pkill -SIGUSR2 -x doitdoit
 
 Remove the integration with `doitdoit config omarchy-hook remove`. Installation refuses to overwrite an existing modified file, directory, or symlink, and removal deletes only the exact managed hook. Without the hook, `doitdoit` simply picks up the new theme on its next launch.
 
-`doitdoit` is an independent project and is not affiliated with or endorsed by Omarchy, 37signals, or their creators.
-
-## Try it
-
-Requires [Go](https://go.dev/dl/) 1.24 or later.
+To remove the mise-managed installation while preserving your tasks and configuration:
 
 ```bash
-go install github.com/dtt101/doitdoit@latest
+doitdoit config omarchy-hook remove
+mise unuse -g github:dtt101/doitdoit
+```
+
+## Install
+
+### macOS
+
+Install mise with Homebrew if you do not already have it:
+
+```bash
+brew install mise
+```
+
+Add mise to your default zsh shell by placing this line in `~/.zshrc`, then open a new terminal:
+
+```bash
+eval "$(mise activate zsh)"
+```
+
+Install and run `doitdoit`:
+
+```bash
+mise use -g github:dtt101/doitdoit
+doitdoit
+```
+
+mise automatically selects the Apple Silicon or Intel macOS archive for your Mac.
+
+### Other systems
+
+Once [mise is installed and activated](https://mise.jdx.dev/getting-started.html), use the same command on Linux or Windows:
+
+```bash
+mise use -g github:dtt101/doitdoit
 doitdoit
 ```
 
@@ -65,13 +100,14 @@ On first launch, choose where `doitdoit.json` should live and how long completed
 
 That is the whole setup. Start adding tasks with `a`, move with `m`, complete with `Space`, and open Future with `f`.
 
-> `go install` places the binary in `$GOPATH/bin` (usually `~/go/bin`). Make sure that directory is on your `PATH`.
-
-You can also download a prebuilt archive from [GitHub Releases](https://github.com/dtt101/doitdoit/releases), or build from source:
+You can also download a prebuilt archive from [GitHub Releases](https://github.com/dtt101/doitdoit/releases), install with Go 1.27 or later, or build from source. The repository's `mise.toml` pins the development toolchain:
 
 ```bash
+go install github.com/dtt101/doitdoit@latest
+
 git clone https://github.com/dtt101/doitdoit.git
 cd doitdoit
+mise install
 go build -o doitdoit
 ./doitdoit
 ```
@@ -167,21 +203,45 @@ doitdoit config omarchy-hook install|status|remove
 
 ## Mobile companion
 
-The [`web/`](./web) directory contains an experimental installable web app for adding, editing, scheduling, reordering, and completing tasks from a phone. It connects directly to the same JSON file through Dropbox. It is outside the `doitdoit-bin` AUR release and its security/privacy assurance; review its separate documentation and threat model before using it with real data.
+The [`web/`](./web) directory contains an experimental installable web app for adding, editing, scheduling, reordering, and completing tasks from a phone. It connects directly to the same JSON file through Dropbox. It is outside the CLI release and its security/privacy assurance; review its separate documentation and threat model before using it with real data.
 
 See [web/README.md](./web/README.md) for Dropbox setup and deployment instructions.
 
 ## Development
 
 ```bash
+mise install
 go test ./...
 go run .
 ```
 
 Use `go test -count=1 ./...` to bypass the test cache or `go test -cover ./...` for a coverage summary.
 
+### Publish a release
+
+mise installs from published GitHub Releases; it does not build or install the current `main` branch. There is no separate mise package to publish, and there is currently no application version file to edit—the Git tag is the release version.
+
+After the changes for a release are merged and CI is green, choose the next [semantic version](https://semver.org/) and create an annotated tag from the exact commit you want to ship:
+
+```bash
+git switch main
+git pull --ff-only
+git tag -a v0.2.1 -m "doitdoit v0.2.1"
+git push origin v0.2.1
+```
+
+Pushing a `v*` tag starts [the release workflow](./.github/workflows/release.yml). It reruns the tests, race detector, vet, and vulnerability scan; GoReleaser then builds the platform archives, checksum file, and GitHub Release. Confirm both the workflow and the new entry on [GitHub Releases](https://github.com/dtt101/doitdoit/releases) succeeded before announcing the version.
+
+New installations using `mise use -g github:dtt101/doitdoit` resolve the latest published release. Existing installations stay on their installed version until the user runs:
+
+```bash
+mise up github:dtt101/doitdoit
+```
+
+On Omarchy, `omarchy update` also updates globally configured mise tools. Merely pushing commits to `main` does not update either new or existing mise users.
+
 ## Licence
 
 This software is licensed under the [MIT License](./LICENSE). Third-party attributions and licence terms are in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
 
-To uninstall on Omarchy, first run `doitdoit config omarchy-hook remove`, then `omarchy pkg drop doitdoit-bin`. Package removal intentionally leaves your task JSON file and `~/.doitdoit_config.json` in place; back them up and remove them manually only if you no longer want the data.
+Uninstalling intentionally leaves your task JSON file and `~/.doitdoit_config.json` in place; back them up and remove them manually only if you no longer want the data.

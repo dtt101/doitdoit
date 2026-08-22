@@ -1,7 +1,7 @@
 # doitdoit · web companion (experimental)
 
 > This Dropbox companion is experimental, is not included in the
-> `doitdoit-bin` AUR package, and is outside that release's security and
+> doitdoit CLI release, and is outside that release's security and
 > privacy assurance. Review the open follow-up items in
 > [`../docs/web-companion-follow-up.md`](../docs/web-companion-follow-up.md)
 > before using it with sensitive or irreplaceable task data.
