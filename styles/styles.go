@@ -27,10 +27,6 @@ var (
 
 	TitleStyle lipgloss.Style
 
-	// FocusedTitleStyle marks the header of the day that currently has focus,
-	// so the active day stands out when several are stacked in one column.
-	FocusedTitleStyle lipgloss.Style
-
 	HelpStyle lipgloss.Style
 	KeyStyle  lipgloss.Style
 	AppStyle  lipgloss.Style
@@ -82,9 +78,6 @@ func Apply(t Theme) {
 		Foreground(Special).
 		Bold(true).
 		PaddingBottom(1)
-
-	FocusedTitleStyle = TitleStyle.
-		Foreground(Highlight)
 
 	HelpStyle = lipgloss.NewStyle().
 		Foreground(Subtle).

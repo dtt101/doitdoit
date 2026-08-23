@@ -10,7 +10,7 @@ Put that file in Dropbox, iCloud Drive, or Google Drive and your task list can t
 
 ## Why doitdoit?
 
-- **See the days ahead.** Work from a clean, scrolling multi-day view instead of a long, undifferentiated list. Weekends are intelligently stacked to save space.
+- **See the days ahead.** Work from a clean, scrolling multi-day view instead of a long, undifferentiated list. Every day has its own column.
 - **Keep your data yours.** Everything lives in a single portable, human-readable JSON file. Back it up, inspect it, script against it, or sync it with the service you already use.
 - **Never lose an unfinished task.** Anything incomplete automatically rolls forward to Today. You choose whether completed history is kept forever or pruned after a positive number of days.
 - **Plan quickly from the keyboard.** Add, complete, delete, copy, reorder, schedule, repeat a move, and undo without leaving the terminal.
@@ -134,7 +134,7 @@ Completed history is preserved forever by default. Choose a positive pruning per
 
 ## Daily workflow
 
-The default view shows Today and the days immediately ahead. Move right beyond the final column and the calendar keeps scrolling forward; move left to return toward Today. Saturday and Sunday share a compact weekend column whenever multiple days are visible.
+The default view shows Today and the days immediately ahead, with one day per column. Move right beyond the final column and the calendar keeps scrolling forward; move left to return toward Today.
 
 Press `f` for the separate Future list. Tasks with a specific future date remain there until that date enters the visible window, while undated ideas wait until you decide what to do with them.
 
