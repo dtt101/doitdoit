@@ -30,11 +30,7 @@ func (m Model) View() tea.View {
 		keys = []string{"Future"}
 	}
 
-	// Group the visible days into columns. Normally each day is its own
-	// column, but Saturday and Sunday are stacked into a single column when
-	// more than one day is on screen.
-	groups := m.columnGroups(keys)
-	columns := m.renderColumns(keys, groups)
+	columns := m.renderColumns(keys)
 
 	footer := m.helpView()
 	if errView := m.errorView(); errView != "" {
@@ -56,13 +52,13 @@ func (m Model) View() tea.View {
 // style's Width and Height as the complete block size including border and
 // padding (but excluding margins), so the inner content dimensions must be
 // derived from the style's frame rather than subtracted from the block twice.
-func (m Model) renderColumns(keys []string, groups [][]int) []string {
+func (m Model) renderColumns(keys []string) []string {
 	availableWidth := m.width - styles.AppStyle.GetHorizontalFrameSize()
 	if availableWidth < 0 {
 		availableWidth = 0
 	}
 
-	numCols := len(groups)
+	numCols := len(keys)
 	if numCols < 1 {
 		numCols = 1
 	}
@@ -90,17 +86,8 @@ func (m Model) renderColumns(keys []string, groups [][]int) []string {
 	var colContents []string
 	maxContentHeight := 0
 
-	for _, group := range groups {
-		var sections []string
-		for _, dayIdx := range group {
-			// Separate stacked days within a column with a blank line.
-			if len(sections) > 0 {
-				sections = append(sections, "")
-			}
-			sections = append(sections, m.renderDaySection(keys[dayIdx], dayIdx, contentWidth))
-		}
-
-		content := lipgloss.JoinVertical(lipgloss.Left, sections...)
+	for dayIdx, dateStr := range keys {
+		content := m.renderDaySection(dateStr, dayIdx, contentWidth)
 		content = lipgloss.Wrap(content, contentWidth, "")
 		colContents = append(colContents, content)
 
@@ -119,7 +106,7 @@ func (m Model) renderColumns(keys []string, groups [][]int) []string {
 	// Render columns with unified height.
 	var columns []string
 	for i, content := range colContents {
-		isFocused := m.State != Adding && m.State != SettingMoveDate && m.groupFocused(groups[i])
+		isFocused := m.State != Adding && m.State != SettingMoveDate && (m.ShowFuture || m.ColIdx == i)
 
 		style := styles.ColumnStyle.Width(columnBlockWidth).Height(columnBlockHeight)
 		if isFocused {
@@ -132,52 +119,7 @@ func (m Model) renderColumns(keys []string, groups [][]int) []string {
 	return columns
 }
 
-// columnGroups maps the visible day keys to columns, each column being the day
-// indices stacked within it. Saturday and Sunday share a column once more than
-// one day is shown; the single-day and Future views keep one day per column.
-func (m Model) columnGroups(keys []string) [][]int {
-	if m.ShowFuture || m.VisibleDays <= 1 {
-		groups := make([][]int, len(keys))
-		for i := range keys {
-			groups[i] = []int{i}
-		}
-		return groups
-	}
-
-	var groups [][]int
-	for i := 0; i < len(keys); {
-		if !isWeekend(keys[i]) {
-			groups = append(groups, []int{i})
-			i++
-			continue
-		}
-
-		// Gather the run of consecutive weekend days (Sat, then Sun).
-		var group []int
-		for i < len(keys) && isWeekend(keys[i]) {
-			group = append(group, i)
-			i++
-		}
-		groups = append(groups, group)
-	}
-	return groups
-}
-
-// groupFocused reports whether the focused day falls within the given column.
-func (m Model) groupFocused(group []int) bool {
-	if m.ShowFuture {
-		return true
-	}
-	for _, idx := range group {
-		if m.ColIdx == idx {
-			return true
-		}
-	}
-	return false
-}
-
-// renderDaySection builds the header and task list for a single day, with the
-// selection highlight applied only when that day is the focused one.
+// renderDaySection builds the header and task list for a single day.
 func (m Model) renderDaySection(dateStr string, dayIdx, colWidth int) string {
 	isFocused := m.State != Adding && (m.ShowFuture || m.ColIdx == dayIdx)
 
@@ -193,11 +135,7 @@ func (m Model) renderDaySection(dateStr string, dayIdx, colWidth int) string {
 		}
 	}
 
-	titleStyle := styles.TitleStyle
-	if isFocused {
-		titleStyle = styles.FocusedTitleStyle
-	}
-	title := titleStyle.Render(header)
+	title := styles.TitleStyle.Render(header)
 
 	// Tasks
 	var taskViews []string
@@ -261,16 +199,6 @@ func (m Model) renderDaySection(dateStr string, dayIdx, colWidth int) string {
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, title, lipgloss.JoinVertical(lipgloss.Left, taskViews...))
-}
-
-// isWeekend reports whether the YYYY-MM-DD date string falls on a weekend.
-func isWeekend(dateStr string) bool {
-	d, err := time.Parse("2006-01-02", dateStr)
-	if err != nil {
-		return false
-	}
-	wd := d.Weekday()
-	return wd == time.Saturday || wd == time.Sunday
 }
 
 func (m Model) helpView() string {
@@ -393,7 +321,7 @@ func (m Model) brandBounds() (x, y, width int, ok bool) {
 	if m.ShowFuture {
 		keys = []string{"Future"}
 	}
-	columns := lipgloss.JoinHorizontal(lipgloss.Top, m.renderColumns(keys, m.columnGroups(keys))...)
+	columns := lipgloss.JoinHorizontal(lipgloss.Top, m.renderColumns(keys)...)
 
 	x = styles.AppStyle.GetMarginLeft() + styles.HelpStyle.GetMarginLeft()
 	y = styles.AppStyle.GetMarginTop() + lipgloss.Height(columns) + styles.HelpStyle.GetMarginTop()
@@ -506,7 +434,7 @@ func (m Model) helpModalView() string {
 
 	closeHint := lipgloss.NewStyle().Foreground(styles.Subtle).Render("Press Esc to close")
 	body := lipgloss.JoinVertical(lipgloss.Left,
-		styles.FocusedTitleStyle.Render("Keyboard shortcuts"),
+		styles.TitleStyle.Render("Keyboard shortcuts"),
 		shortcuts,
 		"",
 		closeHint,

@@ -94,8 +94,7 @@ func TestColumnsFillAvailableWidthAndHaveEqualHeight(t *testing.T) {
 		height:      30,
 	}
 
-	groups := m.columnGroups(keys)
-	columns := m.renderColumns(keys, groups)
+	columns := m.renderColumns(keys)
 	if len(columns) != len(keys) {
 		t.Fatalf("rendered %d columns, want %d", len(columns), len(keys))
 	}
