@@ -17,6 +17,11 @@ func pressRune(m Model, r rune) Model {
 	return updated.(Model)
 }
 
+func pressSpace(m Model) Model {
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	return updated.(Model)
+}
+
 func nextWeekday(after time.Time, weekday time.Weekday) time.Time {
 	date := startOfDay(after).AddDate(0, 0, 1)
 	for date.Weekday() != weekday {
@@ -190,6 +195,44 @@ func TestCompletedTasksStayBelowMovedIncompleteTask(t *testing.T) {
 	m = pressRune(pressRune(m, 'm'), '1')
 	if got := m.Data[tomorrow]; len(got) != 2 || got[0].ID != "move" || got[1].ID != "done" {
 		t.Fatalf("expected moved task above completed task, got %v", got)
+	}
+}
+
+func TestSpaceCompletesTaskAndGroupsCompletedTasksAtBottom(t *testing.T) {
+	today := time.Now().Format(dateLayout)
+
+	for _, tc := range []struct {
+		name       string
+		key        string
+		showFuture bool
+	}{
+		{name: "dated list", key: today},
+		{name: "Future list", key: "Future", showFuture: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := Model{
+				Data: TodoData{tc.key: {
+					{ID: "done", Title: "Already done", Completed: true},
+					{ID: "target", Title: "Complete me"},
+					{ID: "remaining", Title: "Still to do"},
+				}},
+				VisibleDays: 1,
+				State:       Browsing,
+				ShowFuture:  tc.showFuture,
+				dateKeys:    []string{today},
+				RowIdx:      1,
+			}
+
+			m = pressSpace(m)
+
+			got := m.Data[tc.key]
+			if len(got) != 3 || got[0].ID != "remaining" || got[1].ID != "done" || got[2].ID != "target" {
+				t.Fatalf("expected unfinished task followed by completed tasks, got %v", got)
+			}
+			if !got[2].Completed {
+				t.Fatal("expected space to mark the target task complete")
+			}
+		})
 	}
 }
 
