@@ -15,6 +15,24 @@ func insertAt(tasks []Task, idx int, task Task) []Task {
 	return tasks
 }
 
+// groupTasksByCompletion preserves the relative order within the incomplete
+// and completed groups while restoring the list invariant that completed
+// tasks follow all incomplete tasks.
+func groupTasksByCompletion(tasks []Task) []Task {
+	grouped := make([]Task, 0, len(tasks))
+	for _, task := range tasks {
+		if !task.Completed {
+			grouped = append(grouped, task)
+		}
+	}
+	for _, task := range tasks {
+		if task.Completed {
+			grouped = append(grouped, task)
+		}
+	}
+	return grouped
+}
+
 func (m *Model) addTask(title string) {
 	currentDate := m.getCurrentKey()
 	newTask := Task{
@@ -59,46 +77,29 @@ func (m *Model) toggleTask() bool {
 		return false
 	}
 
-	// Toggle completion
-	tasks[m.RowIdx].Completed = !tasks[m.RowIdx].Completed
+	task := tasks[m.RowIdx]
+	task.Completed = !task.Completed
 
-	if tasks[m.RowIdx].Completed {
-		// If completed and not already at the bottom, move to bottom
-		if m.RowIdx < len(tasks)-1 {
-			task := tasks[m.RowIdx]
-			// Remove task at RowIdx
-			tasks = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
-			// Append task to end
-			tasks = append(tasks, task)
+	// Remove the toggled task before grouping the remainder. This repairs any
+	// pre-existing interleaving in the list, while still placing a newly
+	// completed task at the very bottom.
+	tasks = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
+	tasks = groupTasksByCompletion(tasks)
 
-			// Update the map with the reordered slice
-			m.Data[currentDate] = tasks
-		}
+	if task.Completed {
+		tasks = append(tasks, task)
 	} else {
-		// If uncompleted, move it above completed tasks
-		task := tasks[m.RowIdx]
-		// Remove task at current position
-		tasks = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
-
-		// Find the first completed task to insert before it
 		insertIdx := len(tasks)
-		for i, t := range tasks {
-			if t.Completed {
+		for i, existing := range tasks {
+			if existing.Completed {
 				insertIdx = i
 				break
 			}
 		}
-
-		// Insert at the appropriate position
-		if insertIdx == len(tasks) {
-			tasks = append(tasks, task)
-		} else {
-			tasks = insertAt(tasks, insertIdx, task)
-		}
-
-		// Update the map with the reordered slice
-		m.Data[currentDate] = tasks
+		tasks = insertAt(tasks, insertIdx, task)
 	}
+
+	m.Data[currentDate] = tasks
 	return true
 }
 
