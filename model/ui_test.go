@@ -313,7 +313,7 @@ func TestMoveDateInputSchedulesExactDate(t *testing.T) {
 	}
 }
 
-func TestNonMoveMutationClearsUndo(t *testing.T) {
+func TestNonMoveMutationReplacesUndo(t *testing.T) {
 	today := time.Now().Format(dateLayout)
 	m := Model{
 		Data:        TodoData{today: {{ID: "1", Title: "Task 1"}, {ID: "2", Title: "Task 2"}}},
@@ -326,8 +326,31 @@ func TestNonMoveMutationClearsUndo(t *testing.T) {
 		t.Fatal("expected move to create undo history")
 	}
 	m = pressRune(m, ' ')
-	if m.moveUndo != nil {
-		t.Fatal("expected task mutation to clear move undo history")
+	if m.moveUndo == nil {
+		t.Fatal("expected task mutation to replace undo history")
+	}
+	m = pressRune(m, 'u')
+	if got := m.Data[today]; len(got) != 1 || got[0].Completed {
+		t.Fatalf("expected undo to restore pre-toggle state, got %#v", got)
+	}
+}
+
+func TestEditTaskAndUndo(t *testing.T) {
+	today := time.Now().Format(dateLayout)
+	m := Model{Data: TodoData{today: {{ID: "1", Title: "Before"}}}, FilePath: filepath.Join(t.TempDir(), "tasks.json"), VisibleDays: 1, State: Browsing, dateKeys: []string{today}}
+	m = pressRune(m, 'e')
+	if m.State != Editing || m.TextInput.Value() != "Before" {
+		t.Fatalf("expected populated editor, state=%v value=%q", m.State, m.TextInput.Value())
+	}
+	m.TextInput.SetValue("After")
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(Model)
+	if m.State != Browsing || m.Data[today][0].Title != "After" {
+		t.Fatalf("edit failed: state=%v data=%#v err=%v", m.State, m.Data, m.Err)
+	}
+	m = pressRune(m, 'u')
+	if m.Data[today][0].Title != "Before" {
+		t.Fatalf("undo failed: %#v", m.Data[today])
 	}
 }
 

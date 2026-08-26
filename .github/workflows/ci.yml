@@ -29,6 +29,9 @@ jobs:
           HOME: ${{ runner.temp }}/doitdoit-home
         run: go test -count=1 ./...
 
+      - name: Test web companion
+        run: node --test web/*.test.js
+
       - name: Race test
         env:
           HOME: ${{ runner.temp }}/doitdoit-home

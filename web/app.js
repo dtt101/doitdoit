@@ -15,7 +15,8 @@
   const APP_KEY = CFG.dropboxAppKey || "";
   const FILE_PATH = CFG.dropboxFilePath || "/doitdoit.json";
   const VISIBLE_DAYS = Math.max(1, CFG.visibleDays || 5);
-  const PRUNE_AFTER_DAYS = CFG.pruneAfterDays || 5;
+  const RETENTION_DAYS = Number.isInteger(CFG.retentionDays) && CFG.retentionDays > 0
+    ? CFG.retentionDays : 0;
   const REDIRECT_URI = window.location.origin + window.location.pathname;
 
   // ── DOM refs ───────────────────────────────────────────────────────
@@ -42,9 +43,6 @@
   const editDateLabel = $("edit-date-label");
   const dragStatus = $("drag-status");
 
-  const tmplBoard = $("tmpl-board").innerHTML;
-  Mustache.parse(tmplBoard);
-
   metaPath.textContent = "/Apps/…" + FILE_PATH;
 
   // ── State ──────────────────────────────────────────────────────────
@@ -59,6 +57,7 @@
     rendered: false,
     interactionActive: false,
     editing: null,
+    conflict: false,
   };
 
   let addTarget = { kind: "today", date: "" };
@@ -168,7 +167,7 @@
       body,
     });
     if (!r.ok) {
-      logout();
+      await logout();
       throw new Error("refresh failed; reconnect required");
     }
     saveTokens(await r.json());
@@ -194,13 +193,27 @@
     return true;
   }
 
-  function logout() {
-    LS.del("doitdoit:tokens");
-    state.accessToken = null;
-    state.refreshToken = null;
-    state.data = null;
-    state.rev = null;
-    showConnect();
+  async function logout() {
+    const token = state.accessToken;
+    try {
+      if (token) {
+        await fetch("https://api.dropboxapi.com/2/auth/token/revoke", {
+          method: "POST",
+          headers: { Authorization: "Bearer " + token },
+        });
+      }
+    } catch (err) {
+      console.warn("Dropbox token revocation failed; clearing this device", err);
+    } finally {
+      LS.del("doitdoit:tokens");
+      state.accessToken = null;
+      state.refreshToken = null;
+      state.data = null;
+      state.rev = null;
+      state.dirty = false;
+      state.conflict = false;
+      showConnect();
+    }
   }
 
   async function ensureToken() {
@@ -211,202 +224,36 @@
   }
 
   // ── Dropbox file ops ──────────────────────────────────────────────
-  // Dropbox-API-Arg must be ASCII-safe JSON.
-  function asciiJson(obj) {
-    return JSON.stringify(obj).replace(/[-￿]/g, (c) =>
-      "\\u" + ("0000" + c.charCodeAt(0).toString(16)).slice(-4)
-    );
-  }
+  const Sync = window.DoitdoitSync;
 
   async function dbxDownload() {
     await ensureToken();
-    const r = await fetch("https://content.dropboxapi.com/2/files/download", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer " + state.accessToken,
-        "Dropbox-API-Arg": asciiJson({ path: FILE_PATH }),
-      },
-    });
-    if (r.status === 409) {
-      // path/not_found — file doesn't exist yet. Start empty.
-      return { data: {}, rev: null };
-    }
-    if (r.status === 401) {
+    const result = await Sync.downloadOnce(fetch, state.accessToken, FILE_PATH);
+    if (result.unauthorized) {
       await refreshAccessToken();
       return dbxDownload();
     }
-    if (!r.ok) {
-      const txt = await r.text().catch(() => "");
-      throw new Error("download " + r.status + " " + txt.slice(0, 120));
-    }
-    const meta = JSON.parse(r.headers.get("Dropbox-API-Result") || "{}");
-    const text = await r.text();
-    let data = {};
-    if (text.trim()) {
-      try { data = JSON.parse(text); }
-      catch { throw new Error("dropbox file is not valid JSON"); }
-    }
-    return { data, rev: meta.rev || null };
+    return result;
   }
 
   async function dbxUpload(data, rev) {
     await ensureToken();
-    const body = JSON.stringify(data, null, 2);
-    const args = rev
-      ? { path: FILE_PATH, mode: { ".tag": "update", update: rev }, mute: true, autorename: false }
-      : { path: FILE_PATH, mode: "overwrite", mute: true, autorename: false };
-    const r = await fetch("https://content.dropboxapi.com/2/files/upload", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer " + state.accessToken,
-        "Dropbox-API-Arg": asciiJson(args),
-        "Content-Type": "application/octet-stream",
-      },
-      body,
-    });
-    if (r.status === 401) {
+    const result = await Sync.uploadOnce(fetch, state.accessToken, FILE_PATH, data, rev);
+    if (result.unauthorized) {
       await refreshAccessToken();
       return dbxUpload(data, rev);
     }
-    if (r.status === 409) {
-      // conflict — likely a stale rev. Surface specifically.
-      const err = await r.json().catch(() => null);
-      throw Object.assign(new Error("conflict"), { conflict: true, body: err });
-    }
-    if (!r.ok) {
-      const txt = await r.text().catch(() => "");
-      throw new Error("upload " + r.status + " " + txt.slice(0, 120));
-    }
-    const meta = await r.json();
-    return meta.rev;
+    return result.rev;
   }
 
-  // ── Domain logic — ported from model/task.go ──────────────────────
-  function todayStr(d = new Date()) {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  }
-  function parseDay(s) {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || "");
-    if (!m) return null;
-    const d = new Date(+m[1], +m[2] - 1, +m[3]);
-    return todayStr(d) === s ? d : null;
-  }
-  function addDays(d, n) {
-    const x = new Date(d);
-    x.setDate(x.getDate() + n);
-    return x;
-  }
-  function startOfDay(d) {
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  }
-
-  function lastVisibleDate() {
-    return startOfDay(addDays(new Date(), VISIBLE_DAYS - 1));
-  }
-
-  function storageTarget(target) {
-    if (target.kind === "future") return { key: "Future", due: "" };
-
-    let date = target.kind === "tomorrow"
-      ? addDays(new Date(), 1)
-      : target.kind === "custom"
-        ? parseDay(target.date)
-        : new Date();
-    if (!date) return { error: "choose a valid date" };
-    date = startOfDay(date);
-    const today = startOfDay(new Date());
-    if (date < today) date = today;
-    const due = todayStr(date);
-    return {
-      key: date > lastVisibleDate() ? "Future" : due,
-      due,
-    };
-  }
-
-  function targetForTask(dayKey, task) {
-    if (dayKey === "Future" && !task.due_date) return { kind: "future", date: "" };
-    const due = task.due_date || dayKey;
-    if (due === todayStr()) return { kind: "today", date: due };
-    if (due === todayStr(addDays(new Date(), 1))) return { kind: "tomorrow", date: due };
-    return { kind: "custom", date: due };
-  }
-
-  // model/task.go:132 — rollOverIncompleteTasks
-  function rollOverIncompleteTasks(data) {
-    const today = todayStr();
-    const todayDate = startOfDay(new Date());
-    const toRoll = [];
-    const datesToRemove = [];
-    let changed = false;
-
-    for (const dateStr of Object.keys(data)) {
-      if (dateStr === "Future") continue;
-      const parsed = parseDay(dateStr);
-      if (!parsed) continue;
-      if (parsed < todayDate) {
-        const remaining = [];
-        for (const t of data[dateStr]) {
-          if (!t.completed) {
-            t.due_date = today;
-            toRoll.push(t);
-          } else {
-            remaining.push(t);
-          }
-        }
-        if (remaining.length) data[dateStr] = remaining;
-        else datesToRemove.push(dateStr);
-      }
-    }
-
-    if (toRoll.length) {
-      data[today] = (data[today] || []).concat(toRoll);
-      changed = true;
-    }
-    for (const d of datesToRemove) { delete data[d]; changed = true; }
-    if (data[today] && data[today].length === 0) delete data[today];
-    return changed;
-  }
-
-  // model/task.go:241 — pruneOldTasks
-  function pruneOldTasks(data) {
-    const cutoff = todayStr(addDays(new Date(), -PRUNE_AFTER_DAYS));
-    let changed = false;
-    for (const k of Object.keys(data)) {
-      if (k === "Future") {
-        const tasks = data[k] || [];
-        const active = tasks.filter((t) => !t.completed);
-        if (active.length !== tasks.length) { data[k] = active; changed = true; }
-        continue;
-      }
-      if (k < cutoff) { delete data[k]; changed = true; }
-    }
-    return changed;
-  }
-
-  // model/task.go:272 — DistributeFutureTasks (in-memory only, for view)
-  function distributeFutureTasks(data, visibleDays) {
-    const future = data["Future"] || [];
-    if (!future.length) return;
-    const today = startOfDay(new Date());
-    const lastVisible = addDays(today, visibleDays - 1);
-    const todayKey = todayStr(today);
-    const remain = [];
-    for (const t of future) {
-      const due = parseDay(t.due_date);
-      if (!due) { remain.push(t); continue; }
-      if (due <= lastVisible) {
-        const target = due < today ? todayKey : t.due_date;
-        if (!data[target]) data[target] = [];
-        data[target].push(t);
-      } else {
-        remain.push(t);
-      }
-    }
-    data["Future"] = remain;
-  }
+  // ── Shared domain logic (also exercised by web/domain.test.js) ─────
+  const Domain = window.DoitdoitDomain;
+  const { todayStr, parseDay, addDays, rollOverIncompleteTasks,
+    distributeFutureTasks, insertBeforeCompleted } = Domain;
+  const storageTarget = (target) => Domain.storageTarget(target, VISIBLE_DAYS);
+  const targetForTask = (dayKey, task) => Domain.targetForTask(dayKey, task);
+  const pruneOldTasks = (data) => Domain.pruneOldTasks(data, RETENTION_DAYS);
+  const parseAddInput = (raw, target) => Domain.parseAddInput(raw, target, VISIBLE_DAYS);
 
   // ── View model + render ───────────────────────────────────────────
   const DOW = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
@@ -458,6 +305,73 @@
     };
   }
 
+  function renderBoard(view) {
+    const fragment = document.createDocumentFragment();
+    for (const day of view.days) {
+      const section = document.createElement("section");
+      section.className = `day day--${day.cls}`;
+      section.dataset.key = day.key;
+
+      const heading = document.createElement("h2");
+      heading.className = "day__head";
+      const rule = document.createElement("span");
+      rule.className = "day__rule";
+      const label = document.createElement("span");
+      label.className = "day__label";
+      label.textContent = day.label;
+      const count = document.createElement("span");
+      count.className = "day__count";
+      count.textContent = day.count;
+      const fillRule = document.createElement("span");
+      fillRule.className = "day__rule day__rule--fill";
+      heading.append(rule, label, count, fillRule);
+      section.append(heading);
+
+      const list = document.createElement("ul");
+      list.className = "tasks";
+      for (const task of day.tasks) {
+        const row = document.createElement("li");
+        row.className = "task" + (task.completed ? " task--done" : "");
+        row.dataset.id = task.id;
+        row.dataset.key = task.dayKey;
+        const toggle = document.createElement("button");
+        toggle.className = "task__check";
+        toggle.dataset.action = "toggle";
+        toggle.setAttribute("aria-label", `toggle complete: ${task.title}`);
+        const leftBracket = document.createElement("span");
+        leftBracket.className = "bracket";
+        leftBracket.textContent = "[";
+        const mark = document.createElement("span");
+        mark.className = "task__mark";
+        mark.textContent = task.mark;
+        const rightBracket = document.createElement("span");
+        rightBracket.className = "bracket";
+        rightBracket.textContent = "]";
+        toggle.append(leftBracket, mark, rightBracket);
+        const title = document.createElement("button");
+        title.className = "task__title";
+        title.dataset.action = "edit";
+        title.setAttribute("aria-label", `edit ${task.title}`);
+        title.textContent = task.title;
+        const drag = document.createElement("button");
+        drag.className = "task__drag";
+        drag.dataset.action = "drag";
+        drag.setAttribute("aria-label", `reorder ${task.title}`);
+        drag.setAttribute("aria-pressed", "false");
+        drag.textContent = "≡";
+        row.append(toggle, title, drag);
+        list.append(row);
+      }
+      section.append(list);
+      const empty = document.createElement("div");
+      empty.className = "day__empty" + (day.hasTasks ? " is-hidden" : "");
+      empty.textContent = "— nothing here —";
+      section.append(empty);
+      fragment.append(section);
+    }
+    board.replaceChildren(fragment);
+  }
+
   function render(opts = {}) {
     if (!state.data) return;
     const preserveScroll = opts.preserveScroll !== false && state.rendered;
@@ -466,7 +380,7 @@
     distributeFutureTasks(state.data, VISIBLE_DAYS);
     const view = buildView(state.data);
     board.classList.toggle("board--animate", !!opts.animate);
-    board.innerHTML = Mustache.render(tmplBoard, view);
+    renderBoard(view);
     state.rendered = true;
 
     // Empty state if literally no tasks anywhere
@@ -494,29 +408,6 @@
     return Date.now() + "-" + Math.floor(Math.random() * 1e7);
   }
 
-  function parseAddInput(raw, selectedTarget) {
-    let title = raw.trim();
-    let target = selectedTarget;
-
-    // !target prefix: !future or !YYYY-MM-DD
-    const m = /^!(\S+)\s+(.+)$/.exec(title);
-    if (m) {
-      const prefix = m[1].toLowerCase();
-      title = m[2].trim();
-      if (prefix === "future") {
-        target = { kind: "future", date: "" };
-      } else if (/^\d{4}-\d{2}-\d{2}$/.test(prefix)) {
-        target = { kind: "custom", date: prefix };
-      } else {
-        return { error: "unknown target — use !future or !YYYY-MM-DD" };
-      }
-    }
-    if (!title) return { error: "task title cannot be empty" };
-    const destination = storageTarget(target);
-    if (destination.error) return destination;
-    return { title, key: destination.key, due: destination.due };
-  }
-
   function addTask(rawInput, selectedTarget) {
     const parsed = parseAddInput(rawInput, selectedTarget);
     if (parsed.error) { toast(parsed.error, "err"); return; }
@@ -531,11 +422,6 @@
     insertBeforeCompleted(state.data[parsed.key], t);
     render({ preserveScroll: true });
     queueSave();
-  }
-
-  function insertBeforeCompleted(list, task) {
-    const idx = list.findIndex((candidate) => candidate.completed);
-    list.splice(idx < 0 ? list.length : idx, 0, task);
   }
 
   function findTask(dayKey, id) {
@@ -590,6 +476,7 @@
   let saveTimer = null;
   function queueSave() {
     state.dirty = true;
+    state.conflict = false;
     setSync("dirty");
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(doSave, 600);
@@ -607,8 +494,10 @@
       setSync("idle");
     } catch (err) {
       if (err.conflict) {
-        toast("remote changed — reloading", "err");
-        await reload({ silent: true });
+        state.conflict = true;
+        LS.set("doitdoit:recovery", Sync.recoverySnapshot(state.data, FILE_PATH));
+        toast("remote changed — local edits kept; use menu to recover or reload", "err");
+        setSync("error");
       } else {
         console.error(err);
         toast("save failed: " + err.message, "err");
@@ -627,6 +516,8 @@
       const before = state.data ? JSON.stringify(state.data) : null;
       state.data = data;
       state.rev = rev;
+      state.dirty = false;
+      state.conflict = false;
       const r1 = rollOverIncompleteTasks(state.data);
       const r2 = pruneOldTasks(state.data);
       if (r1 || r2) {
@@ -646,7 +537,14 @@
       }
     } catch (err) {
       console.error(err);
-      toast("load failed: " + err.message, "err");
+      if (err.conflict) {
+        state.dirty = true;
+        state.conflict = true;
+        LS.set("doitdoit:recovery", Sync.recoverySnapshot(state.data, FILE_PATH));
+        toast("remote changed during maintenance — recovery copy kept", "err");
+      } else {
+        toast("load failed: " + err.message, "err");
+      }
       setSync("error");
     }
   }
@@ -962,6 +860,22 @@
     emptyState.hidden = true;
   }
 
+  function downloadRecovery() {
+    const recovery = LS.get("doitdoit:recovery");
+    if (!recovery?.data) {
+      toast("no unsaved recovery copy", "err");
+      return;
+    }
+    const blob = new Blob([JSON.stringify(recovery.data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "doitdoit-recovery.json";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    toast("recovery copy downloaded", "ok");
+  }
+
   // delegated click handler for tasks
   board.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-action]");
@@ -1080,7 +994,13 @@
     if (!item) return;
     const act = item.dataset.act;
     if (act === "close") menuDialog.close();
-    else if (act === "reload") { menuDialog.close(); reload({ confirm: true }); }
+    else if (act === "reload") {
+      menuDialog.close();
+      if (!state.dirty || confirm("discard unsaved local changes and load Dropbox? a recovery copy will remain available.")) {
+        reload({ confirm: true });
+      }
+    }
+    else if (act === "recovery") { menuDialog.close(); downloadRecovery(); }
     else if (act === "copy-path") {
       navigator.clipboard?.writeText("/Apps/<your-app>" + FILE_PATH).then(
         () => toast("path copied", "ok"),
@@ -1090,7 +1010,7 @@
     }
     else if (act === "logout") {
       if (confirm("disconnect dropbox? your tasks stay safe in dropbox.")) {
-        logout();
+        void logout();
       }
       menuDialog.close();
     }

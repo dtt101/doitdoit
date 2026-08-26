@@ -24,6 +24,7 @@ window.DOITDOIT_CONFIG = {
   // Number of upcoming days rendered (today + next N-1).
   visibleDays: 5,
 
-  // Mirrors model/task.go:14 — keep in sync with CLI.
-  pruneAfterDays: 5,
+  // Zero means keep completed history forever. Set a positive number only
+  // after making the same explicit retention choice in the CLI.
+  retentionDays: 0,
 };

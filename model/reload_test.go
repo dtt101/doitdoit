@@ -113,7 +113,7 @@ func TestCheckDataFileEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	msg := checkDataFile(m.FilePath, time.Time{}, 0)()
+	msg := checkDataFile(m.FilePath, m.dataHash, false)()
 	checked, ok := msg.(dataFileCheckedMsg)
 	if !ok || checked.data == nil || checked.err != nil {
 		t.Fatalf("expected a changed-file result, got %#v", msg)
@@ -128,7 +128,7 @@ func TestCheckDataFileEndToEnd(t *testing.T) {
 	if err := os.WriteFile(m.FilePath, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	msg = checkDataFile(m.FilePath, m.dataModTime.Add(-time.Second), 0)()
+	msg = checkDataFile(m.FilePath, m.dataHash, true)()
 	newM, cmd := m.Update(msg)
 	m = newM.(Model)
 	if cmd == nil {
@@ -149,7 +149,7 @@ func TestPersistPreventsSelfDetection(t *testing.T) {
 		t.Fatal(m.Err)
 	}
 
-	msg := checkDataFile(m.FilePath, m.dataModTime, m.dataSize)()
+	msg := checkDataFile(m.FilePath, m.dataHash, m.dataExists)()
 	checked := msg.(dataFileCheckedMsg)
 	if checked.data != nil {
 		t.Error("check after own persist should report the file as unchanged")

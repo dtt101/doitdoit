@@ -1,7 +1,10 @@
 package model
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -9,6 +12,8 @@ import (
 )
 
 const dateLayout = "2006-01-02"
+
+var ErrDataConflict = errors.New("task file changed externally; reload before trying again")
 
 // startOfDay returns t truncated to midnight in its own location, so dates can
 // be compared without the current clock time skewing the result.
@@ -36,24 +41,27 @@ type TodoData map[string][]Task
 // loadRaw reads and parses the JSON file without any side effects. A missing
 // file yields an empty map.
 func loadRaw(path string) (TodoData, error) {
+	data, _, _, err := loadRawState(path)
+	return data, err
+}
+
+func loadRawState(path string) (TodoData, [sha256.Size]byte, bool, error) {
 	data := make(TodoData)
-
-	if _, err := os.Stat(path); err == nil {
-		bytes, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := json.Unmarshal(bytes, &data); err != nil {
-			return nil, err
-		}
+	contents, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return data, [sha256.Size]byte{}, false, nil
 	}
-
-	return data, nil
+	if err != nil {
+		return nil, [sha256.Size]byte{}, false, err
+	}
+	if err := json.Unmarshal(contents, &data); err != nil {
+		return nil, [sha256.Size]byte{}, true, err
+	}
+	return data, sha256.Sum256(contents), true, nil
 }
 
 func Load(path string, retentionDays int) (TodoData, error) {
-	data, err := loadRaw(path)
+	data, hash, exists, err := loadRawState(path)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +79,7 @@ func Load(path string, retentionDays int) (TodoData, error) {
 
 	// Persist any changes triggered during load so the file stays up to date
 	if dirty {
-		if err := data.Save(path); err != nil {
+		if err := data.SaveIfUnchanged(path, &hash, exists); err != nil {
 			return nil, err
 		}
 	}
@@ -142,6 +150,16 @@ func (d TodoData) rollOverIncompleteTasks() bool {
 }
 
 func (d TodoData) Save(path string) error {
+	return d.save(path, nil, false)
+}
+
+// SaveIfUnchanged refuses to replace a file whose contents changed since the
+// caller last loaded it. A previous valid copy is retained at path + ".bak".
+func (d TodoData) SaveIfUnchanged(path string, expectedHash *[sha256.Size]byte, expectedExists bool) error {
+	return d.save(path, expectedHash, expectedExists)
+}
+
+func (d TodoData) save(path string, expectedHash *[sha256.Size]byte, expectedExists bool) error {
 	bytes, err := json.MarshalIndent(d, "", "  ")
 	if err != nil {
 		return err
@@ -149,6 +167,15 @@ func (d TodoData) Save(path string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
+	}
+
+	current, readErr := os.ReadFile(path)
+	currentExists := readErr == nil
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return readErr
+	}
+	if expectedHash != nil && (currentExists != expectedExists || (currentExists && sha256.Sum256(current) != *expectedHash)) {
+		return ErrDataConflict
 	}
 
 	temp, err := os.CreateTemp(dir, "doitdoit-*")
@@ -177,6 +204,12 @@ func (d TodoData) Save(path string) error {
 		os.Remove(tempPath)
 		return err
 	}
+	if currentExists {
+		if err := writeBackup(path+".bak", current); err != nil {
+			os.Remove(tempPath)
+			return fmt.Errorf("writing backup: %w", err)
+		}
+	}
 
 	if err := os.Rename(tempPath, path); err != nil {
 		os.Remove(tempPath)
@@ -184,6 +217,31 @@ func (d TodoData) Save(path string) error {
 	}
 
 	return nil
+}
+
+func writeBackup(path string, contents []byte) error {
+	dir := filepath.Dir(path)
+	temp, err := os.CreateTemp(dir, "doitdoit-backup-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if _, err := temp.Write(contents); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tempPath, 0600); err != nil {
+		return err
+	}
+	return os.Rename(tempPath, path)
 }
 
 func (d TodoData) pruneOldTasks(retentionDays int) bool {

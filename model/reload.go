@@ -2,6 +2,7 @@ package model
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"os"
 	"time"
@@ -23,6 +24,8 @@ type dataFileCheckedMsg struct {
 	data    TodoData
 	modTime time.Time
 	size    int64
+	hash    [sha256.Size]byte
+	hashed  bool
 	err     error
 }
 
@@ -33,20 +36,26 @@ func reloadTick() tea.Cmd {
 	})
 }
 
-// checkDataFile stats the data file off the update loop and, only if it looks
-// changed since lastMod/lastSize, reads and parses it.
-func checkDataFile(path string, lastMod time.Time, lastSize int64) tea.Cmd {
+// checkDataFile hashes and parses the data file off the update loop. Content
+// hashing catches sync tools that preserve both modification time and size.
+func checkDataFile(path string, lastHash [sha256.Size]byte, lastExists bool) tea.Cmd {
 	return func() tea.Msg {
-		fi, err := os.Stat(path)
+		contents, err := os.ReadFile(path)
 		if err != nil {
 			// Missing or unreadable (e.g. mid-sync); try again next tick.
 			return dataFileCheckedMsg{}
 		}
-		if fi.ModTime().Equal(lastMod) && fi.Size() == lastSize {
+		fi, err := os.Stat(path)
+		if err != nil {
 			return dataFileCheckedMsg{}
 		}
-		data, err := loadRaw(path)
-		return dataFileCheckedMsg{data: data, modTime: fi.ModTime(), size: fi.Size(), err: err}
+		hash := sha256.Sum256(contents)
+		if lastExists && hash == lastHash {
+			return dataFileCheckedMsg{}
+		}
+		var data TodoData
+		err = json.Unmarshal(contents, &data)
+		return dataFileCheckedMsg{data: data, modTime: fi.ModTime(), size: fi.Size(), hash: hash, hashed: true, err: err}
 	}
 }
 
@@ -56,7 +65,7 @@ func (m Model) handleReloadTick() (tea.Model, tea.Cmd) {
 	if m.State != Browsing {
 		return m, reloadTick()
 	}
-	return m, checkDataFile(m.FilePath, m.dataModTime, m.dataSize)
+	return m, checkDataFile(m.FilePath, m.dataHash, m.dataExists)
 }
 
 func (m Model) handleDataFileChecked(msg dataFileCheckedMsg) (tea.Model, tea.Cmd) {
@@ -68,6 +77,10 @@ func (m Model) handleDataFileChecked(msg dataFileCheckedMsg) (tea.Model, tea.Cmd
 
 	m.dataModTime = msg.modTime
 	m.dataSize = msg.size
+	if msg.hashed {
+		m.dataHash = msg.hash
+		m.dataExists = true
+	}
 
 	if !sameJSON(m.Data, msg.data) {
 		m.applyReloadedData(msg.data)

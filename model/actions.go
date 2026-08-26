@@ -34,6 +34,8 @@ func groupTasksByCompletion(tasks []Task) []Task {
 }
 
 func (m *Model) addTask(title string) {
+	m.captureMoveUndo()
+	title = strings.TrimSpace(title)
 	currentDate := m.getCurrentKey()
 	newTask := Task{
 		ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
@@ -65,6 +67,7 @@ func (m *Model) deleteTask() bool {
 		return false
 	}
 
+	m.captureMoveUndo()
 	m.Data[currentDate] = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
 	m.clampRow()
 	return true
@@ -77,6 +80,7 @@ func (m *Model) toggleTask() bool {
 		return false
 	}
 
+	m.captureMoveUndo()
 	task := tasks[m.RowIdx]
 	task.Completed = !task.Completed
 
@@ -99,6 +103,19 @@ func (m *Model) toggleTask() bool {
 		tasks = insertAt(tasks, insertIdx, task)
 	}
 
+	m.Data[currentDate] = tasks
+	return true
+}
+
+func (m *Model) editTask(title string) bool {
+	title = strings.TrimSpace(title)
+	currentDate := m.getCurrentKey()
+	tasks := m.Data[currentDate]
+	if title == "" || m.RowIdx < 0 || m.RowIdx >= len(tasks) || tasks[m.RowIdx].Title == title {
+		return false
+	}
+	m.captureMoveUndo()
+	tasks[m.RowIdx].Title = title
 	m.Data[currentDate] = tasks
 	return true
 }

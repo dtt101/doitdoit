@@ -1,21 +1,19 @@
 # Experimental web companion follow-up
 
-The Dropbox web companion is separate from the v0.2.0 CLI release gate.
-Before it can share that release's security or privacy claims, complete and
-review all of the following:
+The Dropbox web companion remains separate from the CLI release gate. The
+v0.3 stabilization pass completed the original engineering checklist:
 
-- Pin, inventory, and monitor every remotely hosted or self-hosted browser
-  dependency; document the update and vulnerability-response process.
-- Define and deploy a restrictive Content Security Policy, including explicit
-  Dropbox API/connect sources and no unnecessary script execution paths.
-- Threat-model OAuth token storage, reduce token lifetime and scope where
-  possible, protect tokens from script access, and document sign-out/revocation.
-- Publish a plain-language privacy disclosure covering Dropbox processing,
-  browser-local data, hosting logs, and the absence or presence of telemetry.
-- Implement retention settings and migration semantics that are compatible
-  with the CLI, including forever mode and a guarantee of no pruning before an
-  explicit saved choice.
-- Add backup/recovery guidance and concurrent-edit tests for Dropbox sync.
+- Removed remote scripts and fonts; the companion now has no browser package
+  inventory to update.
+- Added a restrictive CSP with only the required Dropbox connection sources.
+- Documented JavaScript-accessible token storage and implemented best-effort
+  Dropbox token revocation on disconnect.
+- Published a plain-language privacy and recovery disclosure.
+- Made forever retention the default and positive pruning explicitly opt-in.
+- Added domain and revision-conflict tests plus downloadable recovery copies.
 
-Until those items are complete, do not describe the web companion as covered
-by the CLI release's security review or data-handling guarantees.
+It is still experimental: a serverless Dropbox client cannot protect its
+refresh token from a compromised browser context, and conflict recovery is
+manual rather than a semantic merge. Do not describe it as covered by the CLI
+release's security review or data-handling guarantees until those constraints
+receive a separate review.

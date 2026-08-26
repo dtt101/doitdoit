@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
   <meta name="theme-color" content="#0b0a08" />
   <meta name="description" content="doitdoit — terminal-native task manager, mobile companion" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; manifest-src 'self'; connect-src https://api.dropboxapi.com https://content.dropboxapi.com" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="doitdoit" />
@@ -14,10 +15,6 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" type="image/png" sizes="48x48" href="icons/favicon-48.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png" />
-
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Major+Mono+Display&display=swap" rel="stylesheet" />
 
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -121,6 +118,7 @@
 <dialog id="menu-dialog" class="menu">
   <div class="menu__hdr">menu</div>
   <button class="menu__item" data-act="reload">⟳ force reload</button>
+  <button class="menu__item" data-act="recovery">⇩ download recovery copy</button>
   <button class="menu__item" data-act="copy-path">⎘ copy file path</button>
   <button class="menu__item menu__item--danger" data-act="logout">⏻ disconnect dropbox</button>
   <button class="menu__close" data-act="close">close</button>
@@ -158,33 +156,9 @@
   </form>
 </dialog>
 
-<template id="tmpl-board">
-{{#days}}
-<section class="day day--{{cls}}" data-key="{{key}}">
-  <h2 class="day__head">
-    <span class="day__rule"></span>
-    <span class="day__label">{{label}}</span>
-    <span class="day__count">{{count}}</span>
-    <span class="day__rule day__rule--fill"></span>
-  </h2>
-  <ul class="tasks">
-    {{#tasks}}
-    <li class="task{{#completed}} task--done{{/completed}}" data-id="{{id}}" data-key="{{dayKey}}">
-      <button class="task__check" data-action="toggle" aria-label="toggle complete">
-        <span class="bracket">[</span><span class="task__mark">{{mark}}</span><span class="bracket">]</span>
-      </button>
-      <button class="task__title" data-action="edit" aria-label="edit {{title}}">{{title}}</button>
-      <button class="task__drag" data-action="drag" aria-label="reorder {{title}}" aria-pressed="false">≡</button>
-    </li>
-    {{/tasks}}
-  </ul>
-  <div class="day__empty{{#hasTasks}} is-hidden{{/hasTasks}}">— nothing here —</div>
-</section>
-{{/days}}
-</template>
-
-<script src="https://unpkg.com/mustache@4.2.0/mustache.min.js"></script>
 <script src="config.js"></script>
+<script src="domain.js"></script>
+<script src="sync.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

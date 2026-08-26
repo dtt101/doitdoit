@@ -22,8 +22,8 @@
   --danger: #e6604f;
 
   /* Type */
-  --font-display: "Major Mono Display", "JetBrains Mono", ui-monospace, monospace;
-  --font-mono:    "JetBrains Mono", ui-monospace, "SF Mono", "Menlo", monospace;
+  --font-display: ui-monospace, "SF Mono", "Menlo", "Cascadia Mono", monospace;
+  --font-mono:    ui-monospace, "SF Mono", "Menlo", "Cascadia Mono", monospace;
 
   /* Space scale */
   --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px;

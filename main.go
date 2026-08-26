@@ -8,19 +8,25 @@ import (
 	"path/filepath"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/dtt101/doitdoit/cli"
 	"github.com/dtt101/doitdoit/config"
 	"github.com/dtt101/doitdoit/model"
 	"github.com/dtt101/doitdoit/styles"
 )
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "add":
+			os.Exit(cli.RunAddCommand(os.Args[2:], os.Stdout))
+		case "config":
+			os.Exit(config.RunCommand(os.Args[1:], os.Stdout))
+		}
+	}
 	filePathFlag := flag.String("file", "", "Path to the JSON data file (overrides config)")
 	visibleDays := flag.Int("days", 3, "Number of days to display")
 	flag.Parse()
 
-	if args := flag.Args(); len(args) > 0 && args[0] == "config" {
-		os.Exit(config.RunCommand(args, os.Stdout))
-	}
 	if *visibleDays < 1 {
 		fmt.Fprintln(os.Stderr, "Error: -days must be at least 1")
 		os.Exit(2)

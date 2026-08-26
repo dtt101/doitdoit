@@ -181,7 +181,7 @@ func (m Model) renderDaySection(dateStr string, dayIdx, colWidth int) string {
 	}
 
 	// Input field if adding to this day
-	if (m.State == Adding || m.State == SettingMoveDate) && (m.ShowFuture || m.ColIdx == dayIdx) {
+	if (m.State == Adding || m.State == Editing || m.State == SettingMoveDate) && (m.ShowFuture || m.ColIdx == dayIdx) {
 		// Add spacing before input if there are tasks
 		if len(tasks) > 0 {
 			taskViews = append(taskViews, "")
@@ -192,6 +192,8 @@ func (m Model) renderDaySection(dateStr string, dayIdx, colWidth int) string {
 		prefix := ""
 		if m.State == SettingMoveDate {
 			prefix = "Move to: "
+		} else if m.State == Editing {
+			prefix = "Edit: "
 		}
 		taskViews = append(taskViews, inputStyle.Render(prefix+m.TextInput.View()))
 	} else if len(tasks) == 0 {
@@ -270,6 +272,8 @@ func (m Model) footerHelpItems() []helpItem {
 	case Browsing:
 		return []helpItem{{"?", "help"}}
 	case Adding:
+		return []helpItem{{"enter", "save"}, {"esc", "cancel"}}
+	case Editing:
 		return []helpItem{{"enter", "save"}, {"esc", "cancel"}}
 	case ChoosingMoveDestination:
 		return m.moveDestinationHelpItems()
@@ -363,13 +367,14 @@ func (m Model) helpItems() []helpItem {
 	return []helpItem{
 		{navigation, "navigate"},
 		{"a", "add task"},
+		{"e", "edit task"},
 		{"space / enter", "toggle task"},
 		{"d", "delete task"},
 		{"y", "copy task"},
 		{"m", "move task"},
 		{"J / K", "reorder task"},
 		{".", "repeat move"},
-		{"u", "undo move"},
+		{"u", "undo last change"},
 		{"f", viewToggle},
 		{"q / ctrl+c", "quit"},
 	}
