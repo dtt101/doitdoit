@@ -1,6 +1,8 @@
 package model
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -139,6 +141,8 @@ func (m Model) handleKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch m.State {
 	case Adding:
 		return m.handleAddingKey(msg)
+	case Editing:
+		return m.handleEditingKey(msg)
 	case Browsing:
 		return m.handleBrowsingKey(msg)
 	case ChoosingMoveDestination:
@@ -153,13 +157,15 @@ func (m Model) handleKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleAddingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.Code {
 	case tea.KeyEnter:
-		if m.TextInput.Value() != "" {
-			m.clearMoveUndo()
-			m.addTask(m.TextInput.Value())
-			m.TextInput.Reset()
-			m.State = Browsing
-			m.persist()
+		title := strings.TrimSpace(m.TextInput.Value())
+		if title == "" {
+			m.Err = fmt.Errorf("task title cannot be empty")
+			return m, nil
 		}
+		m.addTask(title)
+		m.TextInput.Reset()
+		m.State = Browsing
+		m.persist()
 	case tea.KeyEsc:
 		m.TextInput.Reset()
 		m.State = Browsing
@@ -169,6 +175,33 @@ func (m Model) handleAddingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	return m, nil
+}
+
+func (m Model) handleEditingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.Code {
+	case tea.KeyEnter:
+		if strings.TrimSpace(m.TextInput.Value()) == "" {
+			m.Err = fmt.Errorf("task title cannot be empty")
+			return m, nil
+		}
+		changed := m.editTask(m.TextInput.Value())
+		m.TextInput.Reset()
+		m.State = Browsing
+		if changed {
+			m.persist()
+		} else {
+			m.Err = nil
+		}
+	case tea.KeyEsc:
+		m.TextInput.Reset()
+		m.Err = nil
+		m.State = Browsing
+	default:
+		var cmd tea.Cmd
+		m.TextInput, cmd = m.TextInput.Update(msg)
+		return m, cmd
+	}
 	return m, nil
 }
 
@@ -209,14 +242,21 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.State = Adding
 		m.configureTextInput("New task...")
 		return m, nil
+	case "e":
+		currentKey := m.getCurrentKey()
+		if m.RowIdx >= 0 && m.RowIdx < len(m.Data[currentKey]) {
+			m.State = Editing
+			m.configureTextInput("Task title")
+			m.TextInput.SetValue(m.Data[currentKey][m.RowIdx].Title)
+			m.TextInput.CursorEnd()
+		}
+		return m, nil
 	case "d":
 		if m.deleteTask() {
-			m.clearMoveUndo()
 			m.persist()
 		}
 	case "enter", "space":
 		if m.toggleTask() {
-			m.clearMoveUndo()
 			m.persist()
 		}
 	case "m":

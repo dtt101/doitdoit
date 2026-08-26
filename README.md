@@ -13,7 +13,7 @@ Put that file in Dropbox, iCloud Drive, or Google Drive and your task list can t
 - **See the days ahead.** Work from a clean, scrolling multi-day view instead of a long, undifferentiated list. Every day has its own column.
 - **Keep your data yours.** Everything lives in a single portable, human-readable JSON file. Back it up, inspect it, script against it, or sync it with the service you already use.
 - **Never lose an unfinished task.** Anything incomplete automatically rolls forward to Today. You choose whether completed history is kept forever or pruned after a positive number of days.
-- **Plan quickly from the keyboard.** Add, complete, delete, copy, reorder, schedule, repeat a move, and undo without leaving the terminal.
+- **Plan quickly from the keyboard.** Add, edit, complete, delete, copy, reorder, schedule, repeat a move, and undo without leaving the terminal.
 - **Capture now, decide later.** Drop ideas into Future, then schedule them for tomorrow, the next seven days, or an exact date when you are ready.
 - **Looks at home on Omarchy.** `doitdoit` follows your active Omarchy theme and includes every stock Omarchy 4 (Quattro) palette.
 - **Take it to your phone.** The optional static [web companion](./web) can read and write the same Dropbox-hosted task file.
@@ -126,7 +126,7 @@ This makes a few useful workflows almost effortless:
 - Create tasks from another script or tool using a simple, open JSON format.
 - Use `-file` to open a different task list for a project or a one-off session.
 
-The TUI checks for external changes every few seconds and reloads them without disturbing you while you are typing. Like most file-sync workflows, simultaneous edits are last-write-wins, so avoid changing the same file from two devices at exactly the same moment.
+The TUI checks for external changes every few seconds and reloads them without disturbing you while you are typing. Before every save it verifies that the file still matches the version it loaded; a detected conflict is reported instead of overwriting the external change. Each replacement also keeps the previous valid contents in `doitdoit.json.bak`. There is still an unavoidable narrow race between verification and an atomic rename, so avoid editing the same synced file on two devices at exactly the same moment.
 
 Back up both the task JSON file and `~/.doitdoit_config.json` before migrations or major upgrades, and test that the backup can be read. Need to relocate an existing task file later? `doitdoit config move <new_path>` moves it and updates your configuration, but refuses any existing file, directory, or symlink at the destination so it cannot overwrite data.
 
@@ -146,11 +146,12 @@ Press `?` in the main view to open the keyboard-shortcuts modal; press `?` again
 | --- | --- |
 | `h` `j` `k` `l` or arrows | Move between days and tasks |
 | `a` | Add a task to the selected day or Future |
+| `e` | Edit the selected task title |
 | `Space` or `Enter` | Toggle completion |
 | `m` | Move or schedule the selected task |
 | `J` / `K` | Reorder the selected task |
 | `.` | Repeat the last move destination |
-| `u` | Undo the most recent move or reorder |
+| `u` | Undo the most recent task change |
 | `y` | Copy the task text to the clipboard |
 | `d` | Delete the selected task |
 | `f` | Toggle the Future view |
@@ -191,6 +192,11 @@ Bundled themes:
 doitdoit                         Launch the TUI
 doitdoit -days <number>          Set the number of visible days (default: 3)
 doitdoit -file <path>            Use a different data file for this session
+doitdoit add <title>             Add a task to Today without opening the TUI
+doitdoit add --when <target> <title>
+                                 Target today, tomorrow, future, or YYYY-MM-DD
+doitdoit add --file <path> <title>
+                                 Capture into a one-off task file
 doitdoit config show             Show the data file, theme, and retention
 doitdoit config move <new_path>  Move the data file and update the config
 doitdoit config theme            Show the current and available themes
@@ -200,6 +206,8 @@ doitdoit config retention forever
 doitdoit config retention <days> Set a positive retention period
 doitdoit config omarchy-hook install|status|remove
 ```
+
+For example, `doitdoit add --when tomorrow "send the invoice"` is suitable for shell aliases, launchers, and scripts. Titles can be quoted or supplied as multiple arguments.
 
 ## Mobile companion
 
