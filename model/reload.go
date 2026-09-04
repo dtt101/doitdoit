@@ -103,6 +103,7 @@ func (m *Model) applyReloadedData(data TodoData) {
 	m.Data.rollOverIncompleteTasks()
 	m.Data.pruneOldTasks(m.RetentionDays)
 	m.Data.distributeFutureTasksThrough(m.lastVisibleDate())
+	m.Data.groupTasksByCompletion()
 	m.clearMoveUndo()
 
 	if focusedID != "" {

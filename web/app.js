@@ -469,6 +469,7 @@
     const targetList = state.data[destinationKey] || (state.data[destinationKey] = []);
     const index = Math.max(0, Math.min(destinationIndex, targetList.length));
     targetList.splice(index, 0, task);
+    Domain.groupTasksByCompletion(state.data);
     return true;
   }
 

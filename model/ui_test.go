@@ -179,6 +179,32 @@ func TestReorderAndUndo(t *testing.T) {
 	}
 }
 
+func TestReorderCannotCrossCompletionBoundary(t *testing.T) {
+	today := time.Now().Format(dateLayout)
+	m := Model{
+		Data: TodoData{today: {
+			{ID: "open", Title: "Open"},
+			{ID: "done", Title: "Done", Completed: true},
+		}},
+		VisibleDays: 1,
+		State:       Browsing,
+		dateKeys:    []string{today},
+	}
+
+	m = pressRune(m, 'J')
+	assertTaskOrder(t, m.Data[today], []string{"open", "done"})
+	if m.RowIdx != 0 {
+		t.Fatalf("open task crossed completion boundary; row = %d", m.RowIdx)
+	}
+
+	m.RowIdx = 1
+	m = pressRune(m, 'K')
+	assertTaskOrder(t, m.Data[today], []string{"open", "done"})
+	if m.RowIdx != 1 {
+		t.Fatalf("completed task crossed completion boundary; row = %d", m.RowIdx)
+	}
+}
+
 func TestCompletedTasksStayBelowMovedIncompleteTask(t *testing.T) {
 	today := time.Now().Format(dateLayout)
 	tomorrow := time.Now().AddDate(0, 0, 1).Format(dateLayout)

@@ -172,3 +172,28 @@ func TestRollOverIncompleteTasksTimezone(t *testing.T) {
 		})
 	}
 }
+
+func TestRolloverAndDistributionKeepCompletedTasksAtBottom(t *testing.T) {
+	today := dayKey(0)
+	yesterday := dayKey(-1)
+	tomorrow := dayKey(1)
+	data := TodoData{
+		yesterday: {{ID: "rolled", Title: "Rolled open task"}},
+		today: {
+			{ID: "today-open", Title: "Existing open task"},
+			{ID: "today-done", Title: "Existing completed task", Completed: true},
+		},
+		tomorrow: {{ID: "tomorrow-done", Title: "Existing completed task", Completed: true}},
+		"Future": {{ID: "distributed", Title: "Distributed open task", DueDate: tomorrow}},
+	}
+
+	if !data.rollOverIncompleteTasks() {
+		t.Fatal("expected rollover to report a change")
+	}
+	assertTaskOrder(t, data[today], []string{"today-open", "rolled", "today-done"})
+
+	if !data.distributeFutureTasksThrough(startOfDay(time.Now()).AddDate(0, 0, 1)) {
+		t.Fatal("expected distribution to report a change")
+	}
+	assertTaskOrder(t, data[tomorrow], []string{"distributed", "tomorrow-done"})
+}

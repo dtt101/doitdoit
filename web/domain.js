@@ -24,6 +24,25 @@
   }
   function startOfDay(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
 
+  function groupTasksByCompletion(data) {
+    let changed = false;
+    for (const key of Object.keys(data)) {
+      const tasks = data[key] || [];
+      let seenCompleted = false;
+      let needsGrouping = false;
+      for (const task of tasks) {
+        if (task.completed) seenCompleted = true;
+        else if (seenCompleted) { needsGrouping = true; break; }
+      }
+      if (needsGrouping) {
+        data[key] = tasks.filter((task) => !task.completed)
+          .concat(tasks.filter((task) => task.completed));
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   function storageTarget(target, visibleDays, now = new Date()) {
     if (target.kind === "future") return { key: "Future", due: "" };
     let date = target.kind === "tomorrow"
@@ -66,6 +85,7 @@
     if (toRoll.length) { data[today] = (data[today] || []).concat(toRoll); changed = true; }
     for (const date of datesToRemove) { delete data[date]; changed = true; }
     if (data[today] && data[today].length === 0) delete data[today];
+    if (groupTasksByCompletion(data)) changed = true;
     return changed;
   }
 
@@ -98,6 +118,7 @@
       changed = true;
     }
     data.Future = remain;
+    if (groupTasksByCompletion(data)) changed = true;
     return changed;
   }
 
@@ -125,5 +146,5 @@
 
   return { todayStr, parseDay, addDays, startOfDay, storageTarget, targetForTask,
     rollOverIncompleteTasks, pruneOldTasks, distributeFutureTasks, parseAddInput,
-    insertBeforeCompleted };
+    insertBeforeCompleted, groupTasksByCompletion };
 });

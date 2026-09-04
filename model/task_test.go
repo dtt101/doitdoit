@@ -8,6 +8,48 @@ import (
 	"time"
 )
 
+func TestLoadGroupsCompletedTasksAtBottomAndPersistsRepair(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tasks.json")
+	input := TodoData{"2099-01-01": {
+		{ID: "open-1", Title: "First open"},
+		{ID: "done-1", Title: "First done", Completed: true},
+		{ID: "open-2", Title: "Second open"},
+		{ID: "done-2", Title: "Second done", Completed: true},
+	}}
+	contents, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := Load(path, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"open-1", "open-2", "done-1", "done-2"}
+	assertTaskOrder(t, loaded["2099-01-01"], want)
+
+	persisted, err := loadRaw(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTaskOrder(t, persisted["2099-01-01"], want)
+}
+
+func assertTaskOrder(t *testing.T, tasks []Task, want []string) {
+	t.Helper()
+	if len(tasks) != len(want) {
+		t.Fatalf("got %d tasks, want %d: %v", len(tasks), len(want), tasks)
+	}
+	for i, id := range want {
+		if tasks[i].ID != id {
+			t.Fatalf("task %d = %q, want %q; all tasks: %v", i, tasks[i].ID, id, tasks)
+		}
+	}
+}
+
 func TestImportTextIsIgnoredAndPreserved(t *testing.T) {
 	tmpDir := t.TempDir()
 	jsonPath := filepath.Join(tmpDir, "tasks.json")

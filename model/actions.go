@@ -167,6 +167,12 @@ func (m *Model) reorderTask(direction int) bool {
 	if newRowIdx < 0 || newRowIdx >= len(tasks) {
 		return false
 	}
+	// Reordering is allowed within the active and completed groups, but not
+	// across their boundary. Completion grouping is an invariant of every
+	// task bucket.
+	if tasks[m.RowIdx].Completed != tasks[newRowIdx].Completed {
+		return false
+	}
 
 	m.captureMoveUndo()
 	tasks[m.RowIdx], tasks[newRowIdx] = tasks[newRowIdx], tasks[m.RowIdx]

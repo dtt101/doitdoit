@@ -77,6 +77,12 @@ func Load(path string, retentionDays int) (TodoData, error) {
 		dirty = true
 	}
 
+	// Repair files written by older versions or other clients that placed an
+	// active task below a completed task.
+	if data.groupTasksByCompletion() {
+		dirty = true
+	}
+
 	// Persist any changes triggered during load so the file stays up to date
 	if dirty {
 		if err := data.SaveIfUnchanged(path, &hash, exists); err != nil {
@@ -85,6 +91,29 @@ func Load(path string, retentionDays int) (TodoData, error) {
 	}
 
 	return data, nil
+}
+
+// groupTasksByCompletion restores the stable per-bucket ordering invariant.
+// Relative order within the active and completed groups is preserved.
+func (d TodoData) groupTasksByCompletion() bool {
+	changed := false
+	for key, tasks := range d {
+		seenCompleted := false
+		needsGrouping := false
+		for _, task := range tasks {
+			if task.Completed {
+				seenCompleted = true
+			} else if seenCompleted {
+				needsGrouping = true
+				break
+			}
+		}
+		if needsGrouping {
+			d[key] = groupTasksByCompletion(tasks)
+			changed = true
+		}
+	}
+	return changed
 }
 
 func (d TodoData) rollOverIncompleteTasks() bool {
@@ -144,6 +173,9 @@ func (d TodoData) rollOverIncompleteTasks() bool {
 	// Additionally, if today's entry exists but is now empty, remove it.
 	if tasks, ok := d[todayStr]; ok && len(tasks) == 0 {
 		delete(d, todayStr)
+	}
+	if d.groupTasksByCompletion() {
+		changed = true
 	}
 
 	return changed
@@ -327,6 +359,9 @@ func (d TodoData) distributeFutureTasksThrough(lastVisible time.Time) bool {
 	}
 
 	d["Future"] = remainingFuture
+	if d.groupTasksByCompletion() {
+		changed = true
+	}
 	return changed
 }
 

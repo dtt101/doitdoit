@@ -172,3 +172,17 @@ func TestReloadRollsOverInMemoryWithoutSaving(t *testing.T) {
 		t.Error("reload must not write the data file")
 	}
 }
+
+func TestReloadGroupsCompletedTasksAtBottom(t *testing.T) {
+	today := time.Now().Format(dateLayout)
+	m := newReloadTestModel(t)
+	external := TodoData{today: {
+		{ID: "done", Title: "Done", Completed: true},
+		{ID: "open", Title: "Open"},
+	}}
+
+	newM, _ := m.Update(dataFileCheckedMsg{data: external, modTime: time.Now(), size: 1})
+	m = newM.(Model)
+
+	assertTaskOrder(t, m.Data[today], []string{"open", "done"})
+}
