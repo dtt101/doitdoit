@@ -37,14 +37,59 @@ func brandAnimationTick(id uint64, frame int) tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	beforeKey, beforeRow := "", m.RowIdx
+	before := Task{}
+	validSelection := m.ShowFuture || (m.ColIdx >= 0 && m.ColIdx < len(m.dateKeys))
+	if validSelection {
+		beforeKey = m.getCurrentKey()
+	}
+	if validSelection && m.hasSelectedTask() {
+		before = m.Data[beforeKey][beforeRow]
+	}
 	updated, cmd := m.update(msg)
 	next := updated.(Model)
+	if _, keyPress := msg.(tea.KeyPressMsg); keyPress {
+		if next.State != Browsing || next.ShowHelp || next.Err != nil {
+			next.taskAnimationID++
+			next.taskFrame = 0
+		} else if (next.ShowFuture || (next.ColIdx >= 0 && next.ColIdx < len(next.dateKeys))) && next.hasSelectedTask() {
+			after := next.Data[next.getCurrentKey()][next.RowIdx]
+			changed := beforeKey != next.getCurrentKey() || beforeRow != next.RowIdx || before.ID != after.ID
+			completed := false
+			for _, task := range next.Data[beforeKey] {
+				if before.ID != "" && task.ID == before.ID && task.Completed != before.Completed {
+					completed = true
+				}
+			}
+			if changed || completed {
+				next.taskAnimationID++
+				next.taskFrame = 1
+				next.taskGlow = 0.65
+				next.taskAnimationTaskID = after.ID
+				if completed {
+					next.taskGlow = 0.8
+					next.taskAnimationTaskID = before.ID
+				}
+				cmd = tea.Batch(cmd, taskAnimationTick(next.taskAnimationID, 2))
+			}
+		}
+	}
 	next.syncViewport()
 	return next, cmd
 }
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case taskAnimationMsg:
+		if msg.id != m.taskAnimationID || m.taskFrame == 0 {
+			return m, nil
+		}
+		if msg.frame > taskAnimationFrames {
+			m.taskFrame = 0
+			return m, nil
+		}
+		m.taskFrame = msg.frame
+		return m, taskAnimationTick(msg.id, msg.frame+1)
 	case tea.WindowSizeMsg:
 		return m.handleWindowSize(msg)
 	case copyFlashDoneMsg:

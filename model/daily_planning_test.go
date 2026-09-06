@@ -34,7 +34,7 @@ func TestFutureGroupingDoesNotChangeStorage(t *testing.T) {
 	if ideas < 0 || scheduled <= ideas || completed <= scheduled || !strings.Contains(view, "4 remaining") {
 		t.Fatalf("Future groups missing or out of order:\n%s", view)
 	}
-	if !strings.Contains(view, "("+dayKey(10)+")") || !strings.Contains(view, "> [ ] Idea A") {
+	if !strings.Contains(view, "("+dayKey(10)+")") || !strings.Contains(view, "[ ] Idea A") {
 		t.Fatalf("Future lost date labels or initial selection:\n%s", view)
 	}
 	for _, id := range []string{"idea-a", "idea-b", "scheduled-a", "scheduled-b", "done"} {

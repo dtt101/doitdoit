@@ -94,6 +94,11 @@ type Model struct {
 	// Brief flash on copy
 	copyFlash bool
 
+	taskAnimationID     uint64
+	taskFrame           int
+	taskGlow            float64
+	taskAnimationTaskID string
+
 	// Click-only animation for the footer wordmark.
 	brandFrame       int
 	brandAnimationID uint64

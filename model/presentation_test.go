@@ -17,7 +17,7 @@ func TestTaskMarkersAndCountsWithoutColour(t *testing.T) {
 	m.Data[key][1].Completed = true
 	m.persist()
 	view := ansi.Strip(m.renderDaySection(key, 0, 60))
-	for _, want := range []string{"Today · 1 remaining", "> [ ] First task", "  [x] Second task", "Completed 1 · c hide"} {
+	for _, want := range []string{"Today · 1 remaining", "[ ] First task", "[x] Second task", "Completed 1 · c hide"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("missing %q in:\n%s", want, view)
 		}
@@ -31,9 +31,19 @@ func TestTaskMarkersAndCountsWithoutColour(t *testing.T) {
 		t.Fatal("undo did not restore remaining count")
 	}
 	wrapped := ansi.Strip(m.taskView(Task{Title: strings.Repeat("long title ", 10)}, true, 20))
-	for _, line := range strings.Split(wrapped, "\n") {
-		if !strings.HasPrefix(line, "> ") || lipgloss.Width(line) > 20 {
-			t.Fatalf("wrapped task lost its selection marker or exceeded width: %q", line)
+	for i, line := range strings.Split(wrapped, "\n") {
+		prefix := "    "
+		if i == 0 {
+			prefix = "[ ] "
+		}
+		if !strings.HasPrefix(line, prefix) || lipgloss.Width(line) > 20 {
+			t.Fatalf("wrapped task lost its checkbox alignment or exceeded width: %q", line)
+		}
+	}
+	for _, selected := range []bool{false, true} {
+		view := ansi.Strip(m.taskView(Task{Title: "1234567890123456"}, selected, 20))
+		if view != "[ ] 1234567890123456" {
+			t.Fatalf("task should use the space freed by the arrow: %q", view)
 		}
 	}
 }
@@ -155,7 +165,7 @@ func TestInputAndTaskMarkersFollowLightDarkAndCustomThemes(t *testing.T) {
 				m = resizeModel(m, width, 24)
 				assertFitsTerminal(t, m)
 				view := ansi.Strip(m.taskView(Task{Title: "Done", Completed: true}, true, 20))
-				if !strings.Contains(view, "> [x] Done") {
+				if !strings.HasPrefix(view, "[x] Done") {
 					t.Fatal("task state depends on colour")
 				}
 			}

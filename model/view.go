@@ -183,35 +183,41 @@ func dayHeader(label string, remaining, width int) string {
 }
 
 func (m Model) taskView(task Task, selected bool, width int) string {
+	// A completion glow follows the task when completion reorders the list.
+	if task.ID != m.taskAnimationTaskID {
+		m.taskFrame = 0
+	}
 	style := styles.TaskStyle
 	check := "[ ] "
 	if task.Completed {
 		style = styles.CompletedTaskStyle
 		check = "[x] "
 	}
-	marker := "  "
 	markerStyle := lipgloss.NewStyle().Foreground(styles.Subtle)
 	if selected {
-		marker = "> "
-		markerStyle = markerStyle.Foreground(styles.Highlight).Bold(true)
+		markerStyle = markerStyle.Foreground(m.taskAccent()).Bold(true)
 		switch {
 		case m.copyFlash:
 			style = style.Foreground(styles.Special).Bold(true)
 		case m.State == ChoosingMoveDestination:
 			style = styles.MovingTaskStyle.Padding(0)
 		default:
-			style = style.Foreground(styles.Highlight).Bold(true)
+			style = style.Foreground(m.taskAccent()).Bold(true)
 		}
+	}
+	if !selected && m.taskFrame > 0 {
+		style = style.Foreground(m.taskFade(style.GetForeground()))
+		markerStyle = markerStyle.Foreground(m.taskFade(styles.Subtle))
 	}
 	title := task.Title
 	if m.ShowFuture && task.DueDate != "" {
 		title += fmt.Sprintf(" (%s)", task.DueDate)
 	}
-	lines := strings.Split(lipgloss.Wrap(style.Width(max(1, width-6)).Render(title), max(1, width-6), ""), "\n")
+	lines := strings.Split(lipgloss.Wrap(style.Width(max(1, width-4)).Render(title), max(1, width-4), ""), "\n")
 	for i, line := range lines {
-		prefix := marker + "    "
+		prefix := "    "
 		if i == 0 {
-			prefix = marker + check
+			prefix = check
 		}
 		lines[i] = markerStyle.Render(prefix) + line
 	}
