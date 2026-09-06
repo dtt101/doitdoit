@@ -150,6 +150,12 @@ inputs fit their column and preserve typed text and cursor position on resize.
 Windows smaller than 24 columns by 10 rows show a resize prompt and pause task
 shortcuts until there is room to display them.
 
+Day headers show how many tasks remain. A `>` marks the selected task, `[ ]`
+marks an incomplete task, and `[x]` marks a completed task. Wrapped lines keep
+the selection marker visible. Completed tasks appear in a separate section;
+press `c` to collapse or expand it across the current session. Collapsing only
+changes the display and navigation, preserving the task file and stored order.
+
 Press `f` for the separate Future list. Tasks with a specific future date remain
 there until that date enters the planning window set by `-days`, while undated
 ideas wait until you decide what to do with them. Resizing or toggling Today
@@ -183,6 +189,7 @@ it. Save errors appear instead of a success confirmation.
 | `J` / `K` | Reorder the selected task |
 | `.` | Repeat the last move destination |
 | `u` | Undo the most recent task change |
+| `c` | Collapse or expand completed tasks (session only) |
 | `y` | Copy the task text to the clipboard |
 | `d` | Delete the selected task |
 | `f` | Toggle the Future view |

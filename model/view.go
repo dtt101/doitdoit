@@ -84,7 +84,13 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 			}
 		}
 	}
-	doc := dayContent{header: styles.TitleStyle.Render(header), focusStart: -1}
+	remaining := 0
+	for _, task := range m.Data[dateStr] {
+		if !task.Completed {
+			remaining++
+		}
+	}
+	doc := dayContent{header: dayHeader(header, remaining, colWidth), focusStart: -1}
 	appendBlock := func(content string) {
 		doc.lines = append(doc.lines, strings.Split(lipgloss.Wrap(content, colWidth, ""), "\n")...)
 	}
@@ -98,41 +104,40 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 	}
 
 	tasks := m.Data[dateStr]
-	for j, task := range tasks {
-		if j > 0 {
-			doc.lines = append(doc.lines, "")
-		}
-		start := len(doc.lines)
-		selected := focused && m.RowIdx == j
-		if selected && m.State == Editing {
-			appendInput()
-		} else {
-			style := styles.TaskStyle
-			if task.Completed {
-				style = styles.CompletedTaskStyle
+	for _, section := range m.taskSections(dateStr) {
+		if section.label != "" {
+			if len(doc.lines) > 0 {
+				doc.lines = append(doc.lines, "")
 			}
-			if selected && m.State != Adding {
-				switch {
-				case m.copyFlash:
-					style = style.Foreground(styles.Special).Bold(true)
-				case m.State == ChoosingMoveDestination:
-					style = styles.MovingTaskStyle
-				default:
-					style = style.Foreground(styles.Highlight).Bold(true)
+			toggle := "hide"
+			if section.collapsed {
+				toggle = "show"
+			}
+			label := fmt.Sprintf("%s %d · c %s", section.label, len(section.rows), toggle)
+			appendBlock(lipgloss.NewStyle().Foreground(styles.Subtle).Render(label))
+		}
+		if section.collapsed {
+			continue
+		}
+		for i, j := range section.rows {
+			if i > 0 {
+				doc.lines = append(doc.lines, "")
+			}
+			task := tasks[j]
+			start := len(doc.lines)
+			selected := focused && m.RowIdx == j
+			if selected && m.State == Editing {
+				appendInput()
+			} else {
+				appendBlock(m.taskView(task, selected && m.State != Adding, colWidth))
+				if selected && m.State != Adding {
+					doc.focusStart, doc.focusEnd = start, len(doc.lines)
 				}
 			}
-			title := task.Title
-			if m.ShowFuture && task.DueDate != "" {
-				title += fmt.Sprintf(" (%s)", task.DueDate)
+			doc.tasks = append(doc.tasks, taskSpan{start: start, end: len(doc.lines), row: j})
+			if selected && m.State == SettingMoveDate {
+				appendInput()
 			}
-			appendBlock(style.Width(colWidth).Render(title))
-			if selected && m.State != Adding {
-				doc.focusStart, doc.focusEnd = start, len(doc.lines)
-			}
-		}
-		doc.tasks = append(doc.tasks, taskSpan{start: start, end: len(doc.lines)})
-		if selected && m.State == SettingMoveDate {
-			appendInput()
 		}
 	}
 	if focused && m.State == Adding {
@@ -156,6 +161,52 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 		appendBlock(lipgloss.NewStyle().Foreground(styles.Subtle).Render(message))
 	}
 	return doc
+}
+
+// Headers retain their two-line footprint in narrow windows.
+func dayHeader(label string, remaining, width int) string {
+	count := fmt.Sprintf("%d remaining", remaining)
+	if lipgloss.Width(label+" · "+count) <= width {
+		return styles.TitleStyle.Width(width).Render(label + " · " + count)
+	}
+	return styles.TitleStyle.PaddingBottom(0).Width(width).Render(label) + "\n" +
+		lipgloss.NewStyle().Foreground(styles.Subtle).Width(width).Render(count)
+}
+
+func (m Model) taskView(task Task, selected bool, width int) string {
+	style := styles.TaskStyle
+	check := "[ ] "
+	if task.Completed {
+		style = styles.CompletedTaskStyle
+		check = "[x] "
+	}
+	marker := "  "
+	markerStyle := lipgloss.NewStyle().Foreground(styles.Subtle)
+	if selected {
+		marker = "> "
+		markerStyle = markerStyle.Foreground(styles.Highlight).Bold(true)
+		switch {
+		case m.copyFlash:
+			style = style.Foreground(styles.Special).Bold(true)
+		case m.State == ChoosingMoveDestination:
+			style = styles.MovingTaskStyle.Padding(0)
+		default:
+			style = style.Foreground(styles.Highlight).Bold(true)
+		}
+	}
+	title := task.Title
+	if m.ShowFuture && task.DueDate != "" {
+		title += fmt.Sprintf(" (%s)", task.DueDate)
+	}
+	lines := strings.Split(lipgloss.Wrap(style.Width(max(1, width-6)).Render(title), max(1, width-6), ""), "\n")
+	for i, line := range lines {
+		prefix := marker + "    "
+		if i == 0 {
+			prefix = marker + check
+		}
+		lines[i] = markerStyle.Render(prefix) + line
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) helpView() string {
@@ -361,6 +412,7 @@ func (m Model) helpItems() []helpItem {
 		{"J / K", "reorder task"},
 		{".", "repeat move"},
 		{"u", "undo last change"},
+		{"c", "show/hide completed"},
 		{"f", viewToggle},
 		{"t", "return to Today"},
 		{"T", "toggle Today focus"},

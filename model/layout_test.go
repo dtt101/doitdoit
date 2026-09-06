@@ -50,7 +50,7 @@ func TestResponsiveColumnsPreserveSelectionAndStorage(t *testing.T) {
 		if m.getCurrentKey() != dayKey(5) || m.Data[m.getCurrentKey()][m.RowIdx].ID != "selected" {
 			t.Fatal("resizing changed the selected task")
 		}
-		if !strings.Contains(m.View().Content, "Keep me selected") {
+		if !strings.Contains(ansi.Strip(m.View().Content), "> [ ] Keep me") {
 			t.Fatal("selected task fell outside the rendered columns")
 		}
 		assertFitsTerminal(t, m)
