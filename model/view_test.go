@@ -21,8 +21,8 @@ func TestFooterWordmarkOnlyAnimatesWhenClicked(t *testing.T) {
 		height:      24,
 	}
 
-	if footer := ansi.Strip(m.helpView()); !strings.Contains(footer, "doitdoit. Press ? for help") {
-		t.Fatalf("footer is missing the left-aligned wordmark and help prompt: %q", footer)
+	if footer := ansi.Strip(m.helpView()); !strings.Contains(footer, "doitdoit. a add") || !strings.Contains(footer, "? help") {
+		t.Fatalf("footer is missing the left-aligned wordmark and shortcuts: %q", footer)
 	}
 	view := m.View()
 	if view.MouseMode != tea.MouseModeCellMotion {
