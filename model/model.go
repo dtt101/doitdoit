@@ -33,6 +33,8 @@ type moveTarget struct {
 type moveUndoSnapshot struct {
 	Data       TodoData
 	ShowFuture bool
+	FocusToday bool
+	DateKeys   []string
 	ColIdx     int
 	RowIdx     int
 }
@@ -77,6 +79,12 @@ type Model struct {
 	// Future View
 	ShowFuture bool
 	ShowHelp   bool
+	FocusToday bool
+
+	// Presentation state is independent of the date window used for scheduling.
+	columnOffset  int
+	scrollOffsets map[string]int
+	helpOffset    int
 
 	// Brief flash on copy
 	copyFlash bool
@@ -299,6 +307,6 @@ func (m *Model) configureTextInput(placeholder string) {
 	textInputStyles.Blurred.Text = textInputStyles.Focused.Text
 	m.TextInput.SetStyles(textInputStyles)
 	m.TextInput.Prompt = ""
-	m.TextInput.SetWidth(30)
+	m.resizeTextInput()
 	m.TextInput.Focus()
 }

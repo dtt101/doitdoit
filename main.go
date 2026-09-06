@@ -24,7 +24,7 @@ func main() {
 		}
 	}
 	filePathFlag := flag.String("file", "", "Path to the JSON data file (overrides config)")
-	visibleDays := flag.Int("days", 3, "Number of days to display")
+	visibleDays := flag.Int("days", 3, "Maximum day columns to display (fewer in narrow windows)")
 	flag.Parse()
 
 	if *visibleDays < 1 {

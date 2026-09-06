@@ -37,6 +37,13 @@ func brandAnimationTick(id uint64, frame int) tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	updated, cmd := m.update(msg)
+	next := updated.(Model)
+	next.syncViewport()
+	return next, cmd
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		return m.handleWindowSize(msg)
@@ -101,7 +108,7 @@ func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
 		m.Data.pruneOldTasks(m.RetentionDays)
 		m.clearMoveUndo()
 		firstDay := m.firstVisibleDate()
-		if firstDay.Before(startOfDay(time.Now())) {
+		if m.FocusToday || firstDay.Before(startOfDay(time.Now())) {
 			firstDay = startOfDay(time.Now())
 		}
 		m.updateDateKeysFrom(firstDay)
@@ -109,7 +116,7 @@ func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
 		m.Data.distributeFutureTasksThrough(m.lastVisibleDate())
 		m.ColIdx = 0
 		for i, dateKey := range m.dateKeys {
-			if dateKey == focusedDate {
+			if !m.FocusToday && dateKey == focusedDate {
 				m.ColIdx = i
 				break
 			}
@@ -127,14 +134,31 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	if m.ShowHelp {
-		if msg.String() == "?" || msg.Code == tea.KeyEsc {
-			m.ShowHelp = false
+	if m.terminalTooSmall() {
+		if msg.String() == "q" || msg.String() == "ctrl+c" {
+			return m, tea.Quit
 		}
+		return m, nil
+	}
+	if m.ShowHelp {
+		switch msg.String() {
+		case "?", "esc":
+			m.ShowHelp = false
+		case "j", "down":
+			m.helpOffset++
+		case "k", "up":
+			m.helpOffset--
+		case "pgdown":
+			m.helpOffset += max(1, m.height/2)
+		case "pgup":
+			m.helpOffset -= max(1, m.height/2)
+		}
+		m.helpOffset = min(max(0, m.helpOffset), m.helpMaxOffset())
 		return m, nil
 	}
 	if m.State == Browsing && msg.String() == "?" {
 		m.ShowHelp = true
+		m.helpOffset = 0
 		return m, nil
 	}
 
@@ -210,7 +234,7 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "right", "l":
-		if !m.ShowFuture {
+		if !m.ShowFuture && !m.FocusToday {
 			if m.ColIdx < len(m.dateKeys)-1 {
 				m.ColIdx++
 			} else if m.shiftDateWindow(1) {
@@ -221,7 +245,7 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.clampRow()
 		}
 	case "left", "h":
-		if !m.ShowFuture {
+		if !m.ShowFuture && !m.FocusToday {
 			if m.ColIdx > 0 {
 				m.ColIdx--
 			} else {
@@ -238,6 +262,15 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.RowIdx < len(m.Data[currentDate])-1 {
 			m.RowIdx++
 		}
+	case "pgup":
+		m.scrollPage(-1)
+	case "pgdown":
+		m.scrollPage(1)
+	case "t":
+		m.returnToToday()
+	case "T":
+		m.FocusToday = !m.FocusToday
+		m.returnToToday()
 	case "a":
 		m.State = Adding
 		m.configureTextInput("New task...")

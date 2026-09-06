@@ -9,7 +9,6 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/dtt101/doitdoit/styles"
 )
 
 func pressRune(m Model, r rune) Model {
@@ -419,7 +418,7 @@ func TestMoveFooterShowsExactTargetsInFutureView(t *testing.T) {
 		if !strings.Contains(help, "today") || !strings.Contains(help, "other date") || !strings.Contains(help, "future") {
 			t.Fatalf("expected all move destinations in footer at width %d, got %q", width, help)
 		}
-		if got := lipgloss.Width(help); got > m.width-styles.AppStyle.GetHorizontalFrameSize() {
+		if got := lipgloss.Width(help); got > m.width-m.appStyle().GetHorizontalFrameSize() {
 			t.Fatalf("move footer width = %d at terminal width %d, exceeds available width", got, width)
 		}
 	}
