@@ -55,10 +55,14 @@ func main() {
 		}
 	}
 
+	_, setupComplete := cfg.Retention()
 	retentionDays, err := config.ResolveRetention(cfg, input, os.Stdout)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error configuring retention: %v\n", err)
 		os.Exit(1)
+	}
+	if !setupComplete {
+		config.OfferOmarchyHook(cfg, input, os.Stdout)
 	}
 
 	theme, err := styles.ResolveTheme(cfg.Theme)

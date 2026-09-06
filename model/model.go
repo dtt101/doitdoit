@@ -77,6 +77,9 @@ type Model struct {
 	// Last successful move, delete, or undo; cleared when task history changes.
 	feedback string
 
+	// Session-only explanation of the last observed rollover; never stored.
+	carriedForward int
+
 	// Future View
 	ShowFuture    bool
 	ShowHelp      bool
@@ -111,19 +114,20 @@ func NewModelWithRetention(filePath string, visibleDays, retentionDays int) (Mod
 		return Model{}, fmt.Errorf("visible days must be at least 1")
 	}
 
-	data, err := Load(filePath, retentionDays)
+	data, carriedForward, err := loadWithRollover(filePath, retentionDays)
 	if err != nil {
 		return Model{}, err
 	}
 
 	m := Model{
-		Data:          data,
-		FilePath:      filePath,
-		VisibleDays:   visibleDays,
-		RetentionDays: retentionDays,
-		State:         Browsing,
-		TextInput:     textinput.New(),
-		todayKey:      time.Now().Format(dateLayout),
+		Data:           data,
+		carriedForward: carriedForward,
+		FilePath:       filePath,
+		VisibleDays:    visibleDays,
+		RetentionDays:  retentionDays,
+		State:          Browsing,
+		TextInput:      textinput.New(),
+		todayKey:       time.Now().Format(dateLayout),
 	}
 	m.configureTextInput("New task...")
 	m.Data.DistributeFutureTasks(visibleDays)

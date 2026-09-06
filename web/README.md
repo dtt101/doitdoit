@@ -97,6 +97,11 @@ Use the controls under the bottom prompt to add a task to Today, Tomorrow,
 Future, or a date from the device's date picker. Dates beyond the visible
 five-day window stay in Future until they come into range.
 
+The web companion keeps a flat Future list. The terminal app groups Future into
+Ideas, Scheduled, and Completed, and restricts reordering to the displayed
+section. This presentation difference does not change the shared task format
+or rollover and scheduling rules.
+
 - Tap a task title to edit its title or schedule.
 - Drag the `≡` handle to reorder a task or move it between visible days and
   Future. With a keyboard, focus the handle, press Space or Enter to pick up,

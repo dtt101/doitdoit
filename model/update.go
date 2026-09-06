@@ -104,6 +104,7 @@ func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
 			focusedDate = m.dateKeys[m.ColIdx]
 		}
 
+		m.carriedForward = m.Data.carryForwardCount()
 		m.Data.rollOverIncompleteTasks()
 		m.Data.pruneOldTasks(m.RetentionDays)
 		m.clearMoveUndo()
@@ -312,7 +313,7 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "f":
 		m.ShowFuture = !m.ShowFuture
-		m.RowIdx = 0
+		m.RowIdx = -1
 		m.clampRow()
 	case "y":
 		m.copyTask()

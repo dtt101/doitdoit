@@ -100,6 +100,7 @@ func (m *Model) applyReloadedData(data TodoData) {
 	}
 
 	m.Data = data
+	m.carriedForward = m.Data.carryForwardCount()
 	m.Data.rollOverIncompleteTasks()
 	m.Data.pruneOldTasks(m.RetentionDays)
 	m.Data.distributeFutureTasksThrough(m.lastVisibleDate())

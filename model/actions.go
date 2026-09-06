@@ -173,14 +173,21 @@ func (m *Model) reorderTask(direction int) bool {
 		return false
 	}
 
-	newRowIdx := m.RowIdx + direction
-	if newRowIdx < 0 || newRowIdx >= len(tasks) {
-		return false
+	newRowIdx := -1
+	for _, section := range m.taskSections(currentDate) {
+		if section.collapsed {
+			continue
+		}
+		for i, row := range section.rows {
+			if row == m.RowIdx && i+direction >= 0 && i+direction < len(section.rows) {
+				newRowIdx = section.rows[i+direction]
+				break
+			}
+		}
 	}
-	// Reordering is allowed within the active and completed groups, but not
-	// across their boundary. Completion grouping is an invariant of every
-	// task bucket.
-	if tasks[m.RowIdx].Completed != tasks[newRowIdx].Completed {
+	// Reordering stays within the displayed section, including Ideas and
+	// Scheduled in Future. Completion grouping remains a bucket invariant.
+	if newRowIdx < 0 || tasks[m.RowIdx].Completed != tasks[newRowIdx].Completed {
 		return false
 	}
 
