@@ -31,12 +31,13 @@ type moveTarget struct {
 }
 
 type moveUndoSnapshot struct {
-	Data       TodoData
-	ShowFuture bool
-	FocusToday bool
-	DateKeys   []string
-	ColIdx     int
-	RowIdx     int
+	Data          TodoData
+	ShowFuture    bool
+	FocusToday    bool
+	HideCompleted bool
+	DateKeys      []string
+	ColIdx        int
+	RowIdx        int
 }
 
 type Model struct {
@@ -77,9 +78,10 @@ type Model struct {
 	feedback string
 
 	// Future View
-	ShowFuture bool
-	ShowHelp   bool
-	FocusToday bool
+	ShowFuture    bool
+	ShowHelp      bool
+	FocusToday    bool
+	HideCompleted bool
 
 	// Presentation state is independent of the date window used for scheduling.
 	columnOffset  int
@@ -287,21 +289,30 @@ func (m Model) getCurrentKey() string {
 }
 
 func (m *Model) clampRow() {
-	currentDate := m.getCurrentKey()
-	count := len(m.Data[currentDate])
-	if m.RowIdx >= count {
-		m.RowIdx = count - 1
-	}
-	if m.RowIdx < 0 {
+	rows := m.taskRows(m.getCurrentKey())
+	if len(rows) == 0 {
 		m.RowIdx = 0
+		return
 	}
+	for _, row := range rows {
+		if row == m.RowIdx {
+			return
+		}
+	}
+	for _, row := range rows {
+		if row >= m.RowIdx {
+			m.RowIdx = row
+			return
+		}
+	}
+	m.RowIdx = rows[len(rows)-1]
 }
 
 func (m *Model) configureTextInput(placeholder string) {
 	m.TextInput.Reset()
 	m.TextInput.Placeholder = placeholder
 	textInputStyles := m.TextInput.Styles()
-	textInputStyles.Focused.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	textInputStyles.Focused.Placeholder = lipgloss.NewStyle().Foreground(styles.Subtle)
 	textInputStyles.Focused.Text = lipgloss.NewStyle().Foreground(styles.Text)
 	textInputStyles.Blurred.Placeholder = textInputStyles.Focused.Placeholder
 	textInputStyles.Blurred.Text = textInputStyles.Focused.Text

@@ -17,7 +17,9 @@ func (m Model) handleThemeReload(msg ThemeReloadMsg) (tea.Model, tea.Cmd) {
 	// The text input captures its style at configure time, so refresh it.
 	textInputStyles := m.TextInput.Styles()
 	textInputStyles.Focused.Text = lipgloss.NewStyle().Foreground(styles.Text)
+	textInputStyles.Focused.Placeholder = lipgloss.NewStyle().Foreground(styles.Subtle)
 	textInputStyles.Blurred.Text = textInputStyles.Focused.Text
+	textInputStyles.Blurred.Placeholder = textInputStyles.Focused.Placeholder
 	m.TextInput.SetStyles(textInputStyles)
 	return m, nil
 }

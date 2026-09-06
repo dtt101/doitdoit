@@ -31,7 +31,7 @@ type Theme struct {
 func DefaultTheme() Theme {
 	return Theme{
 		Text:      compat.AdaptiveColor{Light: lipgloss.Color("#191919"), Dark: lipgloss.Color("#F8F8F2")},
-		Subtle:    compat.AdaptiveColor{Light: lipgloss.Color("#D9DCCF"), Dark: lipgloss.Color("#6272A4")},
+		Subtle:    compat.AdaptiveColor{Light: lipgloss.Color("#62685A"), Dark: lipgloss.Color("#6272A4")},
 		Border:    compat.AdaptiveColor{Light: lipgloss.Color("#D9DCCF"), Dark: lipgloss.Color("#6272A4")},
 		Highlight: compat.AdaptiveColor{Light: lipgloss.Color("#874BFD"), Dark: lipgloss.Color("#FF79C6")},
 		Key:       compat.AdaptiveColor{Light: lipgloss.Color("#9B9B9B"), Dark: lipgloss.Color("#BD93F9")},

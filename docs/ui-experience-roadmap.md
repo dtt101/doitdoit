@@ -1,7 +1,7 @@
 # UI and experience roadmap
 
 Improve retention among Omarchy users by making doitdoit easier to learn and
-comfortable to use daily. Work through these points in separate PRs. Steps 1–2
+comfortable to use daily. Work through these points in separate PRs. Steps 1–3
 are implemented; product ideas remain hypotheses until tested with users.
 
 ## 1. Make everyday actions visible
@@ -10,11 +10,10 @@ are implemented; product ideas remain hypotheses until tested with users.
 - [x] Replace “No tasks” with contextual guidance for adding a task.
 - [x] Show confirmation after saved moves and deletions, including the existing
   undo shortcut; confirm undo without offering another undo.
-- [ ] Consider a searchable command menu only if user feedback establishes a need.
 
 Acceptance: a new user can add, complete, move, and undo without consulting the
 README. Automated interaction coverage is in place; validation with new users
-remains part of step 6.
+remains pending.
 
 ## 2. Support tiled windows and long lists
 
@@ -35,52 +34,33 @@ behaviours; feedback from users remains pending.
 
 ## 3. Strengthen visual hierarchy
 
-- [ ] Add a selection marker and explicit completion markers.
-- [ ] Show remaining task counts in day headers.
-- [ ] Add an optional collapsed completed section without changing stored order.
-- [ ] Replace hard-coded input colours with theme roles.
-- [ ] Verify representative light, dark, and custom Omarchy themes.
+- [x] Add a selection marker and explicit completion markers.
+- [x] Show remaining task counts in day headers.
+- [x] Add an optional collapsed completed section without changing stored order.
+- [x] Replace hard-coded input colours with theme roles.
+- [x] Verify representative light, dark, and custom Omarchy themes.
 
 Acceptance: selection and completion remain distinguishable without colour;
 theme changes update the whole interface.
 
+`>` marks the selected task, including its wrapped lines; `[ ]` and `[x]`
+indicate completion. `c` folds/unfolds completed tasks for the session. Hidden
+tasks cannot receive task actions. Counts and input styles follow the active
+theme, including live theme reloads.
+
 ## 4. Improve the daily planning experience
 
-- [ ] Test whether accumulated rollover tasks contribute to abandonment.
-- [ ] If supported by feedback, introduce an optional morning review using
-  existing keep, move, and Future actions.
 - [ ] Explain carried-forward work without judgemental messaging.
 - [ ] Visually separate undated ideas from scheduled tasks within Future.
+- [ ] Make the existing opt-in live theme hook discoverable during setup.
 
 Acceptance: users understand where tasks went and can plan their day without
 changing rollover or storage semantics.
-
-## 5. Improve Omarchy integration
-
-- [ ] Add an optional launcher capture flow backed by `doitdoit add`.
-- [ ] Let users choose the shortcut and destination.
-- [ ] Confirm successful capture and return focus to the previous workflow.
-- [ ] Make the existing opt-in live theme hook discoverable during setup.
-
-Acceptance: capture works without opening the full planner; integration preserves
-existing user shortcuts and hooks.
-
-## 6. Validate with former users
-
-- [ ] Recruit five people who tried doitdoit and stopped.
-- [ ] Observe adding, completing, rescheduling, and undoing a deletion.
-- [ ] Ask what replaced doitdoit and why.
-- [ ] Repeat those tasks with the improved version.
-- [ ] Follow up after one week about continued use and remaining friction.
-
-Use manual feedback; retain the no-telemetry policy.
 
 ## Delivery and safeguards
 
 - Implement each step in a separate reviewable PR. Start with step 1, then tackle
   responsive layout and visual hierarchy.
-- Begin user research before later implementation; use findings to prioritise
-  steps 4–5.
 - Preserve existing shortcuts, task JSON compatibility, persistence protections,
   and opt-in desktop integration.
 - Add behaviour-focused tests beside changed packages. Run Go tests and vet;

@@ -63,7 +63,7 @@ func (m *Model) addTask(title string) {
 func (m *Model) deleteTask() bool {
 	currentDate := m.getCurrentKey()
 	tasks := m.Data[currentDate]
-	if len(tasks) == 0 || m.RowIdx >= len(tasks) {
+	if !m.hasSelectedTask() {
 		return false
 	}
 
@@ -76,7 +76,7 @@ func (m *Model) deleteTask() bool {
 func (m *Model) toggleTask() bool {
 	currentDate := m.getCurrentKey()
 	tasks := m.Data[currentDate]
-	if m.RowIdx >= len(tasks) {
+	if !m.hasSelectedTask() {
 		return false
 	}
 
@@ -111,7 +111,7 @@ func (m *Model) editTask(title string) bool {
 	title = strings.TrimSpace(title)
 	currentDate := m.getCurrentKey()
 	tasks := m.Data[currentDate]
-	if title == "" || m.RowIdx < 0 || m.RowIdx >= len(tasks) || tasks[m.RowIdx].Title == title {
+	if title == "" || !m.hasSelectedTask() || tasks[m.RowIdx].Title == title {
 		return false
 	}
 	m.captureMoveUndo()
@@ -131,12 +131,13 @@ func cloneTodoData(data TodoData) TodoData {
 func (m *Model) captureMoveUndo() {
 	m.feedback = ""
 	m.moveUndo = &moveUndoSnapshot{
-		Data:       cloneTodoData(m.Data),
-		ShowFuture: m.ShowFuture,
-		FocusToday: m.FocusToday,
-		DateKeys:   append([]string(nil), m.dateKeys...),
-		ColIdx:     m.ColIdx,
-		RowIdx:     m.RowIdx,
+		Data:          cloneTodoData(m.Data),
+		ShowFuture:    m.ShowFuture,
+		FocusToday:    m.FocusToday,
+		HideCompleted: m.HideCompleted,
+		DateKeys:      append([]string(nil), m.dateKeys...),
+		ColIdx:        m.ColIdx,
+		RowIdx:        m.RowIdx,
 	}
 }
 
@@ -154,6 +155,7 @@ func (m *Model) undoMove() bool {
 	m.Data = cloneTodoData(snapshot.Data)
 	m.ShowFuture = snapshot.ShowFuture
 	m.FocusToday = snapshot.FocusToday
+	m.HideCompleted = snapshot.HideCompleted
 	if len(snapshot.DateKeys) > 0 {
 		m.dateKeys = append([]string(nil), snapshot.DateKeys...)
 	}
@@ -167,7 +169,7 @@ func (m *Model) undoMove() bool {
 func (m *Model) reorderTask(direction int) bool {
 	currentDate := m.getCurrentKey()
 	tasks := m.Data[currentDate]
-	if len(tasks) == 0 {
+	if !m.hasSelectedTask() {
 		return false
 	}
 
@@ -204,7 +206,7 @@ func (m Model) relativeMoveTarget(days int) moveTarget {
 func (m *Model) scheduleTask(target moveTarget) bool {
 	sourceKey := m.getCurrentKey()
 	tasks := m.Data[sourceKey]
-	if len(tasks) == 0 || m.RowIdx < 0 || m.RowIdx >= len(tasks) {
+	if !m.hasSelectedTask() {
 		return false
 	}
 
@@ -272,7 +274,7 @@ func (m *Model) repeatMove() bool {
 func (m *Model) copyTask() {
 	currentDate := m.getCurrentKey()
 	tasks := m.Data[currentDate]
-	if len(tasks) == 0 || m.RowIdx >= len(tasks) {
+	if !m.hasSelectedTask() {
 		return
 	}
 

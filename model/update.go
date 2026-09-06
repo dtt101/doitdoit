@@ -254,14 +254,12 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.clampRow()
 		}
 	case "up", "k":
-		if m.RowIdx > 0 {
-			m.RowIdx--
-		}
+		m.moveSelection(-1)
 	case "down", "j":
-		currentDate := m.getCurrentKey()
-		if m.RowIdx < len(m.Data[currentDate])-1 {
-			m.RowIdx++
-		}
+		m.moveSelection(1)
+	case "c":
+		m.HideCompleted = !m.HideCompleted
+		m.clampRow()
 	case "pgup":
 		m.scrollPage(-1)
 	case "pgdown":
@@ -277,7 +275,7 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "e":
 		currentKey := m.getCurrentKey()
-		if m.RowIdx >= 0 && m.RowIdx < len(m.Data[currentKey]) {
+		if m.hasSelectedTask() {
 			m.State = Editing
 			m.configureTextInput("Task title")
 			m.TextInput.SetValue(m.Data[currentKey][m.RowIdx].Title)
@@ -293,8 +291,7 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.persist()
 		}
 	case "m":
-		currentKey := m.getCurrentKey()
-		if m.RowIdx >= 0 && m.RowIdx < len(m.Data[currentKey]) {
+		if m.hasSelectedTask() {
 			m.State = ChoosingMoveDestination
 		}
 	case "J":

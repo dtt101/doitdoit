@@ -145,6 +145,7 @@ func (m *Model) syncViewport() {
 	if len(m.dateKeys) == 0 && !m.ShowFuture {
 		return
 	}
+	m.clampRow()
 	geometry := m.columnGeometry(m.visibleColumnCount())
 	key := m.getCurrentKey()
 	doc := m.dayContent(key, m.ColIdx, geometry.contentWidth)
@@ -171,6 +172,7 @@ func (m *Model) returnToToday() {
 
 type taskSpan struct {
 	start, end int
+	row        int
 }
 
 type dayContent struct {
@@ -215,9 +217,9 @@ func (m *Model) scrollPage(direction int) {
 	rows := doc.viewportRows(geometry.contentHeight)
 	offset := doc.visibleOffset(m.scrollOffsets[key], rows, true)
 	offset = min(max(0, offset+direction*max(1, rows-1)), max(0, len(doc.lines)-rows))
-	for i, span := range doc.tasks {
+	for _, span := range doc.tasks {
 		if span.end > offset && span.start < offset+rows {
-			m.RowIdx = i
+			m.RowIdx = span.row
 			if direction < 0 {
 				break
 			}
