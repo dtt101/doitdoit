@@ -393,15 +393,7 @@ func TestMoveAndRepeatNoOpWithoutTaskOrTarget(t *testing.T) {
 	}
 }
 
-func TestBrowsingHelpUsesCompactModalHint(t *testing.T) {
-	mainHelp := (Model{State: Browsing}).helpView()
-	if !strings.Contains(mainHelp, "help") || !strings.Contains(mainHelp, "?") {
-		t.Fatalf("expected compact help hint, got %q", mainHelp)
-	}
-	if strings.Contains(mainHelp, "add") || strings.Contains(mainHelp, "navigate") || strings.Contains(mainHelp, "quit") {
-		t.Fatalf("expected shortcut details to stay out of the footer, got %q", mainHelp)
-	}
-
+func TestHelpModalDescribesNavigationForCurrentView(t *testing.T) {
 	mainModal := (Model{State: Browsing, width: 80}).helpModalView()
 	if !strings.Contains(mainModal, "Future view") || !strings.Contains(mainModal, "arrows / hjkl") {
 		t.Fatalf("expected main modal to describe Future toggle and full navigation, got %q", mainModal)

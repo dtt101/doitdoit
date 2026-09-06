@@ -140,7 +140,16 @@ Press `f` for the separate Future list. Tasks with a specific future date remain
 
 ### Keybindings
 
-Press `?` in the main view to open the keyboard-shortcuts modal; press `?` again or `Esc` to close it. After pressing `m`, the available destinations appear directly in the footer.
+The browsing footer shows the everyday shortcuts: `a` Add, `Space` Complete,
+`m` Move, `f` Future (or Days when viewing Future), and `?` Help. Empty columns
+explain how to add a task to the selected day or Future.
+
+Press `?` in the main view to open the full keyboard-shortcuts modal; press `?`
+again or `Esc` to close it. After pressing `m`, the available destinations appear
+directly in the footer. Saved moves and deletions show a confirmation with `u`
+to undo. The confirmation stays available while navigating and clears when
+another task change replaces the undo history or an external reload invalidates
+it. Save errors appear instead of a success confirmation.
 
 | Key | Action |
 | --- | --- |
@@ -216,6 +225,9 @@ The [`web/`](./web) directory contains an experimental installable web app for a
 See [web/README.md](./web/README.md) for Dropbox setup and deployment instructions.
 
 ## Development
+
+The [UI and experience roadmap](docs/ui-experience-roadmap.md) tracks the staged
+improvements and user validation work.
 
 ```bash
 mise install

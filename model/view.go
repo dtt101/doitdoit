@@ -197,7 +197,19 @@ func (m Model) renderDaySection(dateStr string, dayIdx, colWidth int) string {
 		}
 		taskViews = append(taskViews, inputStyle.Render(prefix+m.TextInput.View()))
 	} else if len(tasks) == 0 {
-		taskViews = append(taskViews, lipgloss.NewStyle().Foreground(styles.Subtle).Render("No tasks"))
+		message := "Nothing planned yet.\nSelect this day to add a task."
+		if isFocused {
+			switch {
+			case m.ShowFuture:
+				message = "Capture an idea for later."
+			case dateStr == time.Now().Format(dateLayout):
+				message = "What needs doing today?"
+			default:
+				message = "Plan something for this day."
+			}
+			message += "\nPress a to add a task."
+		}
+		taskViews = append(taskViews, lipgloss.NewStyle().Foreground(styles.Subtle).Render(message))
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, title, lipgloss.JoinVertical(lipgloss.Left, taskViews...))
@@ -215,10 +227,6 @@ func (m Model) helpView() string {
 	}
 
 	brand := m.brandView()
-	if m.State == Browsing {
-		return styles.HelpStyle.Render(brand + desc(". Press ") + key("?") + desc(" for help"))
-	}
-
 	helpItems := m.footerHelpItems()
 	items := make([]string, len(helpItems))
 	for i, item := range helpItems {
@@ -228,7 +236,15 @@ func (m Model) helpView() string {
 	if m.State == ChoosingMoveDestination {
 		prefix += desc("Move to: ")
 	}
-	return styles.HelpStyle.Render(wrapFooterItems(prefix, items, m.footerContentWidth()))
+	footer := wrapFooterItems(prefix, items, m.footerContentWidth())
+	if m.State == Browsing && m.Err == nil && m.feedback != "" {
+		feedbackItems := []string{lipgloss.NewStyle().Foreground(styles.Text).Render(m.feedback)}
+		if m.moveUndo != nil {
+			feedbackItems = append(feedbackItems, group("u", "undo"))
+		}
+		footer += "\n" + wrapFooterItems("", feedbackItems, m.footerContentWidth())
+	}
+	return styles.HelpStyle.Render(footer)
 }
 
 // wrapFooterItems keeps each key/description pair together and moves whole
@@ -270,7 +286,11 @@ func wrapFooterItems(prefix string, items []string, width int) string {
 func (m Model) footerHelpItems() []helpItem {
 	switch m.State {
 	case Browsing:
-		return []helpItem{{"?", "help"}}
+		viewToggle := "future"
+		if m.ShowFuture {
+			viewToggle = "days"
+		}
+		return []helpItem{{"a", "add"}, {"space", "complete"}, {"m", "move"}, {"f", viewToggle}, {"?", "help"}}
 	case Adding:
 		return []helpItem{{"enter", "save"}, {"esc", "cancel"}}
 	case Editing:

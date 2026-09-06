@@ -253,7 +253,7 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "d":
 		if m.deleteTask() {
-			m.persist()
+			m.persistWithFeedback("Task deleted")
 		}
 	case "enter", "space":
 		if m.toggleTask() {
@@ -274,11 +274,11 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case ".":
 		if m.repeatMove() {
-			m.persist()
+			m.persistMoveWithFeedback()
 		}
 	case "u":
 		if m.undoMove() {
-			m.persist()
+			m.persistWithFeedback("Undid last change")
 		}
 	case "f":
 		m.ShowFuture = !m.ShowFuture
@@ -304,13 +304,13 @@ func (m Model) handleChoosingMoveDestinationKey(msg tea.KeyPressMsg) (tea.Model,
 		moved := m.scheduleTask(moveTarget{Date: time.Now().Format(dateLayout)})
 		m.State = Browsing
 		if moved {
-			m.persist()
+			m.persistMoveWithFeedback()
 		}
 	case "f":
 		moved := m.scheduleTask(moveTarget{Future: true})
 		m.State = Browsing
 		if moved {
-			m.persist()
+			m.persistMoveWithFeedback()
 		}
 	case "d":
 		m.State = SettingMoveDate
@@ -321,7 +321,7 @@ func (m Model) handleChoosingMoveDestinationKey(msg tea.KeyPressMsg) (tea.Model,
 		moved := m.scheduleTask(m.relativeMoveTarget(days))
 		m.State = Browsing
 		if moved {
-			m.persist()
+			m.persistMoveWithFeedback()
 		}
 	}
 
@@ -341,7 +341,7 @@ func (m Model) handleSettingMoveDateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 		m.TextInput.Reset()
 		m.State = Browsing
 		if moved {
-			m.persist()
+			m.persistMoveWithFeedback()
 		}
 	case tea.KeyEsc:
 		m.TextInput.Reset()
@@ -354,4 +354,28 @@ func (m Model) handleSettingMoveDateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 	}
 
 	return m, nil
+}
+
+// Confirm only saved changes. Errors retain the existing visible error and
+// conflict handling instead of suggesting that the operation succeeded.
+func (m *Model) persistWithFeedback(message string) {
+	m.feedback = ""
+	m.persist()
+	if m.Err == nil {
+		m.feedback = message
+	}
+}
+
+func (m *Model) persistMoveWithFeedback() {
+	// scheduleTask records the actual destination after normalising past dates.
+	destination := m.lastMoveTarget.Date
+	switch {
+	case m.lastMoveTarget.Future:
+		destination = "Future"
+	case destination == time.Now().Format(dateLayout):
+		destination = "Today"
+	case destination == time.Now().AddDate(0, 0, 1).Format(dateLayout):
+		destination = "tomorrow"
+	}
+	m.persistWithFeedback("Moved to " + destination)
 }

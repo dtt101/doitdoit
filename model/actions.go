@@ -129,6 +129,7 @@ func cloneTodoData(data TodoData) TodoData {
 }
 
 func (m *Model) captureMoveUndo() {
+	m.feedback = ""
 	m.moveUndo = &moveUndoSnapshot{
 		Data:       cloneTodoData(m.Data),
 		ShowFuture: m.ShowFuture,
@@ -139,6 +140,7 @@ func (m *Model) captureMoveUndo() {
 
 func (m *Model) clearMoveUndo() {
 	m.moveUndo = nil
+	m.feedback = ""
 }
 
 func (m *Model) undoMove() bool {
@@ -151,7 +153,7 @@ func (m *Model) undoMove() bool {
 	m.ShowFuture = snapshot.ShowFuture
 	m.ColIdx = snapshot.ColIdx
 	m.RowIdx = snapshot.RowIdx
-	m.moveUndo = nil
+	m.clearMoveUndo()
 	m.clampRow()
 	return true
 }

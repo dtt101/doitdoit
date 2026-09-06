@@ -71,6 +71,9 @@ type Model struct {
 	// Error handling
 	Err error
 
+	// Last successful move, delete, or undo; cleared when task history changes.
+	feedback string
+
 	// Future View
 	ShowFuture bool
 	ShowHelp   bool
