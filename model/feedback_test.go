@@ -10,7 +10,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/dtt101/doitdoit/styles"
 )
 
 func newFeedbackTestModel(t *testing.T) Model {
@@ -43,7 +42,7 @@ func TestBrowsingFooterShowsEverydayActionsAndWraps(t *testing.T) {
 			if !strings.Contains(plain, toggle) {
 				t.Errorf("missing current view toggle %q in %q", toggle, plain)
 			}
-			if lipgloss.Width(footer) > width-styles.AppStyle.GetHorizontalFrameSize() {
+			if lipgloss.Width(footer) > width-m.appStyle().GetHorizontalFrameSize() {
 				t.Errorf("footer exceeds width %d: %q", width, plain)
 			}
 		}

@@ -90,7 +90,7 @@ func TestColumnsFillAvailableWidthAndHaveEqualHeight(t *testing.T) {
 		VisibleDays: len(keys),
 		State:       Browsing,
 		dateKeys:    keys,
-		width:       120,
+		width:       160,
 		height:      30,
 	}
 

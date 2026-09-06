@@ -134,9 +134,27 @@ Completed history is preserved forever by default. Choose a positive pruning per
 
 ## Daily workflow
 
-The default view shows Today and the days immediately ahead, with one day per column. Move right beyond the final column and the calendar keeps scrolling forward; move left to return toward Today.
+The default view shows up to three days, with one day per column. Narrow windows
+show fewer columns, keeping the selected day on screen. Use `-days 7` for up to
+seven columns when space allows, or `-days 1` for a single scrolling day. Move
+right to see later days and left to return toward Today.
 
-Press `f` for the separate Future list. Tasks with a specific future date remain there until that date enters the visible window, while undated ideas wait until you decide what to do with them.
+Press `t` to jump back to Today. Press `T` to focus on Today alone; press it again
+to restore the responsive multi-day layout at Today. Focus mode stays on Today
+across midnight. Both shortcuts work from Future too.
+
+Long lists scroll inside their columns, keeping the selected task, day header,
+and footer visible. Use `j`/`k` or Up/Down to select tasks, and Page Up/Page Down
+to scroll through a list or a task title taller than the window. Task and date
+inputs fit their column and preserve typed text and cursor position on resize.
+Windows smaller than 24 columns by 10 rows show a resize prompt and pause task
+shortcuts until there is room to display them.
+
+Press `f` for the separate Future list. Tasks with a specific future date remain
+there until that date enters the planning window set by `-days`, while undated
+ideas wait until you decide what to do with them. Resizing or toggling Today
+focus only changes the display: it does not reschedule tasks or change that
+planning window's size. Use left/right to reach days hidden by a narrow window.
 
 ### Keybindings
 
@@ -145,7 +163,8 @@ The browsing footer shows the everyday shortcuts: `a` Add, `Space` Complete,
 explain how to add a task to the selected day or Future.
 
 Press `?` in the main view to open the full keyboard-shortcuts modal; press `?`
-again or `Esc` to close it. After pressing `m`, the available destinations appear
+again or `Esc` to close it. In short windows, scroll the help panel with Up/Down
+or Page Up/Page Down. After pressing `m`, the available destinations appear
 directly in the footer. Saved moves and deletions show a confirmation with `u`
 to undo. The confirmation stays available while navigating and clears when
 another task change replaces the undo history or an external reload invalidates
@@ -154,6 +173,9 @@ it. Save errors appear instead of a success confirmation.
 | Key | Action |
 | --- | --- |
 | `h` `j` `k` `l` or arrows | Move between days and tasks |
+| `Page Up` / `Page Down` | Scroll a task list, including long wrapped titles |
+| `t` | Return to Today in the current layout |
+| `T` | Toggle Today-only focus; return to Today |
 | `a` | Add a task to the selected day or Future |
 | `e` | Edit the selected task title |
 | `Space` or `Enter` | Toggle completion |
@@ -199,7 +221,7 @@ Bundled themes:
 
 ```text
 doitdoit                         Launch the TUI
-doitdoit -days <number>          Set the number of visible days (default: 3)
+doitdoit -days <number>          Set the maximum day columns (default: 3)
 doitdoit -file <path>            Use a different data file for this session
 doitdoit add <title>             Add a task to Today without opening the TUI
 doitdoit add --when <target> <title>

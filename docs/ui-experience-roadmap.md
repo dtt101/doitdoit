@@ -1,8 +1,8 @@
 # UI and experience roadmap
 
 Improve retention among Omarchy users by making doitdoit easier to learn and
-comfortable to use daily. Work through these points individually; the first PR
-implements step 1 only. Product ideas remain hypotheses until tested with users.
+comfortable to use daily. Work through these points in separate PRs. Steps 1–2
+are implemented; product ideas remain hypotheses until tested with users.
 
 ## 1. Make everyday actions visible
 
@@ -18,14 +18,20 @@ remains part of step 6.
 
 ## 2. Support tiled windows and long lists
 
-- [ ] Adapt the visible column count to terminal width, respecting `-days` as the
+- [x] Adapt the visible column count to terminal width, respecting `-days` as the
   requested maximum.
-- [ ] Add vertical scrolling that keeps the selected task visible.
-- [ ] Keep the footer visible and size inputs to their column.
-- [ ] Add a Today-only view and a quick return-to-Today action.
+- [x] Add vertical scrolling that keeps the selected task visible.
+- [x] Keep the footer visible and size inputs to their column.
+- [x] Add a Today-only view (`T`) and a quick return-to-Today action (`t`).
 
 Acceptance: narrow windows, resizing, long titles, and long lists remain usable
 without losing selection or hiding essential controls.
+
+`-days` remains the requested maximum (default 3) and retains its scheduling
+window semantics. Resizing only changes presentation. Page Up/Down scroll lists
+and oversized titles; short help panels also scroll. Windows below 24×10 pause
+task shortcuts and show a resize prompt. Automated coverage verifies these
+behaviours; feedback from users remains pending.
 
 ## 3. Strengthen visual hierarchy
 

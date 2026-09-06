@@ -10,195 +10,139 @@ import (
 	"github.com/dtt101/doitdoit/styles"
 )
 
-// Layout overhead used to size columns against the terminal dimensions.
-const (
-	// minColumnContentWidth is the smallest usable width inside a column's
-	// border and padding.
-	minColumnContentWidth = 10
-
-	// appVerticalOverhead is the app's top + bottom margin (2) plus the
-	// footer (~7 lines).
-	appVerticalOverhead = 9
-	// minTotalColumnHeight is the smallest total column height to target.
-	minTotalColumnHeight = 10
-)
-
 func (m Model) View() tea.View {
-	// If showing future, we just have one column.
-	keys := m.dateKeys
-	if m.ShowFuture {
-		keys = []string{"Future"}
+	content := ""
+	if m.terminalTooSmall() {
+		content = fitLines("Window too small.\nResize to at least 24 x 10.\nq quit", m.width, m.height)
+	} else {
+		columns := m.renderColumns(m.visibleKeys())
+		content = m.appStyle().Render(lipgloss.JoinHorizontal(lipgloss.Top, columns...) + "\n" + m.footerView())
+		if m.ShowHelp {
+			content = m.renderHelpOverlay(content)
+		}
 	}
-
-	columns := m.renderColumns(keys)
-
-	footer := m.helpView()
-	if errView := m.errorView(); errView != "" {
-		footer = errView + "\n" + footer
-	}
-
-	content := styles.AppStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, columns...) + "\n" + footer)
-	if m.ShowHelp {
-		content = m.renderHelpOverlay(content)
-	}
-
 	view := tea.NewView(content)
 	view.AltScreen = true
 	view.MouseMode = tea.MouseModeCellMotion
 	return view
 }
 
-// renderColumns sizes and renders the visible columns. Lip Gloss v2 treats a
-// style's Width and Height as the complete block size including border and
-// padding (but excluding margins), so the inner content dimensions must be
-// derived from the style's frame rather than subtracted from the block twice.
+// Every column has a fixed viewport. Task count and wrapped titles cannot push
+// the footer below the terminal, and headers stay visible while paging.
 func (m Model) renderColumns(keys []string) []string {
-	availableWidth := m.width - styles.AppStyle.GetHorizontalFrameSize()
-	if availableWidth < 0 {
-		availableWidth = 0
-	}
-
-	numCols := len(keys)
-	if numCols < 1 {
-		numCols = 1
-	}
-
-	columnHorizontalMargins := styles.ColumnStyle.GetHorizontalMargins()
-	columnHorizontalFrame := styles.ColumnStyle.GetHorizontalBorderSize() + styles.ColumnStyle.GetHorizontalPadding()
-	columnBlockWidth := (availableWidth / numCols) - columnHorizontalMargins
-	minColumnBlockWidth := minColumnContentWidth + columnHorizontalFrame
-	if columnBlockWidth < minColumnBlockWidth {
-		columnBlockWidth = minColumnBlockWidth
-	}
-	contentWidth := columnBlockWidth - columnHorizontalFrame
-
-	minTotalHeight := m.height - appVerticalOverhead
-	if minTotalHeight < minTotalColumnHeight {
-		minTotalHeight = minTotalColumnHeight
-	}
-	columnVerticalFrame := styles.ColumnStyle.GetVerticalBorderSize() + styles.ColumnStyle.GetVerticalPadding()
-	minContentHeight := minTotalHeight - columnVerticalFrame
-	if minContentHeight < 1 {
-		minContentHeight = 1
-	}
-
-	// Pre-calculate column contents to determine max height.
-	var colContents []string
-	maxContentHeight := 0
-
-	for dayIdx, dateStr := range keys {
-		content := m.renderDaySection(dateStr, dayIdx, contentWidth)
-		content = lipgloss.Wrap(content, contentWidth, "")
-		colContents = append(colContents, content)
-
-		h := lipgloss.Height(content)
-		if h > maxContentHeight {
-			maxContentHeight = h
+	geometry := m.columnGeometry(len(keys))
+	columns := make([]string, 0, len(keys))
+	for i, key := range keys {
+		dayIdx := m.visibleColumnStart() + i
+		if m.ShowFuture {
+			dayIdx = m.ColIdx
 		}
-	}
-
-	// Ensure we meet the minimum window height.
-	if maxContentHeight < minContentHeight {
-		maxContentHeight = minContentHeight
-	}
-	columnBlockHeight := maxContentHeight + columnVerticalFrame
-
-	// Render columns with unified height.
-	var columns []string
-	for i, content := range colContents {
-		isFocused := m.State != Adding && m.State != SettingMoveDate && (m.ShowFuture || m.ColIdx == i)
-
-		style := styles.ColumnStyle.Width(columnBlockWidth).Height(columnBlockHeight)
-		if isFocused {
-			style = styles.FocusedColumnStyle.Width(columnBlockWidth).Height(columnBlockHeight)
+		focused := m.ShowFuture || m.ColIdx == dayIdx
+		doc := m.dayContent(key, dayIdx, geometry.contentWidth)
+		rows := doc.viewportRows(geometry.contentHeight)
+		offset := doc.visibleOffset(m.scrollOffsets[key], rows, focused)
+		end := min(len(doc.lines), offset+rows)
+		body := strings.Join(doc.lines[offset:end], "\n")
+		body = lipgloss.NewStyle().Height(rows).Render(body)
+		content := doc.header + "\n" + body
+		if len(doc.lines) > rows && geometry.contentHeight > lipgloss.Height(doc.header)+rows {
+			indicator := "more"
+			if m.State == Browsing {
+				indicator = "pgup/pgdn"
+			}
+			if offset > 0 {
+				indicator = "↑ " + indicator
+			}
+			if end < len(doc.lines) {
+				indicator += " ↓"
+			}
+			content += "\n" + lipgloss.NewStyle().Foreground(styles.Subtle).Render(indicator)
 		}
-
+		style := m.columnStyle(focused).Width(geometry.width).Height(geometry.height)
 		columns = append(columns, style.Render(content))
 	}
-
 	return columns
 }
 
-// renderDaySection builds the header and task list for a single day.
+// Kept as the complete section renderer for tests and previews; the board uses
+// dayContent to slice task lines independently of the fixed header.
 func (m Model) renderDaySection(dateStr string, dayIdx, colWidth int) string {
-	isFocused := m.State != Adding && (m.ShowFuture || m.ColIdx == dayIdx)
+	doc := m.dayContent(dateStr, dayIdx, colWidth)
+	return doc.header + "\n" + strings.Join(doc.lines, "\n")
+}
 
-	// Header
-	header := ""
-	if m.ShowFuture {
-		header = "Future"
-	} else {
-		displayDate, _ := time.Parse("2006-01-02", dateStr)
+func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
+	focused := m.ShowFuture || m.ColIdx == dayIdx
+	header := "Future"
+	if !m.ShowFuture {
+		displayDate, _ := time.Parse(dateLayout, dateStr)
 		header = displayDate.Format("Mon, Jan 02")
-		if dateStr == time.Now().Format("2006-01-02") {
+		if dateStr == time.Now().Format(dateLayout) {
 			header = "Today"
-		}
-	}
-
-	title := styles.TitleStyle.Render(header)
-
-	// Tasks
-	var taskViews []string
-	tasks := m.Data[dateStr]
-
-	for j, task := range tasks {
-		var style lipgloss.Style
-		if task.Completed {
-			style = styles.CompletedTaskStyle
-		} else {
-			style = styles.TaskStyle
-		}
-
-		title := task.Title
-		if m.ShowFuture && task.DueDate != "" {
-			title += fmt.Sprintf(" (%s)", task.DueDate)
-		}
-
-		if isFocused && m.RowIdx == j {
-			if m.copyFlash {
-				style = style.Foreground(styles.Special).Bold(true)
-			} else if m.State == ChoosingMoveDestination {
-				// Use special moving style with highlight background
-				style = styles.MovingTaskStyle
-			} else {
-				// Normal selection highlight
-				style = style.Foreground(styles.Highlight).Bold(true)
+			if m.FocusToday {
+				header += " (focus)"
 			}
 		}
-
-		// Calculate title width to ensure proper wrapping
-		titleWidth := colWidth
-		if titleWidth < 1 {
-			titleWidth = 1
-		}
-
-		taskViews = append(taskViews, style.Width(titleWidth).Render(title))
-
-		// Add a blank line between tasks
-		if j < len(tasks)-1 {
-			taskViews = append(taskViews, "")
-		}
+	}
+	doc := dayContent{header: styles.TitleStyle.Render(header), focusStart: -1}
+	appendBlock := func(content string) {
+		doc.lines = append(doc.lines, strings.Split(lipgloss.Wrap(content, colWidth, ""), "\n")...)
+	}
+	appendInput := func() {
+		// Render a resized copy as well, so View is correct before the next
+		// update (and does not mutate the input's value or cursor).
+		input := m.sizedTextInput(colWidth)
+		doc.focusStart = len(doc.lines)
+		appendBlock(m.inputPrefix() + input.View())
+		doc.focusEnd = len(doc.lines)
 	}
 
-	// Input field if adding to this day
-	if (m.State == Adding || m.State == Editing || m.State == SettingMoveDate) && (m.ShowFuture || m.ColIdx == dayIdx) {
-		// Add spacing before input if there are tasks
+	tasks := m.Data[dateStr]
+	for j, task := range tasks {
+		if j > 0 {
+			doc.lines = append(doc.lines, "")
+		}
+		start := len(doc.lines)
+		selected := focused && m.RowIdx == j
+		if selected && m.State == Editing {
+			appendInput()
+		} else {
+			style := styles.TaskStyle
+			if task.Completed {
+				style = styles.CompletedTaskStyle
+			}
+			if selected && m.State != Adding {
+				switch {
+				case m.copyFlash:
+					style = style.Foreground(styles.Special).Bold(true)
+				case m.State == ChoosingMoveDestination:
+					style = styles.MovingTaskStyle
+				default:
+					style = style.Foreground(styles.Highlight).Bold(true)
+				}
+			}
+			title := task.Title
+			if m.ShowFuture && task.DueDate != "" {
+				title += fmt.Sprintf(" (%s)", task.DueDate)
+			}
+			appendBlock(style.Width(colWidth).Render(title))
+			if selected && m.State != Adding {
+				doc.focusStart, doc.focusEnd = start, len(doc.lines)
+			}
+		}
+		doc.tasks = append(doc.tasks, taskSpan{start: start, end: len(doc.lines)})
+		if selected && m.State == SettingMoveDate {
+			appendInput()
+		}
+	}
+	if focused && m.State == Adding {
 		if len(tasks) > 0 {
-			taskViews = append(taskViews, "")
+			doc.lines = append(doc.lines, "")
 		}
-
-		// Match TaskStyle padding
-		inputStyle := lipgloss.NewStyle()
-		prefix := ""
-		if m.State == SettingMoveDate {
-			prefix = "Move to: "
-		} else if m.State == Editing {
-			prefix = "Edit: "
-		}
-		taskViews = append(taskViews, inputStyle.Render(prefix+m.TextInput.View()))
+		appendInput()
 	} else if len(tasks) == 0 {
 		message := "Nothing planned yet.\nSelect this day to add a task."
-		if isFocused {
+		if focused {
 			switch {
 			case m.ShowFuture:
 				message = "Capture an idea for later."
@@ -209,10 +153,9 @@ func (m Model) renderDaySection(dateStr string, dayIdx, colWidth int) string {
 			}
 			message += "\nPress a to add a task."
 		}
-		taskViews = append(taskViews, lipgloss.NewStyle().Foreground(styles.Subtle).Render(message))
+		appendBlock(lipgloss.NewStyle().Foreground(styles.Subtle).Render(message))
 	}
-
-	return lipgloss.JoinVertical(lipgloss.Left, title, lipgloss.JoinVertical(lipgloss.Left, taskViews...))
+	return doc
 }
 
 func (m Model) helpView() string {
@@ -233,8 +176,16 @@ func (m Model) helpView() string {
 		items[i] = group(item.key, item.description)
 	}
 	prefix := brand + desc(". ")
+	compact := (m.height > 0 && m.height < 16) || (m.width > 0 && m.width < 36)
+	if compact {
+		prefix = ""
+	}
 	if m.State == ChoosingMoveDestination {
 		prefix += desc("Move to: ")
+		if compact {
+			prefix = ""
+			items = []string{group("t", "today"), group("1–7", "+days"), group("f", "future"), group("d", "date"), group("esc", "cancel")}
+		}
 	}
 	footer := wrapFooterItems(prefix, items, m.footerContentWidth())
 	if m.State == Browsing && m.Err == nil && m.feedback != "" {
@@ -244,7 +195,15 @@ func (m Model) helpView() string {
 		}
 		footer += "\n" + wrapFooterItems("", feedbackItems, m.footerContentWidth())
 	}
-	return styles.HelpStyle.Render(footer)
+	return m.footerStyle().Render(footer)
+}
+
+func (m Model) footerView() string {
+	footer := m.helpView()
+	if errView := m.errorView(); errView != "" {
+		footer = errView + "\n" + footer
+	}
+	return footer
 }
 
 // wrapFooterItems keeps each key/description pair together and moves whole
@@ -290,7 +249,15 @@ func (m Model) footerHelpItems() []helpItem {
 		if m.ShowFuture {
 			viewToggle = "days"
 		}
-		return []helpItem{{"a", "add"}, {"space", "complete"}, {"m", "move"}, {"f", viewToggle}, {"?", "help"}}
+		items := []helpItem{{"a", "add"}, {"space", "complete"}, {"m", "move"}, {"f", viewToggle}, {"?", "help"}}
+		if (m.height == 0 || m.height >= 16) && (m.width == 0 || m.width >= 36) {
+			focusToggle := "focus today"
+			if m.FocusToday {
+				focusToggle = "all days"
+			}
+			items = append(items, helpItem{"t", "today"}, helpItem{"T", focusToggle})
+		}
+		return items
 	case Adding:
 		return []helpItem{{"enter", "save"}, {"esc", "cancel"}}
 	case Editing:
@@ -308,7 +275,7 @@ func (m Model) footerContentWidth() int {
 	if m.width <= 0 {
 		return 0
 	}
-	return max(0, m.width-styles.AppStyle.GetHorizontalFrameSize()-styles.HelpStyle.GetHorizontalFrameSize())
+	return max(0, m.width-m.appStyle().GetHorizontalFrameSize()-m.footerStyle().GetHorizontalFrameSize())
 }
 
 func (m Model) brandView() string {
@@ -337,18 +304,14 @@ func (m Model) brandView() string {
 func (m Model) brandBounds() (x, y, width int, ok bool) {
 	contentWidth := m.footerContentWidth()
 	const brandWidth = len("doitdoit")
-	if contentWidth < brandWidth || m.width <= 0 || m.height <= 0 {
+	if contentWidth < brandWidth || m.width < 36 || m.height < 16 {
 		return 0, 0, 0, false
 	}
 
-	keys := m.dateKeys
-	if m.ShowFuture {
-		keys = []string{"Future"}
-	}
-	columns := lipgloss.JoinHorizontal(lipgloss.Top, m.renderColumns(keys)...)
+	columns := lipgloss.JoinHorizontal(lipgloss.Top, m.renderColumns(m.visibleKeys())...)
 
-	x = styles.AppStyle.GetMarginLeft() + styles.HelpStyle.GetMarginLeft()
-	y = styles.AppStyle.GetMarginTop() + lipgloss.Height(columns) + styles.HelpStyle.GetMarginTop()
+	x = m.appStyle().GetMarginLeft() + m.footerStyle().GetMarginLeft()
+	y = m.appStyle().GetMarginTop() + lipgloss.Height(columns) + m.footerStyle().GetMarginTop()
 	if errView := m.errorView(); errView != "" {
 		y += lipgloss.Height(errView)
 	}
@@ -384,6 +347,9 @@ func (m Model) helpItems() []helpItem {
 		navigation = "↑/↓ / k/j"
 		viewToggle = "main view"
 	}
+	if m.FocusToday && !m.ShowFuture {
+		navigation = "↑/↓ / k/j"
+	}
 	return []helpItem{
 		{navigation, "navigate"},
 		{"a", "add task"},
@@ -396,15 +362,31 @@ func (m Model) helpItems() []helpItem {
 		{".", "repeat move"},
 		{"u", "undo last change"},
 		{"f", viewToggle},
+		{"t", "return to Today"},
+		{"T", "toggle Today focus"},
+		{"pgup / pgdown", "scroll list"},
 		{"q / ctrl+c", "quit"},
 	}
 }
 
 func (m Model) helpModalView() string {
+	view, _ := m.renderHelpModal(m.helpOffset)
+	return view
+}
+
+func (m Model) helpMaxOffset() int {
+	_, maximum := m.renderHelpModal(0)
+	return maximum
+}
+
+func (m Model) renderHelpModal(offset int) (string, int) {
 	modalStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(styles.Highlight).
 		Padding(1, 2)
+	if m.compactLayout() {
+		modalStyle = modalStyle.Padding(0, 1)
+	}
 
 	modalWidth := 64
 	if m.width > 0 && modalWidth > m.width-4 {
@@ -457,14 +439,27 @@ func (m Model) helpModalView() string {
 		shortcuts = lipgloss.JoinVertical(lipgloss.Left, rows...)
 	}
 
-	closeHint := lipgloss.NewStyle().Foreground(styles.Subtle).Render("Press Esc to close")
+	heading := styles.TitleStyle.Width(innerWidth).Render("Keyboard shortcuts")
+	closeHint := lipgloss.NewStyle().Foreground(styles.Subtle).Width(innerWidth).Render("Press Esc to close")
+	lines := strings.Split(shortcuts, "\n")
+	rows := len(lines)
+	if m.height > 0 {
+		rows = min(rows, max(1, m.height-2-modalStyle.GetVerticalFrameSize()-lipgloss.Height(heading)-lipgloss.Height(closeHint)-1))
+	}
+	maximum := max(0, len(lines)-rows)
+	offset = min(max(0, offset), maximum)
+	shortcuts = strings.Join(lines[offset:offset+rows], "\n")
+	scrollHint := ""
+	if maximum > 0 {
+		scrollHint = lipgloss.NewStyle().Foreground(styles.Subtle).Render("↑/↓ scroll")
+	}
 	body := lipgloss.JoinVertical(lipgloss.Left,
-		styles.TitleStyle.Render("Keyboard shortcuts"),
+		heading,
 		shortcuts,
-		"",
+		scrollHint,
 		closeHint,
 	)
-	return modalStyle.Width(modalWidth).Render(body)
+	return modalStyle.Width(modalWidth).Render(body), maximum
 }
 
 func (m Model) renderHelpOverlay(background string) string {
@@ -487,5 +482,11 @@ func (m Model) errorView() string {
 	if m.Err == nil {
 		return ""
 	}
-	return lipgloss.NewStyle().Foreground(styles.Warning).Render(fmt.Sprintf("Error: %v", m.Err))
+	content := lipgloss.NewStyle().Foreground(styles.Warning).Render(fmt.Sprintf("Error: %v", m.Err))
+	if m.width <= 0 || m.height <= 0 {
+		return content
+	}
+	minimumColumn := m.columnStyle(false).GetVerticalFrameSize() + 3
+	rows := min(3, max(1, m.height-m.appStyle().GetVerticalFrameSize()-lipgloss.Height(m.helpView())-minimumColumn))
+	return fitLines(content, m.width-m.appStyle().GetHorizontalFrameSize(), rows)
 }
