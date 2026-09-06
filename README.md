@@ -98,7 +98,11 @@ On first launch, choose where `doitdoit.json` should live and how long completed
 ~/Dropbox/doitdoit/doitdoit.json
 ```
 
-That is the whole setup. Start adding tasks with `a`, move with `m`, complete with `Space`, and open Future with `f`.
+On Omarchy, setup also offers live theme updates when following the system
+theme. Press Enter to leave them disabled, or answer `yes` to install the
+managed hook. Existing custom hooks are preserved.
+
+Start adding tasks with `a`, move with `m`, complete with `Space`, and open Future with `f`.
 
 You can also download a prebuilt archive from [GitHub Releases](https://github.com/dtt101/doitdoit/releases), install with Go 1.27 or later, or build from source. The repository's `mise.toml` pins the development toolchain:
 
@@ -156,7 +160,15 @@ the selection marker visible. Completed tasks appear in a separate section;
 press `c` to collapse or expand it across the current session. Collapsing only
 changes the display and navigation, preserving the task file and stored order.
 
-Press `f` for the separate Future list. Tasks with a specific future date remain
+When unfinished tasks carry forward, a session notice reports how many moved
+to Today. It appears in the footer when space allows; `?` also explains rollover.
+The count reflects rollover observed during this session and is never stored.
+
+Press `f` for the separate Future list, grouped into **Ideas (undated)**,
+**Scheduled**, and **Completed**. `J`/`K` reorder within the displayed section.
+To set or change a date, select a task, press `m` then `d`, enter `YYYY-MM-DD`
+or `MM-DD`, and press Enter.
+Tasks with a specific future date remain
 there until that date enters the planning window set by `-days`, while undated
 ideas wait until you decide what to do with them. Resizing or toggling Today
 focus only changes the display: it does not reschedule tasks or change that

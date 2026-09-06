@@ -105,6 +105,9 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 
 	tasks := m.Data[dateStr]
 	for _, section := range m.taskSections(dateStr) {
+		if len(section.rows) == 0 {
+			continue
+		}
 		if section.label != "" {
 			if len(doc.lines) > 0 {
 				doc.lines = append(doc.lines, "")
@@ -113,11 +116,17 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 			if section.collapsed {
 				toggle = "show"
 			}
-			label := fmt.Sprintf("%s %d · c %s", section.label, len(section.rows), toggle)
+			label := fmt.Sprintf("%s %d", section.label, len(section.rows))
+			if section.canCollapse {
+				label += " · c " + toggle
+			}
 			appendBlock(lipgloss.NewStyle().Foreground(styles.Subtle).Render(label))
 		}
 		if section.collapsed {
 			continue
+		}
+		if section.label != "" {
+			doc.lines = append(doc.lines, "")
 		}
 		for i, j := range section.rows {
 			if i > 0 {
@@ -246,6 +255,9 @@ func (m Model) helpView() string {
 		}
 		footer += "\n" + wrapFooterItems("", feedbackItems, m.footerContentWidth())
 	}
+	if m.State == Browsing && m.Err == nil && m.carriedForward > 0 && (m.height == 0 || m.height >= 16) {
+		footer += "\n" + lipgloss.Wrap(desc(m.rolloverNotice()), max(1, m.footerContentWidth()), "")
+	}
 	return m.footerStyle().Render(footer)
 }
 
@@ -297,10 +309,12 @@ func (m Model) footerHelpItems() []helpItem {
 	switch m.State {
 	case Browsing:
 		viewToggle := "future"
+		moveLabel := "move"
 		if m.ShowFuture {
 			viewToggle = "days"
+			moveLabel = "move/date"
 		}
-		items := []helpItem{{"a", "add"}, {"space", "complete"}, {"m", "move"}, {"f", viewToggle}, {"?", "help"}}
+		items := []helpItem{{"a", "add"}, {"space", "complete"}, {"m", moveLabel}, {"f", viewToggle}, {"?", "help"}}
 		if (m.height == 0 || m.height >= 16) && (m.width == 0 || m.width >= 36) {
 			focusToggle := "focus today"
 			if m.FocusToday {
@@ -409,6 +423,7 @@ func (m Model) helpItems() []helpItem {
 		{"d", "delete task"},
 		{"y", "copy task"},
 		{"m", "move task"},
+		{"m then d", "set/change date"},
 		{"J / K", "reorder task"},
 		{".", "repeat move"},
 		{"u", "undo last change"},
@@ -492,6 +507,11 @@ func (m Model) renderHelpModal(offset int) (string, int) {
 	}
 
 	heading := styles.TitleStyle.Width(innerWidth).Render("Keyboard shortcuts")
+	explanation := "Unfinished tasks from earlier days carry forward to Today automatically."
+	if m.carriedForward > 0 {
+		explanation = m.rolloverNotice() + " " + explanation
+	}
+	shortcuts += "\n\n" + lipgloss.NewStyle().Foreground(styles.Subtle).Width(innerWidth).Render(explanation)
 	closeHint := lipgloss.NewStyle().Foreground(styles.Subtle).Width(innerWidth).Render("Press Esc to close")
 	lines := strings.Split(shortcuts, "\n")
 	rows := len(lines)
@@ -541,4 +561,11 @@ func (m Model) errorView() string {
 	minimumColumn := m.columnStyle(false).GetVerticalFrameSize() + 3
 	rows := min(3, max(1, m.height-m.appStyle().GetVerticalFrameSize()-lipgloss.Height(m.helpView())-minimumColumn))
 	return fitLines(content, m.width-m.appStyle().GetHorizontalFrameSize(), rows)
+}
+
+func (m Model) rolloverNotice() string {
+	if m.carriedForward == 1 {
+		return "1 task carried forward to Today."
+	}
+	return fmt.Sprintf("%d tasks carried forward to Today.", m.carriedForward)
 }

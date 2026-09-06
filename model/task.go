@@ -61,10 +61,18 @@ func loadRawState(path string) (TodoData, [sha256.Size]byte, bool, error) {
 }
 
 func Load(path string, retentionDays int) (TodoData, error) {
+	data, _, err := loadWithRollover(path, retentionDays)
+	return data, err
+}
+
+// Return presentation metadata from the same read as the normal load. CLI and
+// web-compatible task fields and the existing save/rollover sequence stay intact.
+func loadWithRollover(path string, retentionDays int) (TodoData, int, error) {
 	data, hash, exists, err := loadRawState(path)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
+	carriedForward := data.carryForwardCount()
 	dirty := false
 
 	// Roll over incomplete tasks
@@ -86,11 +94,28 @@ func Load(path string, retentionDays int) (TodoData, error) {
 	// Persist any changes triggered during load so the file stays up to date
 	if dirty {
 		if err := data.SaveIfUnchanged(path, &hash, exists); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	}
 
-	return data, nil
+	return data, carriedForward, nil
+}
+
+func (d TodoData) carryForwardCount() int {
+	today := startOfDay(time.Now())
+	count := 0
+	for key, tasks := range d {
+		date, err := parseDate(key)
+		if err != nil || !date.Before(today) {
+			continue
+		}
+		for _, task := range tasks {
+			if !task.Completed {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 // groupTasksByCompletion restores the stable per-bucket ordering invariant.

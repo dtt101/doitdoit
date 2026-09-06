@@ -1,7 +1,7 @@
 # UI and experience roadmap
 
 Improve retention among Omarchy users by making doitdoit easier to learn and
-comfortable to use daily. Work through these points in separate PRs. Steps 1–3
+comfortable to use daily. Work through these points in separate PRs. Steps 1–4
 are implemented; product ideas remain hypotheses until tested with users.
 
 ## 1. Make everyday actions visible
@@ -50,12 +50,20 @@ theme, including live theme reloads.
 
 ## 4. Improve the daily planning experience
 
-- [ ] Explain carried-forward work without judgemental messaging.
-- [ ] Visually separate undated ideas from scheduled tasks within Future.
-- [ ] Make the existing opt-in live theme hook discoverable during setup.
+- [x] Explain carried-forward work without judgemental messaging.
+- [x] Visually separate undated ideas from scheduled tasks within Future.
+- [x] Make the existing opt-in live theme hook discoverable during setup.
 
 Acceptance: users understand where tasks went and can plan their day without
 changing rollover or storage semantics.
+
+A session notice counts tasks carried to Today at startup, midnight, or an
+external reload. Help explains rollover even in small windows. Future groups
+Ideas (undated), Scheduled, and Completed without rewriting stored order;
+explicit reordering stays within each section. First-run Omarchy setup offers
+the existing managed theme hook with a default-No prompt and preserves custom
+hooks. Automated coverage verifies these behaviours; user validation remains
+pending.
 
 ## Delivery and safeguards
 
