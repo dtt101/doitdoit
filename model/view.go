@@ -125,6 +125,9 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 		if section.collapsed {
 			continue
 		}
+		if section.label != "" {
+			doc.lines = append(doc.lines, "")
+		}
 		for i, j := range section.rows {
 			if i > 0 {
 				doc.lines = append(doc.lines, "")
