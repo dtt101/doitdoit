@@ -2,9 +2,8 @@
 
 > This Dropbox companion is experimental, is not included in the
 > doitdoit CLI release, and is outside that release's security and
-> privacy assurance. Review the residual risks in
-> [`../docs/web-companion-follow-up.md`](../docs/web-companion-follow-up.md)
-> before using it with sensitive or irreplaceable task data.
+> privacy assurance. Review the browser security and conflict-handling notes
+> below before using it with sensitive or irreplaceable task data.
 
 A small static web app that reads and writes the same Dropbox JSON file the
 CLI uses. Designed for adding and ticking off tasks from a phone, but works

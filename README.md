@@ -167,21 +167,23 @@ The count reflects rollover observed during this session and is never stored.
 Press `f` for the separate Future list, grouped into **Ideas (undated)**,
 **Scheduled**, and **Completed**. `J`/`K` reorder within the displayed section.
 To set or change a date, select a task, press `m` then `d`, enter `YYYY-MM-DD`
-or `MM-DD`, and press Enter.
-Tasks with a specific future date remain
-there until that date enters the planning window set by `-days`, while undated
-ideas wait until you decide what to do with them. Resizing or toggling Today
+or `MM-DD`, and press Enter. `MM-DD` uses the current year; past dates move
+the task to Today.
+
+Tasks with a specific future date remain there until that date enters the
+planning window set by `-days`, while undated ideas wait until you decide what
+to do with them. Resizing or toggling Today
 focus only changes the display: it does not reschedule tasks or change that
 planning window's size. Use left/right to reach days hidden by a narrow window.
 
 ### Keybindings
 
 The browsing footer shows the everyday shortcuts: `a` Add, `Space` Complete,
-`m` Move, `f` Future (or Days when viewing Future), and `?` Help. Empty columns
-explain how to add a task to the selected day or Future.
+`m` Move (Move/date in Future), `f` Future (or Days when viewing Future), and
+`?` Help. Empty columns explain how to add a task to the selected day or Future.
 
-Press `?` in the main view to open the full keyboard-shortcuts modal; press `?`
-again or `Esc` to close it. In short windows, scroll the help panel with Up/Down
+Press `?` while browsing days or Future to open the full keyboard-shortcuts
+modal; press `?` again or `Esc` to close it. In short windows, scroll the help panel with Up/Down
 or Page Up/Page Down. After pressing `m`, the available destinations appear
 directly in the footer. Saved moves and deletions show a confirmation with `u`
 to undo. The confirmation stays available while navigating and clears when
@@ -198,6 +200,7 @@ it. Save errors appear instead of a success confirmation.
 | `e` | Edit the selected task title |
 | `Space` or `Enter` | Toggle completion |
 | `m` | Move or schedule the selected task |
+| `m` then `d` | Set or change the selected task’s date |
 | `J` / `K` | Reorder the selected task |
 | `.` | Repeat the last move destination |
 | `u` | Undo the most recent task change |
@@ -261,14 +264,11 @@ For example, `doitdoit add --when tomorrow "send the invoice"` is suitable for s
 
 ## Mobile companion
 
-The [`web/`](./web) directory contains an experimental installable web app for adding, editing, scheduling, reordering, and completing tasks from a phone. It connects directly to the same JSON file through Dropbox. It is outside the CLI release and its security/privacy assurance; review its separate documentation and threat model before using it with real data.
+The [`web/`](./web) directory contains an experimental installable web app for adding, editing, scheduling, reordering, and completing tasks from a phone. It connects directly to the same JSON file through Dropbox. It is outside the CLI release and its security/privacy assurance; review the browser security and conflict-handling notes in its README before using it with real data.
 
 See [web/README.md](./web/README.md) for Dropbox setup and deployment instructions.
 
 ## Development
-
-The [UI and experience roadmap](docs/ui-experience-roadmap.md) tracks the staged
-improvements and user validation work.
 
 ```bash
 mise install
@@ -276,22 +276,22 @@ go test ./...
 go run .
 ```
 
-Use `go test -count=1 ./...` to bypass the test cache or `go test -cover ./...` for a coverage summary.
+Use `go test -count=1 ./...` to bypass the test cache or `go test -cover ./...` for a coverage summary. Run `go vet ./...` for non-trivial Go changes and `go test -race ./...` for persistence, reload, or concurrency changes. Test the static web companion with `node --test web/*.test.js`; it needs no build step or dependency installation.
 
 ### Publish a release
 
 mise installs from published GitHub Releases; it does not build or install the current `main` branch. There is no separate mise package to publish, and there is currently no application version file to edit—the Git tag is the release version.
 
-After the changes for a release are merged and CI is green, choose the next [semantic version](https://semver.org/) and create an annotated tag from the exact commit you want to ship:
+After the changes for a release are merged and CI is green, choose the next [semantic version](https://semver.org/) and create an annotated tag from the exact commit you want to ship. Replace `vX.Y.Z` below with the new, unused version:
 
 ```bash
 git switch main
 git pull --ff-only
-git tag -a v0.2.1 -m "doitdoit v0.2.1"
-git push origin v0.2.1
+git tag -a vX.Y.Z -m "doitdoit vX.Y.Z"
+git push origin vX.Y.Z
 ```
 
-Pushing a `v*` tag starts [the release workflow](./.github/workflows/release.yml). It reruns the tests, race detector, vet, and vulnerability scan; GoReleaser then builds the platform archives, checksum file, and GitHub Release. Confirm both the workflow and the new entry on [GitHub Releases](https://github.com/dtt101/doitdoit/releases) succeeded before announcing the version.
+Pushing a `v*` tag starts [the release workflow](./.github/workflows/release.yml). It reruns the Go and web tests, race detector, vet, and vulnerability scan; GoReleaser then builds the platform archives, checksum file, and GitHub Release. Confirm both the workflow and the new entry on [GitHub Releases](https://github.com/dtt101/doitdoit/releases) succeeded before announcing the version.
 
 New installations using `mise use -g github:dtt101/doitdoit` resolve the latest published release. Existing installations stay on their installed version until the user runs:
 
