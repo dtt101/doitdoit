@@ -309,10 +309,12 @@ func (m Model) footerHelpItems() []helpItem {
 	switch m.State {
 	case Browsing:
 		viewToggle := "future"
+		moveLabel := "move"
 		if m.ShowFuture {
 			viewToggle = "days"
+			moveLabel = "move/date"
 		}
-		items := []helpItem{{"a", "add"}, {"space", "complete"}, {"m", "move"}, {"f", viewToggle}, {"?", "help"}}
+		items := []helpItem{{"a", "add"}, {"space", "complete"}, {"m", moveLabel}, {"f", viewToggle}, {"?", "help"}}
 		if (m.height == 0 || m.height >= 16) && (m.width == 0 || m.width >= 36) {
 			focusToggle := "focus today"
 			if m.FocusToday {
@@ -421,6 +423,7 @@ func (m Model) helpItems() []helpItem {
 		{"d", "delete task"},
 		{"y", "copy task"},
 		{"m", "move task"},
+		{"m then d", "set/change date"},
 		{"J / K", "reorder task"},
 		{".", "repeat move"},
 		{"u", "undo last change"},

@@ -166,6 +166,8 @@ The count reflects rollover observed during this session and is never stored.
 
 Press `f` for the separate Future list, grouped into **Ideas (undated)**,
 **Scheduled**, and **Completed**. `J`/`K` reorder within the displayed section.
+To set or change a date, select a task, press `m` then `d`, enter `YYYY-MM-DD`
+or `MM-DD`, and press Enter.
 Tasks with a specific future date remain
 there until that date enters the planning window set by `-days`, while undated
 ideas wait until you decide what to do with them. Resizing or toggling Today

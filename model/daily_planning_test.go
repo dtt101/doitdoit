@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -154,4 +155,29 @@ func TestPlanningGuidanceFitsSmallWindows(t *testing.T) {
 		assertFitsTerminal(t, m)
 		m.ShowHelp = false
 	}
+}
+
+func TestFutureDateGuidanceLeadsToScheduling(t *testing.T) {
+	m := resizeModel(futurePlanningModel(t), 80, 24)
+	if !strings.Contains(ansi.Strip(m.helpView()), "m move/date") {
+		t.Fatal("Future footer does not expose date setting")
+	}
+	m = pressRune(pressRune(m, 'm'), 'd')
+	if m.State != SettingMoveDate {
+		t.Fatal("documented sequence did not open date input")
+	}
+	date := dayKey(20)
+	m.TextInput.SetValue(date)
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(Model)
+	saved, err := Load(m.FilePath, m.RetentionDays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, task := range saved["Future"] {
+		if task.ID == "idea-a" && task.DueDate == date {
+			return
+		}
+	}
+	t.Fatal("date entry did not save the selected Future idea's schedule")
 }
