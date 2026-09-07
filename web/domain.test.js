@@ -6,6 +6,27 @@ const Domain = require("./domain.js");
 
 const now = new Date(2026, 7, 26, 12);
 
+test("task operations preserve completion ordering and scheduling without UI state", () => {
+  const data = { Future: [{ id: "done", completed: true }] };
+  Domain.insertTask(data, "Future", { id: "a", title: "Original", completed: false });
+  assert.deepEqual(data.Future.map(t => t.id), ["a", "done"]);
+  assert.equal(Domain.toggleTask(data, "Future", "a"), true);
+  assert.deepEqual(data.Future.map(t => t.id), ["done", "a"]);
+  Domain.toggleTask(data, "Future", "a");
+  assert.deepEqual(data.Future.map(t => t.id), ["a", "done"]);
+  assert.equal(Domain.editTask(data, "Future", "a", "Edited", { key: "2026-09-08", due: "2026-09-08" }), true);
+  assert.equal(data["2026-09-08"][0].title, "Edited");
+  assert.equal(data["2026-09-08"][0].due_date, "2026-09-08");
+  assert.equal(Domain.moveTask(data, "2026-09-08", "a", "Future", 99), true);
+  assert.equal(data["2026-09-08"], undefined);
+  assert.deepEqual(data.Future.map(t => t.id), ["a", "done"]);
+  assert.equal(Object.hasOwn(data.Future[0], "due_date"), false);
+  Domain.deleteTask(data, "Future", "a");
+  Domain.deleteTask(data, "Future", "done");
+  assert.deepEqual(data.Future, []);
+  assert.equal(Domain.moveTask(data, "Future", "missing", "2026-09-08", 0), false);
+});
+
 test("rollover keeps completed history and moves incomplete tasks", () => {
   const data = {
     "2026-08-25": [

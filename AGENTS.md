@@ -28,8 +28,10 @@ These instructions apply to the whole repository.
 - `cli/`: non-interactive commands such as `doitdoit add`.
 - `config/`: configuration, first-run setup, storage moves, retention, and the
   optional Omarchy theme hook.
-- `model/`: task lifecycle, persistence, reload/conflict handling, Bubble Tea
-  state/update logic, and rendering.
+- `taskstore/`: task data/lifecycle, storage interface, legacy JSON persistence,
+  capture, conservative merging, and storage moves; independent of Bubble Tea.
+- `model/`: Bubble Tea state/update logic, storage orchestration, reload/conflict
+  handling, rendering, and compatibility wrappers for the task-data API.
 - `styles/`: embedded themes and Omarchy theme resolution.
 - `web/`: independent static companion; `domain.js` holds task behavior and
   `sync.js` holds Dropbox revision-aware I/O.

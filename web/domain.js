@@ -144,7 +144,71 @@
     list.splice(index < 0 ? list.length : index, 0, task);
   }
 
+  function findTask(data, dayKey, id) {
+    const list = data[dayKey];
+    if (!list) return null;
+    const idx = list.findIndex((x) => String(x.id) === String(id));
+    return idx >= 0 ? { list, idx, task: list[idx] } : null;
+  }
+
+  function insertTask(data, key, task) {
+    if (!data[key]) data[key] = [];
+    insertBeforeCompleted(data[key], task);
+  }
+
+  function editTask(data, dayKey, id, title, destination) {
+    const found = findTask(data, dayKey, id);
+    if (!found) return false;
+    const task = found.task;
+    task.title = title;
+    if (destination.due) task.due_date = destination.due;
+    else delete task.due_date;
+    if (destination.key !== dayKey) {
+      found.list.splice(found.idx, 1);
+      if (found.list.length === 0 && dayKey !== "Future") delete data[dayKey];
+      insertTask(data, destination.key, task);
+    }
+    return true;
+  }
+
+  function toggleTask(data, dayKey, id) {
+    const f = findTask(data, dayKey, id);
+    if (!f) return false;
+    f.task.completed = !f.task.completed;
+    // Reorder to match the CLI: completed tasks sink to the bottom of the
+    // day, uncompleted tasks move back above the completed block.
+    f.list.splice(f.idx, 1);
+    if (f.task.completed) f.list.push(f.task);
+    else insertBeforeCompleted(f.list, f.task);
+    return true;
+  }
+
+  function deleteTask(data, dayKey, id) {
+    const f = findTask(data, dayKey, id);
+    if (!f) return false;
+    f.list.splice(f.idx, 1);
+    if (f.list.length === 0 && dayKey !== "Future") delete data[dayKey];
+    return true;
+  }
+
+  function moveTask(data, dayKey, id, destinationKey, destinationIndex) {
+    const found = findTask(data, dayKey, id);
+    if (!found) return false;
+    const task = found.task;
+    found.list.splice(found.idx, 1);
+    if (found.list.length === 0 && dayKey !== "Future") delete data[dayKey];
+
+    if (destinationKey === "Future") delete task.due_date;
+    else task.due_date = destinationKey;
+    const targetList = data[destinationKey] || (data[destinationKey] = []);
+    const index = Math.max(0, Math.min(destinationIndex, targetList.length));
+    targetList.splice(index, 0, task);
+    groupTasksByCompletion(data);
+    return true;
+  }
+
   return { todayStr, parseDay, addDays, startOfDay, storageTarget, targetForTask,
     rollOverIncompleteTasks, pruneOldTasks, distributeFutureTasks, parseAddInput,
-    insertBeforeCompleted, groupTasksByCompletion };
+    insertBeforeCompleted, groupTasksByCompletion, findTask, insertTask, editTask,
+    toggleTask, deleteTask, moveTask };
 });

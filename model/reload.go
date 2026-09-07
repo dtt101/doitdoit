@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
-	"os"
 	"time"
+
+	"github.com/dtt101/doitdoit/taskstore"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -39,23 +40,21 @@ func reloadTick() tea.Cmd {
 // checkDataFile hashes and parses the data file off the update loop. Content
 // hashing catches sync tools that preserve both modification time and size.
 func checkDataFile(path string, lastHash [sha256.Size]byte, lastExists bool) tea.Cmd {
+	return checkStore(taskstore.NewJSON(path), lastHash, lastExists)
+}
+
+func checkStore(store taskstore.Store, lastHash [sha256.Size]byte, lastExists bool) tea.Cmd {
 	return func() tea.Msg {
-		contents, err := os.ReadFile(path)
-		if err != nil {
+		snapshot, err := store.Load()
+		if err != nil || !snapshot.Revision.Exists {
 			// Missing or unreadable (e.g. mid-sync); try again next tick.
 			return dataFileCheckedMsg{}
 		}
-		fi, err := os.Stat(path)
-		if err != nil {
-			return dataFileCheckedMsg{}
-		}
-		hash := sha256.Sum256(contents)
+		hash := snapshot.Revision.Hash
 		if lastExists && hash == lastHash {
 			return dataFileCheckedMsg{}
 		}
-		var data TodoData
-		err = json.Unmarshal(contents, &data)
-		return dataFileCheckedMsg{data: data, modTime: fi.ModTime(), size: fi.Size(), hash: hash, hashed: true, err: err}
+		return dataFileCheckedMsg{data: TodoData(snapshot.Data), modTime: snapshot.ModTime, size: snapshot.Size, hash: hash, hashed: true}
 	}
 }
 
@@ -65,7 +64,7 @@ func (m Model) handleReloadTick() (tea.Model, tea.Cmd) {
 	if m.State != Browsing {
 		return m, reloadTick()
 	}
-	return m, checkDataFile(m.FilePath, m.dataHash, m.dataExists)
+	return m, checkStore(m.dataStore(), m.dataHash, m.dataExists)
 }
 
 func (m Model) handleDataFileChecked(msg dataFileCheckedMsg) (tea.Model, tea.Cmd) {

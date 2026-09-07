@@ -6,32 +6,8 @@ import (
 	"time"
 
 	"github.com/atotto/clipboard"
+	"github.com/dtt101/doitdoit/taskstore"
 )
-
-func insertAt(tasks []Task, idx int, task Task) []Task {
-	tasks = append(tasks, Task{})
-	copy(tasks[idx+1:], tasks[idx:])
-	tasks[idx] = task
-	return tasks
-}
-
-// groupTasksByCompletion preserves the relative order within the incomplete
-// and completed groups while restoring the list invariant that completed
-// tasks follow all incomplete tasks.
-func groupTasksByCompletion(tasks []Task) []Task {
-	grouped := make([]Task, 0, len(tasks))
-	for _, task := range tasks {
-		if !task.Completed {
-			grouped = append(grouped, task)
-		}
-	}
-	for _, task := range tasks {
-		if task.Completed {
-			grouped = append(grouped, task)
-		}
-	}
-	return grouped
-}
 
 func (m *Model) addTask(title string) {
 	m.captureMoveUndo()
@@ -44,66 +20,27 @@ func (m *Model) addTask(title string) {
 		Completed: false,
 	}
 
-	tasks := m.Data[currentDate]
-	insertIdx := len(tasks)
-	for i, t := range tasks {
-		if t.Completed {
-			insertIdx = i
-			break
-		}
-	}
-
-	if insertIdx == len(tasks) {
-		m.Data[currentDate] = append(tasks, newTask)
-	} else {
-		m.Data[currentDate] = insertAt(tasks, insertIdx, newTask)
-	}
+	taskstore.Data(m.Data).Insert(currentDate, newTask)
 }
 
 func (m *Model) deleteTask() bool {
 	currentDate := m.getCurrentKey()
-	tasks := m.Data[currentDate]
 	if !m.hasSelectedTask() {
 		return false
 	}
 
 	m.captureMoveUndo()
-	m.Data[currentDate] = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
+	taskstore.Data(m.Data).Delete(currentDate, m.RowIdx)
 	m.clampRow()
 	return true
 }
 
 func (m *Model) toggleTask() bool {
-	currentDate := m.getCurrentKey()
-	tasks := m.Data[currentDate]
 	if !m.hasSelectedTask() {
 		return false
 	}
-
 	m.captureMoveUndo()
-	task := tasks[m.RowIdx]
-	task.Completed = !task.Completed
-
-	// Remove the toggled task before grouping the remainder. This repairs any
-	// pre-existing interleaving in the list, while still placing a newly
-	// completed task at the very bottom.
-	tasks = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
-	tasks = groupTasksByCompletion(tasks)
-
-	if task.Completed {
-		tasks = append(tasks, task)
-	} else {
-		insertIdx := len(tasks)
-		for i, existing := range tasks {
-			if existing.Completed {
-				insertIdx = i
-				break
-			}
-		}
-		tasks = insertAt(tasks, insertIdx, task)
-	}
-
-	m.Data[currentDate] = tasks
+	taskstore.Data(m.Data).Toggle(m.getCurrentKey(), m.RowIdx)
 	return true
 }
 
@@ -115,18 +52,11 @@ func (m *Model) editTask(title string) bool {
 		return false
 	}
 	m.captureMoveUndo()
-	tasks[m.RowIdx].Title = title
-	m.Data[currentDate] = tasks
+	taskstore.Data(m.Data).Edit(currentDate, m.RowIdx, title)
 	return true
 }
 
-func cloneTodoData(data TodoData) TodoData {
-	cloned := make(TodoData, len(data))
-	for key, tasks := range data {
-		cloned[key] = append([]Task(nil), tasks...)
-	}
-	return cloned
-}
+func cloneTodoData(data TodoData) TodoData { return TodoData(taskstore.Clone(taskstore.Data(data))) }
 
 func (m *Model) captureMoveUndo() {
 	m.feedback = ""
@@ -192,7 +122,7 @@ func (m *Model) reorderTask(direction int) bool {
 	}
 
 	m.captureMoveUndo()
-	tasks[m.RowIdx], tasks[newRowIdx] = tasks[newRowIdx], tasks[m.RowIdx]
+	taskstore.Data(m.Data).Reorder(currentDate, m.RowIdx, newRowIdx)
 	m.RowIdx = newRowIdx
 	return true
 }
@@ -243,28 +173,7 @@ func (m *Model) scheduleTask(target moveTarget) bool {
 	}
 
 	m.captureMoveUndo()
-	task.DueDate = dueDate
-
-	if sourceKey == targetKey {
-		tasks[m.RowIdx] = task
-		m.Data[sourceKey] = tasks
-	} else {
-		m.Data[sourceKey] = append(tasks[:m.RowIdx], tasks[m.RowIdx+1:]...)
-
-		targetTasks := m.Data[targetKey]
-		insertIdx := len(targetTasks)
-		for i, existing := range targetTasks {
-			if existing.Completed {
-				insertIdx = i
-				break
-			}
-		}
-		if insertIdx == len(targetTasks) {
-			m.Data[targetKey] = append(targetTasks, task)
-		} else {
-			m.Data[targetKey] = insertAt(targetTasks, insertIdx, task)
-		}
-	}
+	taskstore.Data(m.Data).Move(sourceKey, m.RowIdx, targetKey, dueDate)
 
 	m.lastMoveTarget = &target
 	m.clampRow()

@@ -1,6 +1,7 @@
 # Major-version storage, sync, and history plan
 
-Status: stage 1 specified in [ADR 0001](../docs/storage/0001-immutable-storage.md).
+Status: stage 1 specified in [ADR 0001](../docs/storage/0001-immutable-storage.md);
+stage 2 implemented in [storage boundaries](../docs/storage/0002-storage-boundaries.md).
 Later stages remain planned; this document does not itself authorize implementation.
 
 ## Outcome
@@ -114,6 +115,12 @@ snapshots, missing dependencies, and late legacy writes. Resolve the inability
 to guarantee mixed-version sync explicitly before coding around it.
 
 ### PR 2 — Extract storage boundaries without changing behavior
+
+Delivered: `taskstore.Store` and its legacy JSON adapter; task operations independent
+of Bubble Tea; TUI/CLI/reload/maintenance/move integration; and the web JSON store
+boundary. [Write-path inventory and verification](../docs/storage/0002-storage-boundaries.md).
+Paired snapshots retain the revision of data actually loaded/saved through an
+intervening write. No new storage format or migration is activated.
 
 Separate task operations and storage from Bubble Tea state. Route startup, CLI
 capture, reload, maintenance, and configuration moves through a common boundary.

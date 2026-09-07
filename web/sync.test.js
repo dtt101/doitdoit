@@ -42,3 +42,43 @@ test("download handles missing files and invalid JSON", async () => {
     /not valid JSON/,
   );
 });
+
+test("JSON store refreshes authentication while preserving path and revision", async () => {
+  let token = "old";
+  let refreshes = 0;
+  const calls = [];
+  const store = Sync.createJSONStore({
+    path: "/tasks.json", getToken: () => token, ensureToken: async () => {},
+    refreshAccessToken: async () => { token = "new"; refreshes++; },
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      if (options.headers.Authorization === "Bearer old") return response(401, "");
+      if (url.endsWith("download")) return response(200, { Future: [] }, { "Dropbox-API-Result": '{"rev":"r1"}' });
+      return response(200, { rev: "r2" });
+    },
+  });
+  const snapshot = await store.load();
+  assert.deepEqual(snapshot, { data: { Future: [] }, rev: "r1" });
+  token = "old";
+  assert.equal(await store.save(snapshot.data, snapshot.rev), "r2");
+  assert.equal(refreshes, 2);
+  for (const { url, options } of calls) {
+    const args = JSON.parse(options.headers["Dropbox-API-Arg"]);
+    assert.equal(args.path, "/tasks.json");
+    if (url.endsWith("upload")) assert.deepEqual(args.mode, { ".tag": "update", update: "r1" });
+  }
+});
+
+test("JSON store propagates conflicts and creates a detached recovery snapshot", async () => {
+  const store = Sync.createJSONStore({
+    path: "/tasks.json", getToken: () => "token", ensureToken: async () => {},
+    refreshAccessToken: async () => assert.fail("unexpected refresh"),
+    fetchImpl: async () => response(409, { error_summary: "conflict" }),
+  });
+  const data = { Future: [{ id: "a", title: "local" }] };
+  await assert.rejects(store.save(data, "stale"), error => error.conflict);
+  const snapshot = store.recovery(data, new Date("2026-09-07T12:00:00Z"));
+  data.Future[0].title = "changed";
+  assert.equal(snapshot.data.Future[0].title, "local");
+  assert.equal(snapshot.filePath, "/tasks.json");
+});
