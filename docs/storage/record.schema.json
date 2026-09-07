@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "doitdoit immutable record body, protocol 1",
+  "description": "Structural validation only; ADR 0001 defines canonical bytes and semantic validation.",
+  "$defs": {
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "completed",
+        "created_at",
+        "due_date"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "completed": {
+          "type": "boolean"
+        },
+        "created_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "due_date": {
+          "type": "string",
+          "pattern": "^(|[0-9]{4}-[0-9]{2}-[0-9]{2})$"
+        }
+      }
+    }
+  },
+  "anyOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "snapshot"
+      ],
+      "properties": {
+        "schema": {
+          "const": 1
+        },
+        "kind": {
+          "const": "import"
+        },
+        "snapshot": {
+          "type": "object",
+          "patternProperties": {
+            "^(Future|[0-9]{4}-[0-9]{2}-[0-9]{2})$": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/task"
+              },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "import",
+        "backup"
+      ],
+      "properties": {
+        "schema": {
+          "const": 1
+        },
+        "kind": {
+          "const": "activate"
+        },
+        "import": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "backup": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "parents",
+        "origin",
+        "action",
+        "task_ids",
+        "buckets"
+      ],
+      "properties": {
+        "schema": {
+          "const": 1
+        },
+        "kind": {
+          "const": "change"
+        },
+        "parents": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "origin": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "device",
+            "nonce",
+            "at",
+            "day",
+            "offset_minutes"
+          ],
+          "properties": {
+            "device": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            "nonce": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            "at": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+            },
+            "day": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+            },
+            "offset_minutes": {
+              "type": "integer",
+              "minimum": -840,
+              "maximum": 840
+            }
+          }
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "create",
+            "edit",
+            "complete",
+            "reopen",
+            "move",
+            "reorder",
+            "delete",
+            "maintenance",
+            "undo",
+            "resolve"
+          ]
+        },
+        "task_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "buckets": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "bucket",
+              "after"
+            ],
+            "properties": {
+              "bucket": {
+                "type": "string",
+                "pattern": "^(Future|[0-9]{4}-[0-9]{2}-[0-9]{2})$"
+              },
+              "before": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/task"
+                }
+              },
+              "after": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/task"
+                }
+              }
+            }
+          }
+        },
+        "resolves": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "undo_of": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    }
+  ]
+}
