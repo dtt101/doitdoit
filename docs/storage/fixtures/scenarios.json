@@ -1,0 +1,428 @@
+{
+  "format": 1,
+  "description": "Aliases are fixture-only: $name resolves to canonical record SHA-256, $raw:name to raw UTF-8 SHA-256. Delivery entries refer to aliases. Expected IDs use aliases too.",
+  "raw": {
+    "original": "{\"Future\":[{\"id\":\"task-a\",\"title\":\"Buy milk\",\"completed\":false,\"created_at\":\"2026-09-07T09:00:00Z\",\"due_date\":\"\"}]}",
+    "reformatted": "{\n  \"Future\": [\n    {\n      \"id\": \"task-a\",\n      \"title\": \"Buy milk\",\n      \"completed\": false,\n      \"created_at\": \"2026-09-07T09:00:00Z\",\n      \"due_date\": \"\"\n    }\n  ]\n}",
+    "edited": "{\"Future\":[{\"id\":\"task-a\",\"title\":\"Buy oat milk\",\"completed\":false,\"created_at\":\"2026-09-07T09:00:00Z\",\"due_date\":\"\"}]}",
+    "empty": "{}"
+  },
+  "records": {
+    "base": {
+      "schema": 1,
+      "kind": "import",
+      "snapshot": {
+        "Future": [
+          {
+            "id": "task-a",
+            "title": "Buy milk",
+            "completed": false,
+            "created_at": "2026-09-07T09:00:00Z",
+            "due_date": ""
+          }
+        ]
+      }
+    },
+    "same": {
+      "schema": 1,
+      "kind": "import",
+      "snapshot": {
+        "Future": [
+          {
+            "id": "task-a",
+            "title": "Buy milk",
+            "completed": false,
+            "created_at": "2026-09-07T09:00:00Z",
+            "due_date": ""
+          }
+        ]
+      }
+    },
+    "other": {
+      "schema": 1,
+      "kind": "import",
+      "snapshot": {
+        "Future": [
+          {
+            "id": "task-a",
+            "title": "Buy oat milk",
+            "completed": false,
+            "created_at": "2026-09-07T09:00:00Z",
+            "due_date": ""
+          }
+        ]
+      }
+    },
+    "empty": {
+      "schema": 1,
+      "kind": "import",
+      "snapshot": {}
+    },
+    "active": {
+      "schema": 1,
+      "kind": "activate",
+      "import": "$base",
+      "backup": "$raw:original"
+    },
+    "active_same": {
+      "schema": 1,
+      "kind": "activate",
+      "import": "$same",
+      "backup": "$raw:reformatted"
+    },
+    "active_other": {
+      "schema": 1,
+      "kind": "activate",
+      "import": "$other",
+      "backup": "$raw:edited"
+    },
+    "active_empty": {
+      "schema": 1,
+      "kind": "activate",
+      "import": "$empty",
+      "backup": "$raw:empty"
+    },
+    "complete": {
+      "schema": 1,
+      "kind": "change",
+      "parents": [
+        "$active"
+      ],
+      "origin": {
+        "device": "11111111111111111111111111111111",
+        "nonce": "22222222222222222222222222222222",
+        "at": "2026-09-07T10:00:00.000Z",
+        "day": "2026-09-07",
+        "offset_minutes": 60
+      },
+      "action": "complete",
+      "task_ids": [
+        "task-a"
+      ],
+      "buckets": [
+        {
+          "bucket": "Future",
+          "before": [
+            {
+              "id": "task-a",
+              "title": "Buy milk",
+              "completed": false,
+              "created_at": "2026-09-07T09:00:00Z",
+              "due_date": ""
+            }
+          ],
+          "after": [
+            {
+              "id": "task-a",
+              "title": "Buy milk",
+              "completed": true,
+              "created_at": "2026-09-07T09:00:00Z",
+              "due_date": ""
+            }
+          ]
+        }
+      ]
+    },
+    "deleted": {
+      "schema": 1,
+      "kind": "change",
+      "parents": [
+        "$active"
+      ],
+      "origin": {
+        "device": "11111111111111111111111111111111",
+        "nonce": "33333333333333333333333333333333",
+        "at": "2026-09-07T10:00:00.000Z",
+        "day": "2026-09-07",
+        "offset_minutes": 60
+      },
+      "action": "delete",
+      "task_ids": [
+        "task-a"
+      ],
+      "buckets": [
+        {
+          "bucket": "Future",
+          "before": [
+            {
+              "id": "task-a",
+              "title": "Buy milk",
+              "completed": false,
+              "created_at": "2026-09-07T09:00:00Z",
+              "due_date": ""
+            }
+          ],
+          "after": []
+        }
+      ]
+    },
+    "resolved": {
+      "schema": 1,
+      "kind": "change",
+      "parents": [
+        "$complete",
+        "$deleted"
+      ],
+      "origin": {
+        "device": "11111111111111111111111111111111",
+        "nonce": "44444444444444444444444444444444",
+        "at": "2026-09-07T10:00:00.000Z",
+        "day": "2026-09-07",
+        "offset_minutes": 60
+      },
+      "action": "resolve",
+      "task_ids": [
+        "task-a"
+      ],
+      "buckets": [
+        {
+          "bucket": "Future",
+          "after": []
+        }
+      ],
+      "resolves": [
+        "$complete",
+        "$deleted"
+      ]
+    }
+  },
+  "scenarios": [
+    {
+      "name": "equal offline imports coalesce",
+      "delivery": [
+        "base",
+        "same",
+        "active_same",
+        "active"
+      ],
+      "expected": {
+        "pending": [],
+        "conflicts": [],
+        "snapshot": {
+          "Future": [
+            {
+              "id": "task-a",
+              "title": "Buy milk",
+              "completed": false,
+              "created_at": "2026-09-07T09:00:00Z",
+              "due_date": ""
+            }
+          ]
+        },
+        "unique_imports": 1,
+        "completion_events": 0
+      }
+    },
+    {
+      "name": "unequal offline imports preserve alternatives",
+      "delivery": [
+        "base",
+        "active",
+        "other",
+        "active_other"
+      ],
+      "expected": {
+        "pending": [],
+        "conflicts": [
+          {
+            "buckets": [
+              "Future"
+            ],
+            "alternatives": [
+              "base",
+              "other"
+            ]
+          }
+        ],
+        "snapshot": null,
+        "unique_imports": 2,
+        "completion_events": 0
+      }
+    },
+    {
+      "name": "activation and change wait for missing import",
+      "delivery": [
+        "complete",
+        "active"
+      ],
+      "expected": {
+        "pending": [
+          "active",
+          "complete"
+        ],
+        "conflicts": [],
+        "snapshot": null
+      },
+      "then": {
+        "delivery": [
+          "base"
+        ],
+        "expected": {
+          "pending": [],
+          "conflicts": [],
+          "snapshot": {
+            "Future": [
+              {
+                "id": "task-a",
+                "title": "Buy milk",
+                "completed": true,
+                "created_at": "2026-09-07T09:00:00Z",
+                "due_date": ""
+              }
+            ]
+          },
+          "completion_events": 1
+        }
+      }
+    },
+    {
+      "name": "late legacy write cannot overwrite new completion",
+      "delivery": [
+        "base",
+        "active",
+        "complete",
+        "other",
+        "active_other"
+      ],
+      "expected": {
+        "pending": [],
+        "conflicts": [
+          {
+            "buckets": [
+              "Future"
+            ],
+            "alternatives": [
+              "complete",
+              "other"
+            ]
+          }
+        ],
+        "snapshot": null,
+        "completion_events": 1
+      }
+    },
+    {
+      "name": "absence in late snapshot is not deletion",
+      "delivery": [
+        "base",
+        "active",
+        "empty",
+        "active_empty"
+      ],
+      "expected": {
+        "pending": [],
+        "conflicts": [],
+        "snapshot": {
+          "Future": [
+            {
+              "id": "task-a",
+              "title": "Buy milk",
+              "completed": false,
+              "created_at": "2026-09-07T09:00:00Z",
+              "due_date": ""
+            }
+          ]
+        },
+        "unique_imports": 2,
+        "completion_events": 0
+      }
+    },
+    {
+      "name": "backup arrival is also a dependency",
+      "withhold_raw": [
+        "original"
+      ],
+      "delivery": [
+        "base",
+        "active"
+      ],
+      "expected": {
+        "pending": [
+          "active"
+        ],
+        "conflicts": [],
+        "snapshot": null
+      },
+      "then": {
+        "delivery": [],
+        "raw": [
+          "original"
+        ],
+        "expected": {
+          "pending": [],
+          "conflicts": [],
+          "snapshot": {
+            "Future": [
+              {
+                "id": "task-a",
+                "title": "Buy milk",
+                "completed": false,
+                "created_at": "2026-09-07T09:00:00Z",
+                "due_date": ""
+              }
+            ]
+          },
+          "completion_events": 0
+        }
+      }
+    },
+    {
+      "name": "concurrent delete and completion require explicit resolution",
+      "delivery": [
+        "base",
+        "active",
+        "complete",
+        "deleted"
+      ],
+      "expected": {
+        "pending": [],
+        "conflicts": [
+          {
+            "buckets": [
+              "Future"
+            ],
+            "alternatives": [
+              "complete",
+              "deleted"
+            ]
+          }
+        ],
+        "snapshot": null
+      },
+      "then": {
+        "delivery": [
+          "resolved"
+        ],
+        "expected": {
+          "pending": [],
+          "conflicts": [],
+          "snapshot": {},
+          "completion_events": 1
+        }
+      }
+    }
+  ],
+  "canonical_vectors": [
+    {
+      "value": {
+        "z": "é\n😀",
+        "a": "\"\\/"
+      },
+      "ascii": "{\"a\":\"\\\"\\\\/\",\"z\":\"\\u00e9\\u000a\\ud83d\\ude00\"}"
+    },
+    {
+      "value": {
+        "Future": []
+      },
+      "ascii": "{\"Future\":[]}"
+    },
+    {
+      "value": {
+        "é": true,
+        "😀": null,
+        "a": 0
+      },
+      "ascii": "{\"a\":0,\"\\u00e9\":true,\"\\ud83d\\ude00\":null}"
+    }
+  ]
+}
