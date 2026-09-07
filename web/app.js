@@ -223,33 +223,17 @@
     }
   }
 
-  // ── Dropbox file ops ──────────────────────────────────────────────
+  // ── Task storage boundary ─────────────────────────────────────────
   const Sync = window.DoitdoitSync;
-
-  async function dbxDownload() {
-    await ensureToken();
-    const result = await Sync.downloadOnce(fetch, state.accessToken, FILE_PATH);
-    if (result.unauthorized) {
-      await refreshAccessToken();
-      return dbxDownload();
-    }
-    return result;
-  }
-
-  async function dbxUpload(data, rev) {
-    await ensureToken();
-    const result = await Sync.uploadOnce(fetch, state.accessToken, FILE_PATH, data, rev);
-    if (result.unauthorized) {
-      await refreshAccessToken();
-      return dbxUpload(data, rev);
-    }
-    return result.rev;
-  }
+  const taskStore = Sync.createJSONStore({
+    path: FILE_PATH, fetchImpl: fetch, ensureToken, refreshAccessToken,
+    getToken: () => state.accessToken,
+  });
 
   // ── Shared domain logic (also exercised by web/domain.test.js) ─────
   const Domain = window.DoitdoitDomain;
   const { todayStr, parseDay, addDays, rollOverIncompleteTasks,
-    distributeFutureTasks, insertBeforeCompleted } = Domain;
+    distributeFutureTasks } = Domain;
   const storageTarget = (target) => Domain.storageTarget(target, VISIBLE_DAYS);
   const targetForTask = (dayKey, task) => Domain.targetForTask(dayKey, task);
   const pruneOldTasks = (data) => Domain.pruneOldTasks(data, RETENTION_DAYS);
@@ -418,37 +402,21 @@
       created_at: new Date().toISOString(),
     };
     if (parsed.due) t.due_date = parsed.due;
-    if (!state.data[parsed.key]) state.data[parsed.key] = [];
-    insertBeforeCompleted(state.data[parsed.key], t);
+    Domain.insertTask(state.data, parsed.key, t);
     render({ preserveScroll: true });
     queueSave();
   }
 
-  function findTask(dayKey, id) {
-    const list = state.data[dayKey];
-    if (!list) return null;
-    const idx = list.findIndex((x) => String(x.id) === String(id));
-    return idx >= 0 ? { list, idx, task: list[idx] } : null;
-  }
+  function findTask(dayKey, id) { return Domain.findTask(state.data, dayKey, id); }
 
   function toggleTask(dayKey, id) {
-    const f = findTask(dayKey, id);
-    if (!f) return;
-    f.task.completed = !f.task.completed;
-    // Reorder to match the CLI: completed tasks sink to the bottom of the
-    // day, uncompleted tasks move back above the completed block.
-    f.list.splice(f.idx, 1);
-    if (f.task.completed) f.list.push(f.task);
-    else insertBeforeCompleted(f.list, f.task);
+    if (!Domain.toggleTask(state.data, dayKey, id)) return;
     render({ preserveScroll: true });
     queueSave();
   }
 
   function deleteTask(dayKey, id) {
-    const f = findTask(dayKey, id);
-    if (!f) return;
-    f.list.splice(f.idx, 1);
-    if (f.list.length === 0 && dayKey !== "Future") delete state.data[dayKey];
+    if (!Domain.deleteTask(state.data, dayKey, id)) return;
     const row = Array.from(board.querySelectorAll(".task")).find(
       (el) => el.dataset.key === dayKey && el.dataset.id === String(id)
     );
@@ -458,19 +426,7 @@
   }
 
   function moveTask(dayKey, id, destinationKey, destinationIndex) {
-    const found = findTask(dayKey, id);
-    if (!found) return false;
-    const task = found.task;
-    found.list.splice(found.idx, 1);
-    if (found.list.length === 0 && dayKey !== "Future") delete state.data[dayKey];
-
-    if (destinationKey === "Future") delete task.due_date;
-    else task.due_date = destinationKey;
-    const targetList = state.data[destinationKey] || (state.data[destinationKey] = []);
-    const index = Math.max(0, Math.min(destinationIndex, targetList.length));
-    targetList.splice(index, 0, task);
-    Domain.groupTasksByCompletion(state.data);
-    return true;
+    return Domain.moveTask(state.data, dayKey, id, destinationKey, destinationIndex);
   }
 
   // ── Save (debounced + conflict-aware) ─────────────────────────────
@@ -489,14 +445,14 @@
     state.saving = true;
     setSync("syncing");
     try {
-      const newRev = await dbxUpload(state.data, state.rev);
+      const newRev = await taskStore.save(state.data, state.rev);
       state.rev = newRev;
       state.dirty = false;
       setSync("idle");
     } catch (err) {
       if (err.conflict) {
         state.conflict = true;
-        LS.set("doitdoit:recovery", Sync.recoverySnapshot(state.data, FILE_PATH));
+        LS.set("doitdoit:recovery", taskStore.recovery(state.data));
         toast("remote changed — local edits kept; use menu to recover or reload", "err");
         setSync("error");
       } else {
@@ -513,7 +469,7 @@
     if (state.interactionActive) return;
     setSync("syncing");
     try {
-      const { data, rev } = await dbxDownload();
+      const { data, rev } = await taskStore.load();
       const before = state.data ? JSON.stringify(state.data) : null;
       state.data = data;
       state.rev = rev;
@@ -523,7 +479,7 @@
       const r2 = pruneOldTasks(state.data);
       if (r1 || r2) {
         // persist rollover/prune so the CLI sees a consistent file too
-        state.rev = await dbxUpload(state.data, state.rev);
+        state.rev = await taskStore.save(state.data, state.rev);
       }
       // Normalize the in-memory view before comparing so an unchanged focus
       // reload does not rebuild the board just because dated Future tasks moved.
@@ -541,7 +497,7 @@
       if (err.conflict) {
         state.dirty = true;
         state.conflict = true;
-        LS.set("doitdoit:recovery", Sync.recoverySnapshot(state.data, FILE_PATH));
+        LS.set("doitdoit:recovery", taskStore.recovery(state.data));
         toast("remote changed during maintenance — recovery copy kept", "err");
       } else {
         toast("load failed: " + err.message, "err");
@@ -616,19 +572,7 @@
     const destination = storageTarget(editTarget);
     if (destination.error) { toast(destination.error, "err"); return; }
     const { dayKey, id } = state.editing;
-    const found = findTask(dayKey, id);
-    if (!found) { closeEditor(); return; }
-    const task = found.task;
-    task.title = title;
-    if (destination.due) task.due_date = destination.due;
-    else delete task.due_date;
-
-    if (destination.key !== dayKey) {
-      found.list.splice(found.idx, 1);
-      if (found.list.length === 0 && dayKey !== "Future") delete state.data[dayKey];
-      const targetList = state.data[destination.key] || (state.data[destination.key] = []);
-      insertBeforeCompleted(targetList, task);
-    }
+    if (!Domain.editTask(state.data, dayKey, id, title, destination)) { closeEditor(); return; }
     closeEditor({ dayKey: destination.key, id });
     render({ preserveScroll: true });
     queueSave();

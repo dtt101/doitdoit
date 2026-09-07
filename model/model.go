@@ -2,16 +2,14 @@ package model
 
 import (
 	"crypto/sha256"
-	"errors"
 	"fmt"
-	"os"
-	"reflect"
 	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/dtt101/doitdoit/styles"
+	"github.com/dtt101/doitdoit/taskstore"
 )
 
 type State int
@@ -47,6 +45,9 @@ type Model struct {
 	// RetentionDays is zero for forever and positive for pruning completed
 	// history older than that many days.
 	RetentionDays int
+
+	store     taskstore.Store
+	storePath string
 
 	// Navigation
 	ColIdx int
@@ -115,17 +116,23 @@ func NewModel(filePath string, visibleDays int) (Model, error) {
 // NewModelWithRetention creates a model after applying the explicit retention
 // period selected by the user. Zero means completed history is kept forever.
 func NewModelWithRetention(filePath string, visibleDays, retentionDays int) (Model, error) {
+	return newModelWithStore(filePath, visibleDays, retentionDays, taskstore.NewJSON(filePath))
+}
+
+func newModelWithStore(filePath string, visibleDays, retentionDays int, store taskstore.Store) (Model, error) {
 	if visibleDays < 1 {
 		return Model{}, fmt.Errorf("visible days must be at least 1")
 	}
 
-	data, carriedForward, err := loadWithRollover(filePath, retentionDays)
+	snapshot, carriedForward, err := taskstore.LoadStore(store, retentionDays)
 	if err != nil {
 		return Model{}, err
 	}
 
 	m := Model{
-		Data:           data,
+		Data:           TodoData(snapshot.Data),
+		store:          store,
+		storePath:      filePath,
 		carriedForward: carriedForward,
 		FilePath:       filePath,
 		VisibleDays:    visibleDays,
@@ -137,28 +144,8 @@ func NewModelWithRetention(filePath string, visibleDays, retentionDays int) (Mod
 	m.configureTextInput("New task...")
 	m.Data.DistributeFutureTasks(visibleDays)
 	m.updateDateKeys()
-	m.trackFileState()
+	m.recordRevision(snapshot.Revision)
 	return m, nil
-}
-
-// trackFileState records the data file's mtime and size so the reload ticker
-// can ignore writes made by this process.
-func (m *Model) trackFileState() {
-	if contents, err := os.ReadFile(m.FilePath); err == nil {
-		fi, statErr := os.Stat(m.FilePath)
-		if statErr != nil {
-			return
-		}
-		m.dataModTime = fi.ModTime()
-		m.dataSize = fi.Size()
-		m.dataHash = sha256.Sum256(contents)
-		m.dataExists = true
-	} else if os.IsNotExist(err) {
-		m.dataModTime = time.Time{}
-		m.dataSize = 0
-		m.dataHash = [sha256.Size]byte{}
-		m.dataExists = false
-	}
 }
 
 func (m *Model) updateDateKeys() {
@@ -203,91 +190,6 @@ func (m *Model) shiftDateWindow(days int) bool {
 
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(textinput.Blink, dateTick(), reloadTick())
-}
-
-// persist verifies the last observed content hash before atomically replacing
-// the file. This catches external edits that land between reload polls; a
-// narrow check-to-rename race remains inherent to sync-folder storage.
-func (m *Model) persist() {
-	if err := m.Data.SaveIfUnchanged(m.FilePath, &m.dataHash, m.dataExists); err != nil {
-		if errors.Is(err, ErrDataConflict) {
-			if retryErr := m.retryPersistOnFreshData(); retryErr == nil {
-				m.Err = nil
-				m.trackFileState()
-				return
-			} else {
-				err = retryErr
-			}
-		}
-		m.Err = err
-		return
-	}
-	m.Err = nil
-	m.trackFileState()
-}
-
-// retryPersistOnFreshData performs one conservative three-way merge. Changes
-// in separate date buckets combine automatically; competing changes to the
-// same bucket remain a visible conflict.
-func (m *Model) retryPersistOnFreshData() error {
-	if m.moveUndo == nil {
-		return ErrDataConflict
-	}
-	contents, err := os.ReadFile(m.FilePath)
-	if err != nil {
-		return err
-	}
-	remote, err := loadRaw(m.FilePath)
-	if err != nil {
-		return err
-	}
-	merged, err := mergeTodoData(m.moveUndo.Data, m.Data, remote)
-	if err != nil {
-		return err
-	}
-	hash := sha256.Sum256(contents)
-	if err := merged.SaveIfUnchanged(m.FilePath, &hash, true); err != nil {
-		return err
-	}
-	// Undo should remove only our mutation while preserving the freshly merged
-	// external state.
-	m.moveUndo.Data = cloneTodoData(remote)
-	m.Data = merged
-	return nil
-}
-
-func mergeTodoData(base, local, remote TodoData) (TodoData, error) {
-	merged := cloneTodoData(remote)
-	keys := make(map[string]struct{}, len(base)+len(local)+len(remote))
-	for key := range base {
-		keys[key] = struct{}{}
-	}
-	for key := range local {
-		keys[key] = struct{}{}
-	}
-	for key := range remote {
-		keys[key] = struct{}{}
-	}
-	for key := range keys {
-		baseTasks, baseOK := base[key]
-		localTasks, localOK := local[key]
-		remoteTasks, remoteOK := remote[key]
-		localChanged := localOK != baseOK || !reflect.DeepEqual(localTasks, baseTasks)
-		remoteChanged := remoteOK != baseOK || !reflect.DeepEqual(remoteTasks, baseTasks)
-		switch {
-		case !localChanged:
-			continue
-		case !remoteChanged || (localOK == remoteOK && reflect.DeepEqual(localTasks, remoteTasks)):
-			if localOK {
-				merged[key] = append([]Task(nil), localTasks...)
-			} else {
-				delete(merged, key)
-			}
-		default:
-			return nil, fmt.Errorf("%w: both copies changed %s", ErrDataConflict, key)
-		}
-	}
-	return merged, nil
 }
 
 func (m Model) getCurrentKey() string {

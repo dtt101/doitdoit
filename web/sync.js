@@ -61,5 +61,29 @@
     return { savedAt: now.toISOString(), filePath, data: JSON.parse(JSON.stringify(data)) };
   }
 
-  return { asciiJson, downloadOnce, uploadOnce, recoverySnapshot };
+  // The app owns authentication state; the store owns task-file transport.
+  // Keep the existing revision, retry, and recovery behavior during extraction.
+  function createJSONStore({ path, fetchImpl, ensureToken, refreshAccessToken, getToken }) {
+    async function load() {
+      await ensureToken();
+      const result = await downloadOnce(fetchImpl, getToken(), path);
+      if (result.unauthorized) {
+        await refreshAccessToken();
+        return load();
+      }
+      return result;
+    }
+    async function save(data, rev) {
+      await ensureToken();
+      const result = await uploadOnce(fetchImpl, getToken(), path, data, rev);
+      if (result.unauthorized) {
+        await refreshAccessToken();
+        return save(data, rev);
+      }
+      return result.rev;
+    }
+    return { load, save, recovery: (data, now) => recoverySnapshot(data, path, now) };
+  }
+
+  return { asciiJson, downloadOnce, uploadOnce, recoverySnapshot, createJSONStore };
 });

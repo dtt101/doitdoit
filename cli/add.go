@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/dtt101/doitdoit/config"
-	"github.com/dtt101/doitdoit/model"
+	"github.com/dtt101/doitdoit/taskstore"
 )
 
 func RunAddCommand(args []string, out io.Writer) int {
@@ -46,7 +46,7 @@ func RunAddCommand(args []string, out io.Writer) int {
 		return 1
 	}
 	retention, _ := cfg.Retention()
-	_, key, err := model.CaptureTask(path, title, *when, retention)
+	_, key, err := taskstore.CaptureTask(path, title, *when, retention)
 	if err != nil {
 		fmt.Fprintf(out, "Error adding task: %v\n", err)
 		return 1
