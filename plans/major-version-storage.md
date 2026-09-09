@@ -1,8 +1,9 @@
 # Major-version storage, sync, and history plan
 
 Status: stage 1 specified in [ADR 0001](../docs/storage/0001-immutable-storage.md);
-stage 2 implemented in [storage boundaries](../docs/storage/0002-storage-boundaries.md).
-Later stages remain planned; this document does not itself authorize implementation.
+stage 2 implemented in [storage boundaries](../docs/storage/0002-storage-boundaries.md);
+stage 3 implemented as an [inactive foundation](../docs/storage/0003-immutable-record-storage.md).
+Stages 4–11 remain planned; this document does not itself authorize implementation.
 
 ## Outcome
 
@@ -25,6 +26,10 @@ silently dropping edits or claiming migration/sync succeeded prematurely.
 
 ## Architecture and constraints
 
+- Desktop support is Linux and macOS only (`amd64` and `arm64`), with Omarchy
+  a first-class Linux platform. Preserve theme detection, opt-in live updates,
+  and managed hook safety. Do not implement Windows storage or release fallbacks.
+
 - Retain the configured JSON path as the discovery anchor. A deterministic
   sibling directory, `<configured-path>.store/`, holds versioned immutable records.
   ADR 0001 specifies naming and Dropbox discovery.
@@ -43,7 +48,7 @@ silently dropping edits or claiming migration/sync succeeded prematurely.
   explicit record, undo creates a compensating operation, and resolution refers
   to the conflicting versions. Never silently use last-write-wins for task text.
 - Keep atomic replacement, local `0600` files, backups, external-change checks,
-  and platform-specific filesystem handling. Immutable history supplements
+  and Linux/macOS filesystem durability. Immutable history supplements
   backups; it is not a substitute for recovering an accidentally deleted folder.
 - The web companion remains static and self-contained; OAuth credentials remain
   browser-local. No hosted coordination service is introduced.
@@ -131,6 +136,12 @@ Acceptance: existing lifecycle and persistence tests pass unchanged; every write
 path is accounted for and uses the existing safeguards.
 
 ### PR 3 — Add immutable record storage and durable pending edits
+
+Delivered: standalone `recordstore` validation, immutable local publication, durable
+pending inspection/retry, exact-byte backups, and an account/store-scoped browser
+outbox. [Contracts, verification, and limitations](../docs/storage/0003-immutable-record-storage.md).
+These components remain inactive; replay, migration, and application wiring are
+later stages. The existing JSON adapter remains the public default.
 
 Implement local publication, validation, discovery, retry, and record deduplication.
 Serialize or safely coordinate multiple processes on one machine. Ignore incomplete
@@ -250,7 +261,10 @@ rollover, if included, preserves existing Today/Future presentation and ordering
 
 - For Go changes: format with `gofmt`, run `go test -count=1 ./...` and
   `go vet ./...`; persistence, reload, concurrency, and release changes also run
-  `go test -race ./...`. Use the pinned mise toolchain.
+  `go test -race ./...`. Use the pinned mise toolchain. CI and release gates run
+  on Linux and macOS;
+  include the isolated Omarchy integration tests and a live theme-switch smoke
+  test before release.
 - Run `node --test web/*.test.js` for web changes and shared protocol fixtures.
   Add behavior-focused cross-client/fault scenarios, not only unit replay tests.
 - Tests use temporary stores and isolated HOME; never access the real task file

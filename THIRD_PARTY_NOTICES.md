@@ -1,8 +1,9 @@
 # Third-party notices
 
 `doitdoit` incorporates the Go modules and Omarchy theme palettes listed
-below. Versions are the modules compiled into the v0.2.0 binary dependency
-graph. The corresponding licence terms follow the inventory.
+below. Versions cover the current Linux and macOS binary dependency graphs.
+Additional transitive module attributions are retained even when platform build
+constraints exclude them from the shipped binaries. The corresponding licence terms follow the inventory.
 
 ## MIT-licensed Go modules
 

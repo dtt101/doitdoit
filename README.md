@@ -4,6 +4,8 @@
 
 `doitdoit` gives you a calm, multi-day view of what is in front of you, gets out of the way when you are working, and makes sure unfinished tasks do not disappear into yesterday. There is no account, database, or hosted backend: the entire backend is one readable JSON file.
 
+Supported desktop platforms are **macOS and Linux**, with **Omarchy as a first-class Linux platform**. Windows is no longer supported. Release archives cover Intel/AMD 64-bit (`amd64`) and ARM64 (`arm64`) on both supported operating systems.
+
 Put that file in Dropbox, iCloud Drive, or Google Drive and your task list can travel with you.
 
 <img width="1467" height="799" alt="Screenshot 2026-08-20 at 16 50 28" src="https://github.com/user-attachments/assets/e374314c-424e-460c-ae8e-fa3ee19d9dd5" />
@@ -18,11 +20,11 @@ Put that file in Dropbox, iCloud Drive, or Google Drive and your task list can t
 - **Looks at home on Omarchy.** `doitdoit` follows your active Omarchy theme and includes every stock Omarchy 4 (Quattro) palette.
 - **Take it to your phone.** The optional static [web companion](./web) can read and write the same Dropbox-hosted task file.
 
-## Especially nice on Omarchy
+## Omarchy
 
 `doitdoit` is built to feel like part of an [Omarchy](https://omarchy.org) desktop, not a generic TUI dropped into it.
 
-With no extra configuration, it reads the currently active Omarchy 4 (Quattro) theme — including user-installed themes — from `~/.local/state/omarchy/current/theme/colors.toml`. It also bundles all 22 stock Quattro palettes, so they are available on macOS, other Linux distributions, and Windows too.
+With no extra configuration, it reads the currently active Omarchy 4 (Quattro) theme — including user-installed themes — from `~/.local/state/omarchy/current/theme/colors.toml`. It also bundles all 22 stock Quattro palettes, so they are available on macOS and other Linux distributions too.
 
 ### Install on Omarchy
 
@@ -83,9 +85,9 @@ doitdoit
 
 mise automatically selects the Apple Silicon or Intel macOS archive for your Mac.
 
-### Other systems
+### Other Linux distributions
 
-Once [mise is installed and activated](https://mise.jdx.dev/getting-started.html), use the same command on Linux or Windows:
+Once [mise is installed and activated](https://mise.jdx.dev/getting-started.html), use the same command on Linux:
 
 ```bash
 mise use -g github:dtt101/doitdoit
@@ -278,6 +280,8 @@ go run .
 
 Use `go test -count=1 ./...` to bypass the test cache or `go test -cover ./...` for a coverage summary. Run `go vet ./...` for non-trivial Go changes and `go test -race ./...` for persistence, reload, or concurrency changes. Test the static web companion with `node --test web/*.test.js`; it needs no build step or dependency installation.
 
+CI and release gates run on Linux and macOS. The Go suite includes isolated Omarchy theme detection, first-run setup, managed hook installation/removal, and theme rendering tests. These fixtures protect Omarchy integration without changing the runner's desktop configuration; they do not replace a live Omarchy theme-switch smoke test before release.
+
 ### Publish a release
 
 mise installs from published GitHub Releases; it does not build or install the current `main` branch. There is no separate mise package to publish, and there is currently no application version file to edit—the Git tag is the release version.
@@ -291,7 +295,7 @@ git tag -a vX.Y.Z -m "doitdoit vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-Pushing a `v*` tag starts [the release workflow](./.github/workflows/release.yml). It reruns the Go and web tests, race detector, vet, and vulnerability scan; GoReleaser then builds the platform archives, checksum file, and GitHub Release. Confirm both the workflow and the new entry on [GitHub Releases](https://github.com/dtt101/doitdoit/releases) succeeded before announcing the version.
+Pushing a `v*` tag starts [the release workflow](./.github/workflows/release.yml). It reruns the Go and web tests, race detector, vet, and vulnerability scan on Linux and macOS; GoReleaser then builds Linux and macOS `.tar.gz` archives for `amd64` and `arm64`, the checksum file, and the GitHub Release. Windows archives are no longer produced. Confirm both the workflow and the new entry on [GitHub Releases](https://github.com/dtt101/doitdoit/releases) succeeded before announcing the version.
 
 New installations using `mise use -g github:dtt101/doitdoit` resolve the latest published release. Existing installations stay on their installed version until the user runs:
 

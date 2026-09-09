@@ -31,6 +31,18 @@ script, or remote font is required.
   because this is a serverless client, so a compromised browser profile or
   malicious extension could still access them.
 
+## Inactive storage foundation
+
+`outbox.js` implements the stage 3 browser pending queue but is not loaded by the
+current app. Its account/store-scoped entries survive reopening when browser
+storage is retained. Quota and write failures must be surfaced before an edit is
+acknowledged; failed uploads remain queued for retry. Clearing site data, browser
+eviction, private-session teardown, or losing the profile can erase unpublished
+edits. The outbox cannot recover them once its backing storage is gone.
+
+Production protocol validation, replay, and Dropbox transport are later stages.
+See [the stage 3 storage contract](../docs/storage/0003-immutable-record-storage.md).
+
 ## One-time setup
 
 ### 1. Register a Dropbox app
@@ -133,6 +145,7 @@ web/
 ├── app.js          # OAuth, mutations, accessible DOM rendering
 ├── domain.js       # shared/testable task lifecycle rules
 ├── sync.js         # shared/testable Dropbox revision operations
+├── outbox.js       # inactive immutable-record pending queue (stage 3)
 ├── *.test.js       # Node built-in unit tests
 ├── config.js       # public Dropbox app key + file path
 └── .nojekyll       # tell GitHub Pages not to run Jekyll
