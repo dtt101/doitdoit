@@ -21,7 +21,7 @@ func TestThirdPartyNoticesCoverCompiledModulesAndThemes(t *testing.T) {
 		{"linux", "amd64"},
 		{"linux", "arm64"},
 		{"darwin", "amd64"},
-		{"windows", "amd64"},
+		{"darwin", "arm64"},
 	} {
 		cmd := exec.Command("go", "list", "-deps", "-f", `{{if .Module}}{{if not .Module.Main}}{{.Module.Path}}|{{.Module.Version}}{{end}}{{end}}`, ".")
 		cmd.Dir = ".."

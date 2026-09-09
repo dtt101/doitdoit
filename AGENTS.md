@@ -6,6 +6,11 @@
 tasks in a user-owned JSON file. The repository also contains an experimental,
 fully static Dropbox web companion in `web/`.
 
+Supported desktop platforms are macOS and Linux only (`amd64` and `arm64`).
+Omarchy is a first-class Linux platform: preserve automatic theme detection,
+opt-in live theme updates, managed hook safety, and their isolated tests.
+Windows builds and compatibility fallbacks are out of scope.
+
 These instructions apply to the whole repository.
 
 ## Toolchain and common commands
@@ -30,6 +35,8 @@ These instructions apply to the whole repository.
   optional Omarchy theme hook.
 - `taskstore/`: task data/lifecycle, storage interface, legacy JSON persistence,
   capture, conservative merging, and storage moves; independent of Bubble Tea.
+- `recordstore/`: inactive immutable record validation, publication, and durable
+  pending edits; replay and migration are deferred.
 - `model/`: Bubble Tea state/update logic, storage orchestration, reload/conflict
   handling, rendering, and compatibility wrappers for the task-data API.
 - `styles/`: embedded themes and Omarchy theme resolution.
@@ -56,8 +63,9 @@ These instructions apply to the whole repository.
   retention, distribution, and ordering—should stay aligned. Update both
   implementations and their tests when changing shared semantics, or document
   an intentional difference.
-- Keep platform-specific behavior behind the existing build-tagged files and
-  avoid introducing Unix-only assumptions into shared Go code.
+- Shared Go code may rely on Unix behavior available on both Linux and macOS.
+  Keep OS-specific behavior behind build-tagged files; do not add Windows
+  compatibility shims. CI and release gates must cover both supported systems.
 - The web companion must remain static and self-contained. Do not add remote
   scripts/fonts or commit Dropbox secrets. Its app key is a public OAuth client
   ID; OAuth tokens remain browser-local.

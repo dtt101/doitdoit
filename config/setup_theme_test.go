@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -46,9 +45,6 @@ func TestThemeSetupRequiresExplicitOptIn(t *testing.T) {
 }
 
 func TestThemeSetupSharesInputAndInstallsManagedHook(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell fixture")
-	}
 	target := setupFakeOmarchy(t, true)
 	fakeActiveTheme(t)
 	input := bufio.NewReader(strings.NewReader("forever\nyes\n"))
@@ -105,9 +101,6 @@ func TestThemeSetupSkipsAbsentOmarchyAndFixedPalette(t *testing.T) {
 }
 
 func TestThemeSetupInstallationFailureIsNonFatal(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell fixture")
-	}
 	target := setupFakeOmarchy(t, false)
 	fakeActiveTheme(t)
 	var out bytes.Buffer

@@ -41,7 +41,9 @@ API path, list all pages, and rescan on cursor reset. Only a provider's explicit
 not-found result means absence; permission, network, and other errors never do.
 New Dropbox uploads are create-only with autorename disabled. On an existing name,
 download and verify exact content; never overwrite. Local publication likewise
-must be exclusive and atomic, using platform-specific primitives as needed.
+must be exclusive and atomic on the supported Linux and macOS desktops,
+including Omarchy. Sync file data and containing directories before acknowledging
+local durability; a Windows no-op durability fallback is outside the support scope.
 Preserve local `0600` files, restrictive directories, atomic replacement/backups
 for mutable local state, and existing legacy-save safeguards while that adapter lives.
 

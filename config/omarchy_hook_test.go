@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -29,9 +28,6 @@ func setupFakeOmarchy(t *testing.T, succeed bool) string {
 }
 
 func TestOmarchyHookInstallStatusRemove(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell fixture")
-	}
 	target := setupFakeOmarchy(t, true)
 	var out bytes.Buffer
 	if code := RunCommand([]string{"config", "omarchy-hook", "install"}, &out); code != 0 {
@@ -63,9 +59,6 @@ func TestOmarchyHookInstallStatusRemove(t *testing.T) {
 }
 
 func TestOmarchyHookRefusesModifiedFileAndSymlink(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlink and shell fixture")
-	}
 	target := setupFakeOmarchy(t, true)
 	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
 		t.Fatal(err)
