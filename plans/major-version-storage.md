@@ -3,7 +3,105 @@
 Status: stage 1 specified in [ADR 0001](../docs/storage/0001-immutable-storage.md);
 stage 2 implemented in [storage boundaries](../docs/storage/0002-storage-boundaries.md);
 stage 3 implemented as an [inactive foundation](../docs/storage/0003-immutable-record-storage.md).
-Stages 4–11 remain planned; this document does not itself authorize implementation.
+Stage 3 review found follow-up fixes recorded below; implementation is committed
+locally as `58bb03d`, but the findings are not fixed. Stages 4–11 remain planned;
+this document does not itself authorize implementation.
+
+## Review follow-ups — next session
+
+Reviewed local commit: `58bb03d` (`feat: add immutable storage foundation for
+Linux and macOS`). All seven findings below remain open. Existing Go/web tests
+pass, but targeted reproductions exposed these gaps. This list records work to do;
+adding it does not activate storage or authorize publishing a release.
+
+Prioritize the live web data-loss issues, then finish the stage 3 corrections
+before stage 4 integration. The web issues predate this commit. `outbox.js` is
+intentionally inactive, so it does not protect the current JSON save flow. Fix the
+live JSON client without waiting for immutable transport or silently expanding
+stage 3 into migration. Preserve Linux/macOS support and Omarchy coverage.
+
+### Live web app — repair before immutable storage integration
+
+- [ ] **P1 — Reject stale reload results.** `web/app.js`, `reload`: a download
+  started while clean replaces `state.data` and clears `dirty` even when an edit
+  occurred during the request. Track mutation/request generations and discard
+  stale responses without replacing local edits or their revision context.
+  **Acceptance:** defer a download, edit locally, then deliver the old response;
+  the edit remains dirty and recoverable. Cover overlapping reload responses too.
+
+- [ ] **P1 — Acknowledge only the version actually uploaded.** `web/app.js`,
+  `doSave`: an older upload unconditionally clears `dirty` after a newer edit.
+  Capture the uploaded snapshot and mutation generation; retain dirty state and
+  schedule the newer version when an edit occurred in flight.
+  **Acceptance:** upload edit A, make edit B before A completes, then finish A;
+  B remains unsaved until its own successful upload, and focus/periodic reload
+  cannot erase B. Cover upload failures and concurrent maintenance saves.
+
+- [ ] **P1 — Keep Dropbox revision protection on every write.** `web/sync.js`,
+  `downloadOnce`/`uploadOnce`: every download HTTP 409 becomes an empty store,
+  missing revision metadata is accepted, and a null revision selects unconditional
+  `overwrite`. Recognize only an explicit path-not-found response as absence;
+  validate successful download/upload revision metadata; use create-only mode
+  for a confirmed new file and revision-checked updates for existing files.
+  **Acceptance:** other 409 errors and missing/malformed metadata fail without
+  clearing state; a file created by another client between not-found and upload
+  causes a visible conflict, never an overwrite. Update the existing test that
+  currently treats any 409 as a missing file.
+
+- [ ] **P2 — Create recovery data before destructive reload.** `web/app.js`,
+  reload menu/recovery handling: the confirmation promises a recovery copy,
+  but snapshots are currently written only on conflict. After an ordinary network
+  failure, forced reload discards edits without creating that copy. Persist the
+  current unsaved snapshot before replacement and handle storage failures visibly.
+  **Acceptance:** after a failed upload, forced reload preserves the exact local
+  edit in downloadable recovery; quota/write failure blocks replacement instead
+  of claiming recovery succeeded. Cover dirty-state handling on disconnect and
+  authentication failure as well.
+
+These need app-level asynchronous orchestration tests; domain and transport unit
+tests alone did not catch the races. Use fake requests and isolated browser storage,
+never real Dropbox credentials or task files. Keep future immutable transport's
+matching requirements in stage 7; these repairs protect the current application.
+
+### Stage 3 — correct the committed foundation before integration
+
+- [ ] **P2 — Strict creation timestamp validation.** `recordstore/record.go`,
+  `tasks`: `time.Parse(time.RFC3339Nano, ...)` accepts malformed timestamps such
+  as offsets `+24:00` and `+01:60`, a one-digit hour, or a comma fractional
+  separator. The reviewed JavaScript date parser rejects these same inputs.
+  Add explicit format/range validation while preserving valid legacy timestamp
+  spelling, precision, and offsets.
+  **Acceptance:** shared fixtures reject these malformed values and accept valid
+  legacy values consistently; `Parse`/`Queue` never acknowledge invalid records.
+  Reuse these fixtures in stage 4's production JavaScript validator.
+
+- [ ] **P2 — Bound directory durability checks to a safe owned boundary.**
+  `recordstore/store.go`, `syncDirectories`: syncing every ancestor up to `/`
+  makes a save fail below a traversable but unreadable directory even when the
+  pending directory supports writing and syncing. Establish a durable store-owned
+  boundary with process-safe initialization; do not merely ignore sync failures
+  or reintroduce the interrupted-directory-creation race fixed in stage 3.
+  **Acceptance:** a usable store below a traverse-only ancestor accepts and
+  persists edits; directory-creation interruption, concurrent initialization,
+  retry, and genuine file/directory sync failures still preserve acknowledged
+  operations. Run native Linux/macOS checks.
+
+- [ ] **P2 — Recover pending edits independently of synced-root health.**
+  `recordstore/store.go`, `ScanPending`: validation of both paths returns early
+  when the synced root is damaged, hiding intact acknowledged pending records.
+  Return valid local pending records alongside the root issue while keeping
+  publication blocked until its destination is safe.
+  **Acceptance:** queue an edit, replace the synced root with a regular file,
+  then restart; pending recovery still returns the exact edit and reports the
+  root error. The damaged root and local recovery data remain untouched.
+
+### Verification and handoff for these fixes
+
+Use focused reproductions as regression tests, then run the existing Go suite,
+vet, race suite, and web suite. Run release inventory/GoReleaser checks when their
+files change. Keep fixes reviewable, record which checkboxes are completed, and
+leave stage 4–9 runtime activation deferred. No fixes from this review have been
+committed or pushed; only the original stage 3/platform work is in `58bb03d`.
 
 ## Outcome
 
