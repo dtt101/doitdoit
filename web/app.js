@@ -155,6 +155,7 @@
   }
 
   async function refreshAccessToken() {
+    const session = sessionGeneration;
     if (!state.refreshToken) throw new Error("no refresh token; please reconnect");
     const body = new URLSearchParams({
       grant_type: "refresh_token",
@@ -167,10 +168,11 @@
       body,
     });
     if (!r.ok) {
-      await logout();
-      throw new Error("refresh failed; reconnect required");
+      throw new Error("refresh failed; disconnect and reconnect required (local edits retained)");
     }
-    saveTokens(await r.json());
+    const tokens = await r.json();
+    if (session !== sessionGeneration) throw new Error("session disconnected");
+    saveTokens(tokens);
   }
 
   function saveTokens(tok) {
@@ -194,7 +196,28 @@
   }
 
   async function logout() {
+    // Finish provisional drag state before capturing unsaved work.
+    finishPointerDrag(true);
+    finishKeyboardDrag(true);
+    try {
+      if (state.dirty) preserveRecovery();
+      LS.del("doitdoit:tokens");
+    } catch (err) {
+      toast("disconnect blocked: " + err.message, "err");
+      setSync("error");
+      return;
+    }
     const token = state.accessToken;
+    sessionGeneration++;
+    reloadGeneration++;
+    if (saveTimer) clearTimeout(saveTimer);
+    state.accessToken = null;
+    state.refreshToken = null;
+    state.data = null;
+    state.rev = null;
+    state.dirty = false;
+    state.conflict = false;
+    showConnect();
     try {
       if (token) {
         await fetch("https://api.dropboxapi.com/2/auth/token/revoke", {
@@ -203,16 +226,7 @@
         });
       }
     } catch (err) {
-      console.warn("Dropbox token revocation failed; clearing this device", err);
-    } finally {
-      LS.del("doitdoit:tokens");
-      state.accessToken = null;
-      state.refreshToken = null;
-      state.data = null;
-      state.rev = null;
-      state.dirty = false;
-      state.conflict = false;
-      showConnect();
+      console.warn("Dropbox token revocation failed; cleared this device", err);
     }
   }
 
@@ -431,77 +445,120 @@
 
   // ── Save (debounced + conflict-aware) ─────────────────────────────
   let saveTimer = null;
-  function queueSave() {
-    state.dirty = true;
-    state.conflict = false;
-    setSync("dirty");
+  let mutationGeneration = 0;
+  let reloadGeneration = 0;
+  let sessionGeneration = 0;
+
+  function preserveRecovery() {
+    const bytes = JSON.stringify(taskStore.recovery(state.data));
+    localStorage.setItem("doitdoit:recovery", bytes);
+    if (localStorage.getItem("doitdoit:recovery") !== bytes) {
+      throw new Error("recovery copy could not be verified");
+    }
+  }
+
+  function scheduleSave(delay = 600) {
     if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(doSave, 600);
+    saveTimer = setTimeout(doSave, delay);
+  }
+
+  function queueSave() {
+    mutationGeneration++;
+    state.dirty = true;
+    setSync(state.conflict ? "error" : "dirty");
+    scheduleSave();
   }
 
   async function doSave() {
-    if (state.interactionActive) { saveTimer = setTimeout(doSave, 400); return; }
-    if (state.saving) { saveTimer = setTimeout(doSave, 400); return; }
+    saveTimer = null;
+    if (!state.dirty || !state.data || !state.accessToken || state.conflict) return;
+    if (state.interactionActive || state.saving) { scheduleSave(400); return; }
+    const generation = mutationGeneration;
+    const session = sessionGeneration;
+    const snapshot = JSON.parse(JSON.stringify(state.data));
+    reloadGeneration++; // Any earlier download has an obsolete revision context.
     state.saving = true;
     setSync("syncing");
     try {
-      const newRev = await taskStore.save(state.data, state.rev);
+      const newRev = await taskStore.save(snapshot, state.rev);
+      if (session !== sessionGeneration) return;
       state.rev = newRev;
-      state.dirty = false;
-      setSync("idle");
+      state.dirty = generation !== mutationGeneration;
+      setSync(state.dirty ? "dirty" : "idle");
+      if (state.dirty) scheduleSave();
     } catch (err) {
+      if (session !== sessionGeneration) return;
+      state.dirty = true;
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = null;
       if (err.conflict) {
         state.conflict = true;
-        LS.set("doitdoit:recovery", taskStore.recovery(state.data));
-        toast("remote changed — local edits kept; use menu to recover or reload", "err");
-        setSync("error");
+        try {
+          preserveRecovery();
+          toast("remote changed — recovery copy kept; use menu to recover or reload", "err");
+        } catch (recoveryError) {
+          toast("local edits retained; recovery failed: " + recoveryError.message, "err");
+        }
       } else {
         console.error(err);
         toast("save failed: " + err.message, "err");
-        setSync("error");
       }
+      setSync("error");
     } finally {
       state.saving = false;
     }
   }
 
   async function reload(opts = {}) {
-    if (state.interactionActive) return;
+    if (state.interactionActive || !state.accessToken) return;
+    if (state.saving) {
+      if (!opts.silent) toast("save in progress — reload after it finishes", "err");
+      return;
+    }
+    if (state.dirty && !opts.force) return;
+    const request = ++reloadGeneration;
+    const generation = mutationGeneration;
+    const session = sessionGeneration;
+    const before = JSON.stringify(state.data);
+    const stale = () => request !== reloadGeneration || generation !== mutationGeneration ||
+      session !== sessionGeneration || state.saving || state.interactionActive ||
+      before !== JSON.stringify(state.data);
     setSync("syncing");
     try {
       const { data, rev } = await taskStore.load();
-      const before = state.data ? JSON.stringify(state.data) : null;
+      if (stale()) {
+        if (request === reloadGeneration && session === sessionGeneration && !state.saving) {
+          setSync(state.conflict ? "error" : state.dirty ? "dirty" : "idle");
+        }
+        return;
+      }
+      // Check recovery immediately before replacement, with no intervening await.
+      if (state.dirty) preserveRecovery();
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = null;
       state.data = data;
       state.rev = rev;
       state.dirty = false;
       state.conflict = false;
       const r1 = rollOverIncompleteTasks(state.data);
       const r2 = pruneOldTasks(state.data);
-      if (r1 || r2) {
-        // persist rollover/prune so the CLI sees a consistent file too
-        state.rev = await taskStore.save(state.data, state.rev);
-      }
-      // Normalize the in-memory view before comparing so an unchanged focus
-      // reload does not rebuild the board just because dated Future tasks moved.
       distributeFutureTasks(state.data, VISIBLE_DAYS);
       if (before !== JSON.stringify(state.data) || !state.rendered) {
         render({ animate: !state.rendered, preserveScroll: state.rendered });
       }
-      setSync("idle");
-      if (!opts.silent) {
-        // subtle confirm only on explicit reloads
-        if (opts.confirm) toast("reloaded", "ok");
-      }
-    } catch (err) {
-      console.error(err);
-      if (err.conflict) {
-        state.dirty = true;
-        state.conflict = true;
-        LS.set("doitdoit:recovery", taskStore.recovery(state.data));
-        toast("remote changed during maintenance — recovery copy kept", "err");
+      if (r1 || r2) {
+        queueSave();
+        // Maintenance uses the same snapshot acknowledgement and serialization.
+        if (saveTimer) clearTimeout(saveTimer);
+        await doSave();
       } else {
-        toast("load failed: " + err.message, "err");
+        setSync("idle");
       }
+      if (session === sessionGeneration && opts.confirm) toast("reloaded", "ok");
+    } catch (err) {
+      if (stale()) return;
+      console.error(err);
+      toast("load failed: " + err.message, "err");
       setSync("error");
     }
   }
@@ -801,7 +858,7 @@
     connectEl.hidden = false;
     board.hidden = true;
     promptBar.hidden = true;
-    menuBtn.hidden = true;
+    menuBtn.hidden = !LS.get("doitdoit:recovery");
     emptyState.hidden = true;
   }
 
@@ -942,7 +999,7 @@
     else if (act === "reload") {
       menuDialog.close();
       if (!state.dirty || confirm("discard unsaved local changes and load Dropbox? a recovery copy will remain available.")) {
-        reload({ confirm: true });
+        reload({ confirm: true, force: true });
       }
     }
     else if (act === "recovery") { menuDialog.close(); downloadRecovery(); }
@@ -954,7 +1011,7 @@
       menuDialog.close();
     }
     else if (act === "logout") {
-      if (confirm("disconnect dropbox? your tasks stay safe in dropbox.")) {
+      if (confirm("disconnect dropbox? unsaved edits will be kept in a local recovery copy.")) {
         void logout();
       }
       menuDialog.close();

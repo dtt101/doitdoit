@@ -10,31 +10,46 @@
       "\\u" + ("0000" + char.charCodeAt(0).toString(16)).slice(-4));
   }
 
+  function revision(meta) {
+    if (!meta || typeof meta.rev !== "string" || !/^[0-9a-f]{9,}$/.test(meta.rev)) {
+      throw new Error("missing or invalid Dropbox revision metadata");
+    }
+    return meta.rev;
+  }
+
   async function downloadOnce(fetchImpl, token, path) {
     const response = await fetchImpl("https://content.dropboxapi.com/2/files/download", {
       method: "POST",
       headers: { Authorization: "Bearer " + token, "Dropbox-API-Arg": asciiJson({ path }) },
     });
     if (response.status === 401) return { unauthorized: true };
-    if (response.status === 409) return { data: {}, rev: null };
+    if (response.status === 409) {
+      const body = await response.json().catch(() => null);
+      if (body?.error?.[".tag"] === "path" && body.error.path?.[".tag"] === "not_found") {
+        return { data: {}, rev: null };
+      }
+      throw new Error("download 409: Dropbox path could not be read");
+    }
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       throw new Error("download " + response.status + " " + text.slice(0, 120));
     }
     const meta = JSON.parse(response.headers.get("Dropbox-API-Result") || "{}");
+    const rev = revision(meta);
     const text = await response.text();
     let data = {};
     if (text.trim()) {
       try { data = JSON.parse(text); }
       catch { throw new Error("dropbox file is not valid JSON"); }
     }
-    return { data, rev: meta.rev || null };
+    return { data, rev };
   }
 
   async function uploadOnce(fetchImpl, token, path, data, rev) {
-    const args = rev
-      ? { path, mode: { ".tag": "update", update: rev }, mute: true, autorename: false }
-      : { path, mode: "overwrite", mute: true, autorename: false };
+    if (rev !== null) revision({ rev });
+    const args = rev !== null
+      ? { path, mode: { ".tag": "update", update: rev }, mute: true, autorename: false, strict_conflict: true }
+      : { path, mode: "add", mute: true, autorename: false, strict_conflict: true };
     const response = await fetchImpl("https://content.dropboxapi.com/2/files/upload", {
       method: "POST",
       headers: {
@@ -54,7 +69,7 @@
       throw new Error("upload " + response.status + " " + text.slice(0, 120));
     }
     const meta = await response.json();
-    return { rev: meta.rev };
+    return { rev: revision(meta) };
   }
 
   function recoverySnapshot(data, filePath, now = new Date()) {
@@ -62,24 +77,33 @@
   }
 
   // The app owns authentication state; the store owns task-file transport.
-  // Keep the existing revision, retry, and recovery behavior during extraction.
   function createJSONStore({ path, fetchImpl, ensureToken, refreshAccessToken, getToken }) {
-    async function load() {
+    // Null is a create-only expectation, allowed only after confirmed absence.
+    let missing = false;
+    let requestGeneration = 0;
+    async function authenticated(request) {
       await ensureToken();
-      const result = await downloadOnce(fetchImpl, getToken(), path);
+      let result = await request();
       if (result.unauthorized) {
         await refreshAccessToken();
-        return load();
+        result = await request();
+        if (result.unauthorized) throw new Error("authentication failed; reconnect required");
       }
       return result;
     }
+    async function load() {
+      const request = ++requestGeneration;
+      const result = await authenticated(() => downloadOnce(fetchImpl, getToken(), path));
+      if (request === requestGeneration) missing = result.rev === null;
+      return result;
+    }
     async function save(data, rev) {
-      await ensureToken();
-      const result = await uploadOnce(fetchImpl, getToken(), path, data, rev);
-      if (result.unauthorized) {
-        await refreshAccessToken();
-        return save(data, rev);
-      }
+      if (rev === null && !missing) throw new Error("load the Dropbox file before creating it");
+      requestGeneration++; // Older downloads cannot change the creation expectation.
+      // Detach before authentication yields, including any refresh/retry.
+      const snapshot = JSON.parse(JSON.stringify(data));
+      const result = await authenticated(() => uploadOnce(fetchImpl, getToken(), path, snapshot, rev));
+      missing = false;
       return result.rev;
     }
     return { load, save, recovery: (data, now) => recoverySnapshot(data, path, now) };

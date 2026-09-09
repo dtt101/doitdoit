@@ -18,14 +18,30 @@ script, or remote font is required.
 - **Data**: a single JSON file at the path you configure (`/config.json` in
   the app's Dropbox scope by default). Reads via `/2/files/download`, writes
   via `/2/files/upload` with `mode: { update: <rev> }` so concurrent changes
-  surface as a recoverable conflict instead of being clobbered.
+  surface as a recoverable conflict instead of being clobbered. Writes use strict
+  conflict checks; a confirmed missing file is created with `mode: "add"` and
+  renaming disabled. Other download errors and invalid revision metadata fail
+  visibly.
 - **Domain logic**: rollover, distribution, ordering, and explicit retention
   behavior live in `domain.js` and are tested with the same lifecycle rules as
   the CLI. Retention defaults to forever; set `retentionDays` to a positive
   value only after making an equivalent explicit choice in the CLI.
 - **Conflicts**: revision conflicts leave local edits intact and store a
   recovery snapshot in browser storage. Use the menu to download it before
-  deliberately reloading the Dropbox version.
+  deliberately reloading the Dropbox version. Further edits keep the conflict
+  visible until explicit reload. Reload and disconnect verify a recovery copy
+  before discarding unsaved edits; storage failures block that discard. Recovery
+  download remains accessible from the menu after disconnect.
+- **In-flight edits**: stale reloads cannot replace newer edits. Each successful
+  upload acknowledges only its captured snapshot; newer edits remain dirty and
+  are scheduled for another save. Rollover/retention saves use the same path.
+  Explicit reload waits for you to retry after an active save finishes.
+- **Failures**: network and authentication errors retain dirty data in memory.
+  Authentication failure does not automatically disconnect or erase it. Use the
+  menu to disconnect and reconnect if required; disconnect first preserves a
+  recovery snapshot. Recovery is a single latest snapshot in this browser profile,
+  not a durable outbox: closing/reloading the page before preserving unsaved edits,
+  clearing site data, or losing the profile can still lose them.
 - **Browser security**: the page uses a restrictive Content Security Policy
   and local assets only. OAuth tokens must remain available to JavaScript
   because this is a serverless client, so a compromised browser profile or

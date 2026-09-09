@@ -3,15 +3,17 @@
 Status: stage 1 specified in [ADR 0001](../docs/storage/0001-immutable-storage.md);
 stage 2 implemented in [storage boundaries](../docs/storage/0002-storage-boundaries.md);
 stage 3 implemented as an [inactive foundation](../docs/storage/0003-immutable-record-storage.md).
-Stage 3 review found follow-up fixes recorded below; implementation is committed
-locally as `58bb03d`, but the findings are not fixed. Stages 4–11 remain planned;
+Stage 3 merged in PR #24 (`10809d9`). Review follow-ups are recorded below;
+the four live web fixes are implemented, and three foundation fixes remain open.
+Stages 4–11 remain planned;
 this document does not itself authorize implementation.
 
-## Review follow-ups — next session
+## Review follow-ups
 
 Reviewed local commit: `58bb03d` (`feat: add immutable storage foundation for
-Linux and macOS`). All seven findings below remain open. Existing Go/web tests
-pass, but targeted reproductions exposed these gaps. This list records work to do;
+Linux and macOS`), subsequently merged in PR #24. Targeted reproductions exposed
+seven gaps despite the existing Go/web suites passing. The four web findings below
+are now addressed; the three Go foundation findings remain open. This list records work to do;
 adding it does not activate storage or authorize publishing a release.
 
 Prioritize the live web data-loss issues, then finish the stage 3 corrections
@@ -22,14 +24,14 @@ stage 3 into migration. Preserve Linux/macOS support and Omarchy coverage.
 
 ### Live web app — repair before immutable storage integration
 
-- [ ] **P1 — Reject stale reload results.** `web/app.js`, `reload`: a download
+- [x] **P1 — Reject stale reload results.** `web/app.js`, `reload`: a download
   started while clean replaces `state.data` and clears `dirty` even when an edit
   occurred during the request. Track mutation/request generations and discard
   stale responses without replacing local edits or their revision context.
   **Acceptance:** defer a download, edit locally, then deliver the old response;
   the edit remains dirty and recoverable. Cover overlapping reload responses too.
 
-- [ ] **P1 — Acknowledge only the version actually uploaded.** `web/app.js`,
+- [x] **P1 — Acknowledge only the version actually uploaded.** `web/app.js`,
   `doSave`: an older upload unconditionally clears `dirty` after a newer edit.
   Capture the uploaded snapshot and mutation generation; retain dirty state and
   schedule the newer version when an edit occurred in flight.
@@ -37,7 +39,7 @@ stage 3 into migration. Preserve Linux/macOS support and Omarchy coverage.
   B remains unsaved until its own successful upload, and focus/periodic reload
   cannot erase B. Cover upload failures and concurrent maintenance saves.
 
-- [ ] **P1 — Keep Dropbox revision protection on every write.** `web/sync.js`,
+- [x] **P1 — Keep Dropbox revision protection on every write.** `web/sync.js`,
   `downloadOnce`/`uploadOnce`: every download HTTP 409 becomes an empty store,
   missing revision metadata is accepted, and a null revision selects unconditional
   `overwrite`. Recognize only an explicit path-not-found response as absence;
@@ -48,7 +50,7 @@ stage 3 into migration. Preserve Linux/macOS support and Omarchy coverage.
   causes a visible conflict, never an overwrite. Update the existing test that
   currently treats any 409 as a missing file.
 
-- [ ] **P2 — Create recovery data before destructive reload.** `web/app.js`,
+- [x] **P2 — Create recovery data before destructive reload.** `web/app.js`,
   reload menu/recovery handling: the confirmation promises a recovery copy,
   but snapshots are currently written only on conflict. After an ordinary network
   failure, forced reload discards edits without creating that copy. Persist the
@@ -58,8 +60,9 @@ stage 3 into migration. Preserve Linux/macOS support and Omarchy coverage.
   of claiming recovery succeeded. Cover dirty-state handling on disconnect and
   authentication failure as well.
 
-These need app-level asynchronous orchestration tests; domain and transport unit
-tests alone did not catch the races. Use fake requests and isolated browser storage,
+Implemented with app-level asynchronous orchestration tests in `web/app.test.js`
+and transport regression tests in `web/sync.test.js`. Domain and transport unit
+tests alone did not catch the original races. Use fake requests and isolated browser storage,
 never real Dropbox credentials or task files. Keep future immutable transport's
 matching requirements in stage 7; these repairs protect the current application.
 
@@ -100,8 +103,9 @@ matching requirements in stage 7; these repairs protect the current application.
 Use focused reproductions as regression tests, then run the existing Go suite,
 vet, race suite, and web suite. Run release inventory/GoReleaser checks when their
 files change. Keep fixes reviewable, record which checkboxes are completed, and
-leave stage 4–9 runtime activation deferred. No fixes from this review have been
-committed or pushed; only the original stage 3/platform work is in `58bb03d`.
+leave stage 4–9 runtime activation deferred. Web verification uses deferred fake
+requests and an isolated DOM/storage adapter running the real app and transport.
+Real Dropbox and browser power-loss testing are not claimed.
 
 ## Outcome
 
