@@ -4,7 +4,8 @@ Status: stage 1 specified in [ADR 0001](../docs/storage/0001-immutable-storage.m
 stage 2 implemented in [storage boundaries](../docs/storage/0002-storage-boundaries.md);
 stage 3 implemented as an [inactive foundation](../docs/storage/0003-immutable-record-storage.md).
 Stage 3 merged in PR #24 (`10809d9`). Review follow-ups are recorded below;
-the four live web fixes are implemented, and three foundation fixes remain open.
+the four live web fixes and three foundation fixes are implemented. Native macOS
+verification of the foundation corrections remains pending CI.
 Stages 4–11 remain planned;
 this document does not itself authorize implementation.
 
@@ -13,8 +14,8 @@ this document does not itself authorize implementation.
 Reviewed local commit: `58bb03d` (`feat: add immutable storage foundation for
 Linux and macOS`), subsequently merged in PR #24. Targeted reproductions exposed
 seven gaps despite the existing Go/web suites passing. The four web findings below
-are now addressed; the three Go foundation findings remain open. This list records work to do;
-adding it does not activate storage or authorize publishing a release.
+are now addressed, as are the three Go foundation findings. These corrections do
+not activate storage or authorize publishing a release.
 
 Prioritize the live web data-loss issues, then finish the stage 3 corrections
 before stage 4 integration. The web issues predate this commit. `outbox.js` is
@@ -68,7 +69,7 @@ matching requirements in stage 7; these repairs protect the current application.
 
 ### Stage 3 — correct the committed foundation before integration
 
-- [ ] **P2 — Strict creation timestamp validation.** `recordstore/record.go`,
+- [x] **P2 — Strict creation timestamp validation.** `recordstore/record.go`,
   `tasks`: `time.Parse(time.RFC3339Nano, ...)` accepts malformed timestamps such
   as offsets `+24:00` and `+01:60`, a one-digit hour, or a comma fractional
   separator. The reviewed JavaScript date parser rejects these same inputs.
@@ -78,7 +79,7 @@ matching requirements in stage 7; these repairs protect the current application.
   legacy values consistently; `Parse`/`Queue` never acknowledge invalid records.
   Reuse these fixtures in stage 4's production JavaScript validator.
 
-- [ ] **P2 — Bound directory durability checks to a safe owned boundary.**
+- [x] **P2 — Bound directory durability checks to a safe owned boundary.**
   `recordstore/store.go`, `syncDirectories`: syncing every ancestor up to `/`
   makes a save fail below a traversable but unreadable directory even when the
   pending directory supports writing and syncing. Establish a durable store-owned
@@ -89,7 +90,7 @@ matching requirements in stage 7; these repairs protect the current application.
   retry, and genuine file/directory sync failures still preserve acknowledged
   operations. Run native Linux/macOS checks.
 
-- [ ] **P2 — Recover pending edits independently of synced-root health.**
+- [x] **P2 — Recover pending edits independently of synced-root health.**
   `recordstore/store.go`, `ScanPending`: validation of both paths returns early
   when the synced root is damaged, hiding intact acknowledged pending records.
   Return valid local pending records alongside the root issue while keeping
@@ -97,6 +98,20 @@ matching requirements in stage 7; these repairs protect the current application.
   **Acceptance:** queue an edit, replace the synced root with a regular file,
   then restart; pending recovery still returns the exact edit and reports the
   root error. The damaged root and local recovery data remain untouched.
+
+Implemented with shared creation timestamp fixtures (Go parser/queue and a
+JavaScript fixture oracle), independent pending recovery, and a fixed directory
+durability boundary. `Root` and `Pending` now require durable existing immediate
+parents; the store creates only its own directories and syncs through those
+parents on every publication/retry. Future integration must provision caller-owned
+parents durably. Regression tests cover traverse-only ancestors, interrupted mkdir,
+fresh concurrent process initialization, retries, and file/directory sync failures.
+The full suite also exposed a duplicate-queue publication race when another flush
+removes a pending entry before verification. A bounded retry reuses the durable
+staging inode, with a deterministic regression test. Full Go tests, vet, race, and
+web tests pass on Linux; recordstore passes 20 repeated runs and its test binaries
+cross-compile for macOS amd64/arm64. Native macOS checks remain for the existing CI
+matrix. Stage 4 production JavaScript validation must reuse the timestamp fixtures.
 
 ### Verification and handoff for these fixes
 

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -18,6 +19,11 @@ func body(n int) []byte {
 func newStore(t *testing.T) Store {
 	t.Helper()
 	dir := t.TempDir()
+	for _, name := range []string{"synced", "local"} {
+		if err := os.Mkdir(filepath.Join(dir, name), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
 	return Store{Root: filepath.Join(dir, "synced", "tasks.json.store"), Pending: filepath.Join(dir, "local", "pending")}
 }
 
@@ -176,6 +182,10 @@ func TestProcessWriter(t *testing.T) {
 	}
 	s := Store{Root: os.Getenv("DOITDOIT_RECORD_TEST_ROOT"), Pending: os.Getenv("DOITDOIT_RECORD_TEST_PENDING")}
 	n, _ := strconv.Atoi(os.Getenv("DOITDOIT_RECORD_TEST_NUMBER"))
+	if mode == "init-crash" {
+		// Stop after directory creation, before any file or directory sync.
+		s.write = func(*os.File, []byte) error { os.Exit(0); return nil }
+	}
 	if _, err := s.Queue(body(n)); err != nil {
 		t.Fatal(err)
 	}
@@ -398,6 +408,9 @@ func TestSymlinkRecordsArePreservedAndNeverFollowed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := ensureDirectory(s.Root); err != nil {
+		t.Fatal(err)
+	}
 	if err := ensureDirectory(filepath.Join(s.Root, "records")); err != nil {
 		t.Fatal(err)
 	}
@@ -420,5 +433,199 @@ func TestSymlinkRecordsArePreservedAndNeverFollowed(t *testing.T) {
 	}
 	if got, err := os.Readlink(target); err != nil || got != outside {
 		t.Fatal("symlink evidence removed")
+	}
+}
+
+func TestPendingRecoverySurvivesDamagedRoot(t *testing.T) {
+	for _, damage := range []string{"file", "symlink", "missing-parent"} {
+		t.Run(damage, func(t *testing.T) {
+			s := newStore(t)
+			id, err := s.Queue(body(1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := os.ReadFile(filepath.Join(s.Pending, id+".json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch damage {
+			case "file":
+				err = os.WriteFile(s.Root, []byte("damaged root"), 0600)
+			case "symlink":
+				err = os.Symlink(t.TempDir(), s.Root)
+			case "missing-parent":
+				err = os.Remove(filepath.Dir(s.Root))
+				if err == nil {
+					err = os.WriteFile(filepath.Dir(s.Root), []byte("damaged ancestor"), 0600)
+				}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			restarted := Store{Root: s.Root, Pending: s.Pending}
+			report := restarted.ScanPending()
+			if len(report.Records) != 1 || report.Records[0].ID != id || !bytes.Equal(report.Records[0].Body, want) || len(report.Issues) != 1 || report.Issues[0].Path != s.Root {
+				t.Fatalf("recovery=%+v", report)
+			}
+			if err := restarted.Flush(); err == nil {
+				t.Fatal("published into damaged root")
+			}
+			got, err := os.ReadFile(filepath.Join(s.Pending, id+".json"))
+			if err != nil || !bytes.Equal(got, want) {
+				t.Fatal("pending evidence changed")
+			}
+			if damage == "file" {
+				got, err := os.ReadFile(s.Root)
+				if err != nil || string(got) != "damaged root" {
+					t.Fatal("root evidence changed")
+				}
+			}
+		})
+	}
+}
+
+func TestDurabilityBoundaryBelowTraverseOnlyAncestor(t *testing.T) {
+	base := t.TempDir()
+	ancestor := filepath.Join(base, "traverse")
+	parent := filepath.Join(ancestor, "owned-parent")
+	if err := os.MkdirAll(parent, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(ancestor, 0100); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(ancestor, 0700) })
+	s := Store{Root: filepath.Join(parent, "store"), Pending: filepath.Join(parent, "pending")}
+	boundary, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.syncDir = func(path string) error {
+		rel, err := filepath.Rel(boundary, path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("sync escaped owned boundary: %s", path)
+		}
+		return syncDirectory(path)
+	}
+	id, err := s.Queue(body(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if report := s.Scan(); len(report.Records) != 1 || report.Records[0].ID != id || len(report.Issues) != 0 {
+		t.Fatalf("report=%+v", report)
+	}
+}
+
+func TestStoreDoesNotCreateCallerOwnedAncestors(t *testing.T) {
+	s := newStore(t)
+	if err := os.Remove(filepath.Dir(s.Pending)); err != nil {
+		t.Fatal(err)
+	}
+	if id, err := s.Queue(body(1)); err == nil || id != "" {
+		t.Fatal("acknowledged without an existing durable parent")
+	}
+	if _, err := os.Stat(filepath.Dir(s.Pending)); !os.IsNotExist(err) {
+		t.Fatal("created an ancestor outside store ownership")
+	}
+}
+
+func TestInterruptedAndConcurrentInitialization(t *testing.T) {
+	for _, interrupted := range []bool{false, true} {
+		t.Run(strconv.FormatBool(interrupted), func(t *testing.T) {
+			s := newStore(t)
+			run := func(mode string, n int) error {
+				cmd := exec.Command(os.Args[0], "-test.run=^TestProcessWriter$")
+				cmd.Env = append(os.Environ(), "DOITDOIT_RECORD_TEST_MODE="+mode, "DOITDOIT_RECORD_TEST_ROOT="+s.Root, "DOITDOIT_RECORD_TEST_PENDING="+s.Pending, "DOITDOIT_RECORD_TEST_NUMBER="+strconv.Itoa(n))
+				out, err := cmd.CombinedOutput()
+				if err != nil {
+					return fmt.Errorf("%w: %s", err, out)
+				}
+				return nil
+			}
+			if interrupted {
+				if err := run("init-crash", 0); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := os.Stat(s.Pending); err != nil {
+					t.Fatal("child did not create pending directory", err)
+				}
+				// The restarted process must still persist the parent's entry for
+				// the pending directory. Existing directories cannot bypass sync.
+				parent, err := filepath.EvalSymlinks(filepath.Dir(s.Pending))
+				if err != nil {
+					t.Fatal(err)
+				}
+				failure := errors.New("parent sync failed after interrupted mkdir")
+				s.syncDir = func(path string) error {
+					if path == parent {
+						return failure
+					}
+					return syncDirectory(path)
+				}
+				if id, err := s.Queue(body(0)); id != "" || !errors.Is(err, failure) {
+					t.Fatalf("acknowledged interrupted directory: %q %v", id, err)
+				}
+				s.syncDir = nil
+			}
+			var wg sync.WaitGroup
+			errs := make(chan error, 6)
+			for i := 0; i < 6; i++ {
+				wg.Add(1)
+				go func(n int) { defer wg.Done(); errs <- run("normal", n) }(i)
+			}
+			wg.Wait()
+			close(errs)
+			for err := range errs {
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := s.Flush(); err != nil {
+				t.Fatal(err)
+			}
+			if report := s.Scan(); len(report.Records) != 6 || len(report.Issues) != 0 {
+				t.Fatalf("initialized records=%+v", report)
+			}
+			if report := s.ScanPending(); len(report.Records) != 0 || len(report.Issues) != 0 {
+				t.Fatalf("pending=%+v", report)
+			}
+		})
+	}
+}
+
+func TestQueueRetriesEntryConsumedDuringPublication(t *testing.T) {
+	s := newStore(t)
+	clean := Store{Root: s.Root, Pending: s.Pending}
+	consumed := false
+	s.publish = func(source, target string) error {
+		if err := publishFile(source, target); err != nil {
+			return err
+		}
+		if !consumed {
+			consumed = true
+			// Another process can finish this same immutable operation before
+			// Queue opens its pending entry to verify the publication.
+			return clean.Flush()
+		}
+		return nil
+	}
+	id, err := s.Queue(body(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !consumed {
+		t.Fatal("did not exercise concurrent pending removal")
+	}
+	if report := clean.ScanPending(); len(report.Records) != 1 || report.Records[0].ID != id || len(report.Issues) != 0 {
+		t.Fatalf("pending=%+v", report)
+	}
+	if err := clean.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if report := clean.Scan(); len(report.Records) != 1 || report.Records[0].ID != id || len(report.Issues) != 0 {
+		t.Fatalf("published=%+v", report)
 	}
 }

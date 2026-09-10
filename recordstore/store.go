@@ -18,7 +18,9 @@ func publishFile(source, target string) error { return os.Link(source, target) }
 
 // Store is deliberately not wired into taskstore.Store until replay/migration.
 // Root is a synced store directory; Pending is a device-local, store-scoped path.
-// No default paths or user files are accessed by constructing a Store.
+// Each path's parent must already exist and be durable; Store creates only its
+// own directories below those boundaries. No default paths or user files are
+// accessed by constructing a Store.
 type Store struct {
 	Root, Pending string
 	// Fault injection stays instance-local so parallel tests/writers cannot race.
@@ -37,34 +39,41 @@ type Report struct {
 	Issues  []Issue
 }
 
-func (s Store) validatePaths() error {
-	if !filepath.IsAbs(s.Root) || !filepath.IsAbs(s.Pending) {
-		return fmt.Errorf("store and pending paths must be absolute")
+func validatePath(path string) (string, error) {
+	if !filepath.IsAbs(path) {
+		return "", fmt.Errorf("store and pending paths must be absolute")
 	}
-	paths := []string{s.Root, s.Pending}
-	for i, path := range paths {
-		if info, err := os.Lstat(path); err == nil && !info.IsDir() {
-			return fmt.Errorf("not a plain directory: %s", path)
-		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		resolved, err := resolvePath(path)
-		if err != nil {
-			return err
-		}
-		paths[i] = resolved
+	if info, err := os.Lstat(path); err == nil && !info.IsDir() {
+		return "", fmt.Errorf("not a plain directory: %s", path)
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
 	}
-	root, pending := paths[0], paths[1]
+	return resolvePath(path)
+}
+
+func separatePaths(root, pending string) error {
 	for _, pair := range [][2]string{{root, pending}, {pending, root}} {
 		rel, err := filepath.Rel(pair[0], pair[1])
 		if err != nil {
-			continue
+			return err
 		}
 		if rel == "." || rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			return fmt.Errorf("store and pending paths must not overlap")
 		}
 	}
 	return nil
+}
+
+func (s Store) validatePaths() error {
+	root, err := validatePath(s.Root)
+	if err != nil {
+		return err
+	}
+	pending, err := validatePath(s.Pending)
+	if err != nil {
+		return err
+	}
+	return separatePaths(root, pending)
 }
 
 // resolvePath resolves existing ancestors as well as paths not created yet.
@@ -116,10 +125,21 @@ func (s Store) Scan() Report {
 // ScanPending exposes acknowledged local edits for replay and recovery after a
 // restart, including edits that could not yet be published to the synced store.
 func (s Store) ScanPending() Report {
-	if err := s.validatePaths(); err != nil {
+	pending, err := validatePath(s.Pending)
+	if err != nil {
 		return Report{Issues: []Issue{{s.Pending, err}}}
 	}
-	return scan(s.Pending)
+	root, rootErr := validatePath(s.Root)
+	if rootErr == nil {
+		if err := separatePaths(root, pending); err != nil {
+			return Report{Issues: []Issue{{s.Pending, err}}}
+		}
+	}
+	report := scan(s.Pending)
+	if rootErr != nil {
+		report.Issues = append(report.Issues, Issue{s.Root, rootErr})
+	}
+	return report
 }
 
 // Flush retries all pending records. Published entries are verified before their
@@ -254,9 +274,6 @@ func ensureDirectory(path string) error {
 	if parent == path {
 		return err
 	}
-	if err := ensureDirectory(parent); err != nil {
-		return err
-	}
 	if err := os.Mkdir(path, 0700); err != nil && !errors.Is(err, os.ErrExist) {
 		return err
 	}
@@ -274,6 +291,22 @@ func ensureDirectory(path string) error {
 func (s Store) put(dir, id string, raw []byte) error {
 	if dir == "" || !validID(id) || len(raw) > MaxBytes {
 		return fmt.Errorf("invalid publication target or size")
+	}
+	// The caller supplies durable existing parents. Create only store-owned
+	// directories; never infer a safe boundary from whichever ancestor happens
+	// to exist during concurrent or interrupted initialization.
+	owned := s.Root
+	if filepath.Clean(dir) == filepath.Clean(s.Pending) {
+		owned = s.Pending
+	}
+	parent := filepath.Dir(owned)
+	if info, err := os.Stat(parent); err != nil {
+		return fmt.Errorf("store parent must already exist: %w", err)
+	} else if !info.IsDir() {
+		return fmt.Errorf("store parent is not a directory: %s", parent)
+	}
+	if err := ensureDirectory(owned); err != nil {
+		return err
 	}
 	if err := ensureDirectory(dir); err != nil {
 		return err
@@ -320,12 +353,22 @@ func (s Store) put(dir, id string, raw []byte) error {
 	if publish == nil {
 		publish = publishFile
 	}
-	err = publish(temp.Name(), target)
-	if err != nil && !errors.Is(err, os.ErrExist) {
-		return err
+	var published *os.File
+	var stored []byte
+	for attempt := 0; ; attempt++ {
+		err = publish(temp.Name(), target)
+		if err != nil && !errors.Is(err, os.ErrExist) {
+			return err
+		}
+		// Existing IDs are successful retries only if exact bytes match. Never
+		// replace. A concurrent Flush can consume a pending entry between the
+		// link and open, so republish our still-durable staging inode and retry.
+		published, stored, err = readPlainFile(target)
+		if filepath.Clean(dir) == filepath.Clean(s.Pending) && errors.Is(err, os.ErrNotExist) && attempt < 8 {
+			continue
+		}
+		break
 	}
-	// Existing IDs are successful retries only if exact bytes match. Never replace.
-	published, stored, err := readPlainFile(target)
 	if published != nil {
 		defer published.Close()
 	}
@@ -348,9 +391,18 @@ func (s Store) put(dir, id string, raw []byte) error {
 }
 
 func (s Store) syncDirectories(path string) error {
-	// Sync the full directory chain, including on retries. Another writer may
-	// have just created an ancestor but not yet persisted its parent's entry.
-	path, err := filepath.EvalSymlinks(path)
+	// Always sync through the owned directory's pre-existing parent, including
+	// retries. Seeing a directory created by another process is not proof its
+	// entry is durable. Ancestors above this explicit boundary belong to callers.
+	owned := s.Root
+	if filepath.Clean(path) == filepath.Clean(s.Pending) {
+		owned = s.Pending
+	}
+	boundary, err := filepath.EvalSymlinks(filepath.Dir(owned))
+	if err != nil {
+		return err
+	}
+	path, err = filepath.EvalSymlinks(path)
 	if err != nil {
 		return err
 	}
@@ -362,9 +414,12 @@ func (s Store) syncDirectories(path string) error {
 		if err := flush(path); err != nil {
 			return fmt.Errorf("sync directory %s: %w", path, err)
 		}
+		if path == boundary {
+			return nil
+		}
 		parent := filepath.Dir(path)
 		if parent == path {
-			return nil
+			return fmt.Errorf("directory is outside durability boundary")
 		}
 		path = parent
 	}

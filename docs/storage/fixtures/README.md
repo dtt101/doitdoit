@@ -32,3 +32,11 @@ These checks run under the existing web CI command and introduce no dependencies
 They do not implement replay or prove convergence. PR 4 must consume these expected
 results in both languages and add shuffled/duplicate delivery, batch conflicts,
 resolution, identity repair, invalid calendar values, and intent-validation cases.
+
+`creation-timestamps.json` contains `{value, valid}` vectors for standalone task
+creation timestamps. Go `Parse` and `Queue` consume them; the JavaScript fixture
+oracle checks calendar and format rules without normalizing the original string.
+Stage 4 must also consume these vectors in the production JavaScript validator.
+Valid legacy spelling, offsets (including negative zero), and fractional precision
+remain unchanged in hashed records. Invalid calendar dates, zone components,
+one-digit hours, comma fractions, and trailing input are rejected.
