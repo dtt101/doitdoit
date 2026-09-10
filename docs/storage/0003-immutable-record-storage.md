@@ -14,6 +14,13 @@ The paths must not overlap, including through existing ancestor symlink aliases.
 Store roots, pending directories, and record entries must not themselves be
 symlinks. Normal ancestor aliases, such as macOS `/var`, are supported.
 
+The immediate parents of `Root` and `Pending` must already exist and be durable.
+They are caller-owned boundaries, such as an existing configured task directory
+and an established local application directory. The store does not recursively
+create those ancestors. Future integration must durably provision any new caller
+parent before using this API; merely calling `MkdirAll` is insufficient. This is
+an internal API contract, not a new user setup requirement.
+
 | API | Contract |
 | --- | --- |
 | `Canonical` | Reject ambiguous JSON and produce ADR 0001 ASCII bytes |
@@ -28,7 +35,12 @@ Publication writes a temporary `0600` file in a sibling `.staging` directory,
 flushes it, and hard-links it into the destination under its content-derived ID.
 The create-only link cannot overwrite another writer's record. An existing ID is
 accepted only when its bytes match exactly. The actual destination file is also
-flushed, including on retries, and the directory chain is synced before success.
+flushed, including on retries, and directories are synced through the respective
+caller-owned parent before success. Ancestors above that fixed boundary are not
+opened, allowing storage below a traversable but unreadable ancestor. Every writer
+syncs the same chain even when another process created the directories or a prior
+process stopped immediately after creation. No initialization marker or the
+observation that a directory exists substitutes for syncing its parent entry.
 New directories use `0700`; successful publication restores `0600` on a matching
 existing file. Staging files are outside discovery namespaces and are never
 interpreted as records. Crash leftovers are retained; automated cleanup is deferred.
@@ -36,7 +48,10 @@ interpreted as records. Crash leftovers are retained; automated cleanup is defer
 There is no shared mutable queue or process-local lock. Multiple CLI/TUI processes
 can use the same pending directory and synced store safely through independent
 immutable files. Discovery tolerates pending entries removed by another successful
-publisher. A crash after publication but before acknowledgement leaves a retry of
+publisher. Queue also retries when another publisher removes a duplicate pending
+entry between its create-only link and verification, using the same synced staging
+inode. Repeated contention is bounded and returns an error without acknowledging
+success. A crash after publication but before acknowledgement leaves a retry of
 the same ID, which verifies the existing record instead of creating a duplicate.
 
 A failed `Queue` must not be announced as saved. Failure can leave a complete but
@@ -49,8 +64,10 @@ has uploaded the record.
 
 Malformed, unsupported, noncanonical, mismatched-ID, unexpected-name, symlink,
 and special-file entries are reported and preserved. Scans also return valid
-history alongside those issues. Flush stops when its initial discovery sees an
-issue in either namespace. External folder changes can arrive after a scan; this
+history alongside those issues. Pending recovery validates and reads its local
+path independently: a damaged synced root is returned as an issue alongside intact
+pending records. It does not repair or modify either path. Flush stops when its
+initial discovery sees an issue in either namespace. External folder changes can arrive after a scan; this
 is not a distributed lock or a guarantee of a complete remote view. Concurrent
 replacement of store directories or manual deletion of immutable history is
 outside the publication protocol.
@@ -65,6 +82,10 @@ Backups of the whole store remain necessary for folder deletion or device loss.
 Standalone validation covers known schemas/kinds/fields, required field types,
 actual calendar dates and timestamps, Unicode scalar strings, sorted unique IDs,
 unique task IDs within snapshots/batches, and resolve/undo field requirements.
+Creation timestamps require strict RFC3339 spelling and component ranges, while
+retaining the original offset, fractional precision, and spelling in record bytes.
+The shared `creation-timestamps.json` vectors exercise the Go parser/queue and a
+JavaScript fixture oracle; production JavaScript validation remains stage 4 work.
 Origin local day must agree with its timestamp and UTC offset. Record bodies use
 content-derived identities; directory order and modification times have no role.
 
@@ -135,6 +156,14 @@ GoReleaser validation, and Linux/macOS cross-compilation for amd64 and arm64.
 The concurrent subprocess/restart test also passed 20 consecutive runs.
 Native macOS execution is covered by the CI matrix and still needs that remote
 run. A live Omarchy theme-switch smoke test remains a release check.
+
+Review corrections now cover strict creation timestamps, pending recovery with a
+file/symlink/damaged ancestor at the synced root, traverse-only ancestors, a fixed
+durability boundary, and fresh concurrent initialization after an interrupted
+mkdir. The full Go suite, vet, race suite, and web suite pass locally with Go 1.27.1;
+the recordstore suite also passes 20 consecutive runs. Recordstore test binaries
+cross-compile for macOS amd64 and arm64. Native macOS execution of these additions
+still requires the existing CI matrix; local execution is Linux only.
 
 Next: stage 4 deterministic replay and retained conflict state in Go and plain
 JavaScript, using shuffled/duplicated shared fixtures. No storage activation or

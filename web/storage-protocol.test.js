@@ -142,3 +142,19 @@ test("scenario delivery and expected alternatives name existing records", () => 
     }
   }
 });
+
+// Fixture oracle only; stage 4 must reuse these vectors in its production
+// validator. Do not use Date.parse alone: it can normalize invalid calendar days.
+function validCreationTimestamp(value) {
+  const match = /^([0-9]{4})-([0-9]{2})-([0-9]{2})T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$/.exec(value);
+  if (!match || match[0] !== value) return false;
+  const [year, month, day] = match.slice(1, 4).map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1];
+}
+
+test("shared creation timestamps preserve legacy precision and reject malformed dates", () => {
+  const cases = JSON.parse(fs.readFileSync(path.join(root, "fixtures/creation-timestamps.json"), "utf8"));
+  for (const { value, valid } of cases) assert.equal(validCreationTimestamp(value), valid, JSON.stringify(value));
+});

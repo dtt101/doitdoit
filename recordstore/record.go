@@ -193,7 +193,7 @@ func tasks(raw json.RawMessage, seen map[string]bool, nonempty bool) error {
 		if string(task["completed"]) != "true" && string(task["completed"]) != "false" {
 			return fmt.Errorf("invalid completion state")
 		}
-		if _, err := time.Parse(time.RFC3339Nano, str(task["created_at"])); err != nil {
+		if !creationTimestamp(str(task["created_at"])) {
 			return fmt.Errorf("invalid creation timestamp")
 		}
 		if due := str(task["due_date"]); due != "" && !date(due) {
@@ -201,6 +201,18 @@ func tasks(raw json.RawMessage, seen map[string]bool, nonempty bool) error {
 		}
 	}
 	return nil
+}
+
+// Keep the original spelling for hashing; parsing alone accepts non-RFC3339
+// forms (comma fractions, one-digit hours, and overflowing zone components).
+var creationFormat = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.[0-9]+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$`)
+
+func creationTimestamp(value string) bool {
+	if !creationFormat.MatchString(value) {
+		return false
+	}
+	_, err := time.Parse(time.RFC3339Nano, value)
+	return err == nil
 }
 
 var hex32 = regexp.MustCompile(`^[a-f0-9]{32}$`)

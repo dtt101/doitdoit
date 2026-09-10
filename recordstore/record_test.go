@@ -182,3 +182,52 @@ func TestRejectOversizedRecordBeforeQueueWrites(t *testing.T) {
 		t.Fatal("oversized input touched pending storage")
 	}
 }
+
+func TestSharedCreationTimestamps(t *testing.T) {
+	raw, err := os.ReadFile("../docs/storage/fixtures/creation-timestamps.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		Value string `json:"value"`
+		Valid bool   `json:"valid"`
+	}
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range cases {
+		t.Run(tc.Value, func(t *testing.T) {
+			encoded, _ := json.Marshal(tc.Value)
+			raw := []byte(strings.Replace(string(body(1)), `"2026-09-07T12:00:00Z"`, string(encoded), 1))
+			record, err := Parse(raw)
+			if (err == nil) != tc.Valid {
+				t.Fatalf("Parse valid=%v: %v", tc.Valid, err)
+			}
+			s := newStore(t)
+			id, err := s.Queue(raw)
+			if (err == nil) != tc.Valid {
+				t.Fatalf("Queue valid=%v: %v", tc.Valid, err)
+			}
+			if !tc.Valid {
+				if id != "" {
+					t.Fatal("invalid record acknowledged")
+				}
+				if _, err := os.Stat(s.Pending); !os.IsNotExist(err) {
+					t.Fatal("invalid record touched pending storage")
+				}
+				return
+			}
+			var saved struct {
+				Snapshot map[string][]struct {
+					CreatedAt string `json:"created_at"`
+				} `json:"snapshot"`
+			}
+			if err := json.Unmarshal(record.Body, &saved); err != nil {
+				t.Fatal(err)
+			}
+			if saved.Snapshot["Future"][0].CreatedAt != tc.Value {
+				t.Fatal("timestamp spelling changed")
+			}
+		})
+	}
+}
