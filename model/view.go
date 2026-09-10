@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -557,10 +558,23 @@ func (m Model) renderHelpOverlay(background string) string {
 }
 
 func (m Model) errorView() string {
-	if m.Err == nil {
+	if m.Err == nil && m.saveErr == nil {
 		return ""
 	}
-	content := lipgloss.NewStyle().Foreground(styles.Warning).Render(fmt.Sprintf("Error: %v", m.Err))
+	message := fmt.Sprintf("Error: %v", m.Err)
+	if m.saveErr != nil {
+		message = "Changes not saved — draft kept only in this session."
+		detail := m.Err
+		if detail == nil {
+			detail = m.saveErr
+		}
+		if errors.Is(detail, ErrDataConflict) {
+			message += " File changed externally."
+		} else {
+			message += fmt.Sprintf(" %v", detail)
+		}
+	}
+	content := lipgloss.NewStyle().Foreground(styles.Warning).Render(message)
 	if m.width <= 0 || m.height <= 0 {
 		return content
 	}

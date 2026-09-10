@@ -12,8 +12,8 @@ import (
 )
 
 // The data file can also be written by the web app, so the TUI polls it and
-// reloads external changes in the background. Polling mtime+size is preferred
-// over inotify-style watching because saves (ours and Dropbox's) are atomic
+// reloads external changes in the background. Polling is preferred over
+// inode watching because saves (ours and Dropbox's) are atomic
 // renames, which replace the inode a watcher would hold.
 const reloadInterval = 5 * time.Second
 
@@ -59,18 +59,22 @@ func checkStore(store taskstore.Store, lastHash [sha256.Size]byte, lastExists bo
 }
 
 func (m Model) handleReloadTick() (tea.Model, tea.Cmd) {
-	// Never reload under the user's feet: skip while typing a task or date,
-	// or while a move is pending.
-	if m.State != Browsing {
+	if !m.canReload() {
 		return m, reloadTick()
 	}
 	return m, checkStore(m.dataStore(), m.dataHash, m.dataExists)
 }
 
+// Check both before reading and when the result arrives: input or a failed
+// save may have happened while the background check was in flight.
+func (m Model) canReload() bool {
+	return m.State == Browsing && m.saveErr == nil
+}
+
 func (m Model) handleDataFileChecked(msg dataFileCheckedMsg) (tea.Model, tea.Cmd) {
 	// Unchanged, stale (we persisted while the check was in flight), or a
 	// transient read/parse failure: keep current state and check again later.
-	if msg.data == nil || msg.err != nil || !msg.modTime.After(m.dataModTime) {
+	if !m.canReload() || msg.data == nil || msg.err != nil || !msg.modTime.After(m.dataModTime) {
 		return m, reloadTick()
 	}
 
