@@ -1,7 +1,8 @@
 # Stage 2: legacy storage boundaries
 
 Status: implemented, with the existing JSON adapter as the only runtime format.
-This stage does not activate ADR 0001, create sidecars, or migrate user data.
+The immutable backend experiment has been removed. JSON remains authoritative;
+no sidecars or migration are required.
 
 ## Go boundary
 
@@ -38,7 +39,8 @@ Configuration commands retain their public move functions and sentinel errors.
 
 Configuration/theme files and OAuth token storage are not task-file adapters.
 First-run path selection still checks whether the configured file exists and keeps
-its current prompts. Changing that flow is part of automatic migration in stage 5.
+its current prompts. The revised [storage plan](../../plans/major-version-storage.md)
+retains this boundary and JSON format; automatic migration has been cancelled.
 
 ## Snapshot consistency
 
