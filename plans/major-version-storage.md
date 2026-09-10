@@ -7,7 +7,8 @@ Stage 3 merged in PR #24 (`10809d9`). Review follow-ups are recorded below;
 the four live web fixes and three foundation fixes are implemented. Native macOS
 verification of the foundation corrections remains pending CI.
 Stage 4 is implemented as [inactive deterministic replay](../docs/storage/0004-deterministic-replay.md).
-Stages 5–11 remain planned; runtime activation remains deferred.
+Stage 5 is implemented as [inactive restartable migration](../docs/storage/0005-automatic-migration.md).
+Stages 6–11 remain planned; runtime activation remains deferred.
 
 ## Review follow-ups
 
@@ -291,6 +292,14 @@ shared fixtures under shuffled and duplicated delivery, including concurrent
 ordering, delete/edit, missing parents, and device clock skew.
 
 ### PR 5 — Implement automatic migration and late legacy reconciliation
+
+Delivered: configured-anchor discovery, exact device-local recovery journal,
+ordered backup/import/activation publication, readback verification, persistent
+activation witnesses, restart/retry, and conservative late legacy observation.
+Pending local edits remain intact; missing witnessed storage blocks fallback.
+Pure JavaScript migration preparation matches Go identities and repair metadata;
+actual browser durability/transport remains stage 7. No runtime migration call or
+normal setup prompt is introduced. [Contracts and verification](../docs/storage/0005-automatic-migration.md).
 
 Build the restartable import, recovery copy, activation, and legacy observation
 protocol from PR 1. Wire discovery to the existing configured path. Preserve all

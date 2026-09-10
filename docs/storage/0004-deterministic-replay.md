@@ -140,3 +140,7 @@ existing CI matrix;
 Linux and macOS runtime activation, migration fault injection, provider integration,
 large-history performance, and the live Omarchy theme-switch check remain later
 stage/release gates.
+
+Stage 5 now builds on these pure APIs with [restartable desktop migration and
+legacy observation](0005-automatic-migration.md). Runtime integration remains
+inactive, and the replay limits above still apply.
