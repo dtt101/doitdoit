@@ -165,6 +165,6 @@ the recordstore suite also passes 20 consecutive runs. Recordstore test binaries
 cross-compile for macOS amd64 and arm64. Native macOS execution of these additions
 still requires the existing CI matrix; local execution is Linux only.
 
-Next: stage 4 deterministic replay and retained conflict state in Go and plain
-JavaScript, using shuffled/duplicated shared fixtures. No storage activation or
-release tag is part of this stage.
+Stage 4 now supplies [deterministic replay and retained conflict state](0004-deterministic-replay.md)
+in Go and plain JavaScript, including pure backup normalization and shared
+shuffled/duplicate fixtures. Migration and runtime activation remain deferred.

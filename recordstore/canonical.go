@@ -1,5 +1,5 @@
 // Package recordstore implements the inactive immutable storage foundation.
-// It does not replay task operations or migrate legacy task files.
+// Replay is pure and inactive; no runtime migration or adapter is enabled.
 package recordstore
 
 import (
@@ -71,7 +71,12 @@ func Canonical(raw []byte) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-func readValue(d *json.Decoder) (any, error) {
+func readValue(d *json.Decoder) (any, error) { return readValueDepth(d, 0) }
+
+func readValueDepth(d *json.Decoder, depth int) (any, error) {
+	if depth >= 256 {
+		return nil, fmt.Errorf("JSON nesting limit")
+	}
 	token, err := d.Token()
 	if err != nil {
 		return nil, err
@@ -89,7 +94,7 @@ func readValue(d *json.Decoder) (any, error) {
 				if _, exists := object[name]; exists {
 					return nil, fmt.Errorf("duplicate key %q", name)
 				}
-				child, err := readValue(d)
+				child, err := readValueDepth(d, depth+1)
 				if err != nil {
 					return nil, err
 				}
@@ -100,7 +105,7 @@ func readValue(d *json.Decoder) (any, error) {
 		}
 		array := []any{}
 		for d.More() {
-			child, err := readValue(d)
+			child, err := readValueDepth(d, depth+1)
 			if err != nil {
 				return nil, err
 			}

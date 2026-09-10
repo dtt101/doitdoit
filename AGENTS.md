@@ -35,8 +35,8 @@ These instructions apply to the whole repository.
   optional Omarchy theme hook.
 - `taskstore/`: task data/lifecycle, storage interface, legacy JSON persistence,
   capture, conservative merging, and storage moves; independent of Bubble Tea.
-- `recordstore/`: inactive immutable record validation, publication, and durable
-  pending edits; replay and migration are deferred.
+- `recordstore/`: inactive immutable validation/publication, durable pending edits,
+  and deterministic replay; migration and runtime integration are deferred.
 - `model/`: Bubble Tea state/update logic, storage orchestration, reload/conflict
   handling, rendering, and compatibility wrappers for the task-data API.
 - `styles/`: embedded themes and Omarchy theme resolution.

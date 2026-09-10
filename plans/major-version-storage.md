@@ -6,8 +6,8 @@ stage 3 implemented as an [inactive foundation](../docs/storage/0003-immutable-r
 Stage 3 merged in PR #24 (`10809d9`). Review follow-ups are recorded below;
 the four live web fixes and three foundation fixes are implemented. Native macOS
 verification of the foundation corrections remains pending CI.
-Stages 4–11 remain planned;
-this document does not itself authorize implementation.
+Stage 4 is implemented as [inactive deterministic replay](../docs/storage/0004-deterministic-replay.md).
+Stages 5–11 remain planned; runtime activation remains deferred.
 
 ## Review follow-ups
 
@@ -271,6 +271,14 @@ restart/retry, and simultaneous CLI/TUI writes do not lose acknowledged operatio
 Cleared browser storage remains a documented limit for edits not yet uploaded.
 
 ### PR 4 — Implement deterministic replay and conflict state
+
+Delivered: pure Go and plain JavaScript validation/replay, causal pending state,
+atomic bucket conflict components with common state and exact alternatives,
+intent checks, inverse undo, and component-scoped resolution. Both clients consume
+expanded shared fixtures with shuffled/duplicated delivery; direct cross-client
+checks compare complete views. Pure legacy normalization verifies activation backups
+and deterministic ID repair; automatic migration and application wiring remain
+stages 5–7. [Contracts and limitations](../docs/storage/0004-deterministic-replay.md).
 
 Implement create, edit, completion/reopen, move, ordering, delete, and resolution
 in both languages. Retain unresolved alternatives as data. Preserve existing
