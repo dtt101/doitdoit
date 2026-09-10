@@ -1,408 +1,147 @@
-# Major-version storage, sync, and history plan
-
-Status: stage 1 specified in [ADR 0001](../docs/storage/0001-immutable-storage.md);
-stage 2 implemented in [storage boundaries](../docs/storage/0002-storage-boundaries.md);
-stage 3 implemented as an [inactive foundation](../docs/storage/0003-immutable-record-storage.md).
-Stage 3 merged in PR #24 (`10809d9`). Review follow-ups are recorded below;
-the four live web fixes and three foundation fixes are implemented. Native macOS
-verification of the foundation corrections remains pending CI.
-Stage 4 is implemented as [inactive deterministic replay](../docs/storage/0004-deterministic-replay.md).
-Stages 5–11 remain planned; runtime activation remains deferred.
-
-## Review follow-ups
-
-Reviewed local commit: `58bb03d` (`feat: add immutable storage foundation for
-Linux and macOS`), subsequently merged in PR #24. Targeted reproductions exposed
-seven gaps despite the existing Go/web suites passing. The four web findings below
-are now addressed, as are the three Go foundation findings. These corrections do
-not activate storage or authorize publishing a release.
-
-Prioritize the live web data-loss issues, then finish the stage 3 corrections
-before stage 4 integration. The web issues predate this commit. `outbox.js` is
-intentionally inactive, so it does not protect the current JSON save flow. Fix the
-live JSON client without waiting for immutable transport or silently expanding
-stage 3 into migration. Preserve Linux/macOS support and Omarchy coverage.
-
-### Live web app — repair before immutable storage integration
-
-- [x] **P1 — Reject stale reload results.** `web/app.js`, `reload`: a download
-  started while clean replaces `state.data` and clears `dirty` even when an edit
-  occurred during the request. Track mutation/request generations and discard
-  stale responses without replacing local edits or their revision context.
-  **Acceptance:** defer a download, edit locally, then deliver the old response;
-  the edit remains dirty and recoverable. Cover overlapping reload responses too.
-
-- [x] **P1 — Acknowledge only the version actually uploaded.** `web/app.js`,
-  `doSave`: an older upload unconditionally clears `dirty` after a newer edit.
-  Capture the uploaded snapshot and mutation generation; retain dirty state and
-  schedule the newer version when an edit occurred in flight.
-  **Acceptance:** upload edit A, make edit B before A completes, then finish A;
-  B remains unsaved until its own successful upload, and focus/periodic reload
-  cannot erase B. Cover upload failures and concurrent maintenance saves.
-
-- [x] **P1 — Keep Dropbox revision protection on every write.** `web/sync.js`,
-  `downloadOnce`/`uploadOnce`: every download HTTP 409 becomes an empty store,
-  missing revision metadata is accepted, and a null revision selects unconditional
-  `overwrite`. Recognize only an explicit path-not-found response as absence;
-  validate successful download/upload revision metadata; use create-only mode
-  for a confirmed new file and revision-checked updates for existing files.
-  **Acceptance:** other 409 errors and missing/malformed metadata fail without
-  clearing state; a file created by another client between not-found and upload
-  causes a visible conflict, never an overwrite. Update the existing test that
-  currently treats any 409 as a missing file.
-
-- [x] **P2 — Create recovery data before destructive reload.** `web/app.js`,
-  reload menu/recovery handling: the confirmation promises a recovery copy,
-  but snapshots are currently written only on conflict. After an ordinary network
-  failure, forced reload discards edits without creating that copy. Persist the
-  current unsaved snapshot before replacement and handle storage failures visibly.
-  **Acceptance:** after a failed upload, forced reload preserves the exact local
-  edit in downloadable recovery; quota/write failure blocks replacement instead
-  of claiming recovery succeeded. Cover dirty-state handling on disconnect and
-  authentication failure as well.
-
-Implemented with app-level asynchronous orchestration tests in `web/app.test.js`
-and transport regression tests in `web/sync.test.js`. Domain and transport unit
-tests alone did not catch the original races. Use fake requests and isolated browser storage,
-never real Dropbox credentials or task files. Keep future immutable transport's
-matching requirements in stage 7; these repairs protect the current application.
-
-### Stage 3 — correct the committed foundation before integration
-
-- [x] **P2 — Strict creation timestamp validation.** `recordstore/record.go`,
-  `tasks`: `time.Parse(time.RFC3339Nano, ...)` accepts malformed timestamps such
-  as offsets `+24:00` and `+01:60`, a one-digit hour, or a comma fractional
-  separator. The reviewed JavaScript date parser rejects these same inputs.
-  Add explicit format/range validation while preserving valid legacy timestamp
-  spelling, precision, and offsets.
-  **Acceptance:** shared fixtures reject these malformed values and accept valid
-  legacy values consistently; `Parse`/`Queue` never acknowledge invalid records.
-  Reuse these fixtures in stage 4's production JavaScript validator.
-
-- [x] **P2 — Bound directory durability checks to a safe owned boundary.**
-  `recordstore/store.go`, `syncDirectories`: syncing every ancestor up to `/`
-  makes a save fail below a traversable but unreadable directory even when the
-  pending directory supports writing and syncing. Establish a durable store-owned
-  boundary with process-safe initialization; do not merely ignore sync failures
-  or reintroduce the interrupted-directory-creation race fixed in stage 3.
-  **Acceptance:** a usable store below a traverse-only ancestor accepts and
-  persists edits; directory-creation interruption, concurrent initialization,
-  retry, and genuine file/directory sync failures still preserve acknowledged
-  operations. Run native Linux/macOS checks.
-
-- [x] **P2 — Recover pending edits independently of synced-root health.**
-  `recordstore/store.go`, `ScanPending`: validation of both paths returns early
-  when the synced root is damaged, hiding intact acknowledged pending records.
-  Return valid local pending records alongside the root issue while keeping
-  publication blocked until its destination is safe.
-  **Acceptance:** queue an edit, replace the synced root with a regular file,
-  then restart; pending recovery still returns the exact edit and reports the
-  root error. The damaged root and local recovery data remain untouched.
-
-Implemented with shared creation timestamp fixtures (Go parser/queue and a
-JavaScript fixture oracle), independent pending recovery, and a fixed directory
-durability boundary. `Root` and `Pending` now require durable existing immediate
-parents; the store creates only its own directories and syncs through those
-parents on every publication/retry. Future integration must provision caller-owned
-parents durably. Regression tests cover traverse-only ancestors, interrupted mkdir,
-fresh concurrent process initialization, retries, and file/directory sync failures.
-The full suite also exposed a duplicate-queue publication race when another flush
-removes a pending entry before verification. A bounded retry reuses the durable
-staging inode, with a deterministic regression test. Full Go tests, vet, race, and
-web tests pass on Linux; recordstore passes 20 repeated runs and its test binaries
-cross-compile for macOS amd64/arm64. Native macOS checks remain for the existing CI
-matrix. Stage 4 production JavaScript validation must reuse the timestamp fixtures.
-
-### Verification and handoff for these fixes
-
-Use focused reproductions as regression tests, then run the existing Go suite,
-vet, race suite, and web suite. Run release inventory/GoReleaser checks when their
-files change. Keep fixes reviewable, record which checkboxes are completed, and
-leave stage 4–9 runtime activation deferred. Web verification uses deferred fake
-requests and an isolated DOM/storage adapter running the real app and transport.
-Real Dropbox and browser power-loss testing are not claimed.
-
-## Outcome
-
-Keep doitdoit local-first, free to distribute, and usable without an application
-backend. Replace competing whole-file saves with immutable changes transported
-through user-owned storage. Build reliable recovery and history into that model.
-
-Ship activation in the next major release (determine the actual version from
-release tags when preparing it). Storage schema versions are separate from the
-application release version. Do not create or push a release tag without an
-explicit request.
-
-An ordinary upgrade must be invisible: no migration wizard, new path to choose,
-manual export/import, repeated setup, or task workflow changes. Existing storage
-configuration, themes, retention choices, task IDs, dates, order, and completion
-state carry forward automatically. The web client discovers the same storage
-using its existing Dropbox path and authorization where permissions allow it.
-Surface actionable errors and genuine conflicts; invisibility must never mean
-silently dropping edits or claiming migration/sync succeeded prematurely.
-
-## Architecture and constraints
-
-- Desktop support is Linux and macOS only (`amd64` and `arm64`), with Omarchy
-  a first-class Linux platform. Preserve theme detection, opt-in live updates,
-  and managed hook safety. Do not implement Windows storage or release fallbacks.
-
-- Retain the configured JSON path as the discovery anchor. A deterministic
-  sibling directory, `<configured-path>.store/`, holds versioned immutable records.
-  ADR 0001 specifies naming and Dropbox discovery.
-- Each operation or atomic operation batch has a globally unique ID, task IDs,
-  schema version, operation payload, causal predecessors, and origin metadata.
-  Timestamps support history; they do not decide causality or conflict winners.
-  Device identities live locally, never in shared machine configuration.
-- Publish complete records atomically under unique names. Never have multiple
-  clients append to a shared log. Deduplicate by record ID/content, validate
-  records, and wait for missing dependencies before applying dependent changes.
-  Directory arrival order and modification times are not an ordering protocol.
-- Implement equivalent deterministic replay in Go and plain JavaScript, with
-  shared fixtures. A local cache is disposable and rebuildable. Start without
-  SQLite or additional runtime dependencies; revisit only with measured need.
-- Preserve independent changes and expose competing intentions. Deletion is an
-  explicit record, undo creates a compensating operation, and resolution refers
-  to the conflicting versions. Never silently use last-write-wins for task text.
-- Keep atomic replacement, local `0600` files, backups, external-change checks,
-  and Linux/macOS filesystem durability. Immutable history supplements
-  backups; it is not a substitute for recovering an accidentally deleted folder.
-- The web companion remains static and self-contained; OAuth credentials remain
-  browser-local. No hosted coordination service is introduced.
-- Sync remains eventual. Immutable records reduce overwrite loss but cannot
-  force Dropbox/Drive to deliver promptly. Generic folder mode can report local
-  durability and observed changes, not remote upload confirmation.
-
-## Migration contract: release-blocking requirements
-
-1. Read and validate legacy bytes before any maintenance or rollover. Preserve
-   an exact durable recovery copy before activating new storage. Invalid or
-   inaccessible input must not become an empty task collection.
-2. Import through an idempotent, restartable protocol with content-derived
-   snapshot/import identities. Equivalent snapshots imported on two offline
-   devices must not duplicate tasks or history. Define canonicalization identically
-   in Go and JavaScript, including dates and legacy ID repair.
-3. Support different snapshots migrating independently. Never choose the first
-   device as an implicitly authoritative winner. Preserve both snapshots and
-   reconcile using known baselines; ambiguous differences become visible
-   conflicts. Absence from a stale snapshot is not proof of deletion.
-4. Publish and verify all required import records before an activation record.
-   A synced activation record may arrive before its dependencies: readers must
-   wait safely, retain pending edits, and resume without re-importing stale data.
-   Cache or configuration updates cannot be the sole evidence of completion.
-5. Preserve the legacy JSON as a compatibility input during rollout. New storage
-   becomes authoritative; do not continuously overwrite that input with a
-   generated projection. Observe later legacy writes and preserve them as
-   immutable snapshots. Reconcile deltas against a known imported baseline;
-   request resolution when the baseline or intent is ambiguous. Test conflict
-   copies as well as changes to the original path, without importing unrelated
-   files by filename guesswork.
-6. Be explicit about the limit: an unmodified old client cannot understand new
-   records, and folder sync can hide or overwrite edits before any new client
-   observes them. Promise zero-setup migration for upgraded clients, not seamless
-   indefinite bidirectional operation with old binaries. Release notes instruct
-   users to update their devices; the application requires no migration choices.
-   Do not claim guaranteed recovery of unobserved old-client writes.
-7. JSON export remains available in the existing date-bucket format, including
-   `Future`, at an explicit destination. It is not a second writable authority.
-   Provide recovery/downgrade export containing the latest state; restoring the
-   original backup alone would discard post-migration changes.
-8. Imported completion times and prior activity remain unknown. Do not fabricate
-   historical events from current state or count imports as newly completed work.
-
-## PR stages
-
-Each stage is independently reviewable and includes its own behavioral tests.
-PRs 1–8 can land behind an internal development gate with legacy storage still
-the public default. Do not expose a migration toggle as a normal user workflow.
-PR 9 activates the complete path only for the major release. PRs 10–11 can ship
-as later minor releases without delaying the storage reliability improvement.
-
-### PR 1 — Specify the storage and compatibility protocol
-
-Delivered: [ADR](../docs/storage/0001-immutable-storage.md),
-[record schema](../docs/storage/record.schema.json), and
-[shared examples](../docs/storage/fixtures/README.md). Runtime activation is deferred.
-The protocol conservatively imports unequal late legacy snapshots as alternatives:
-remembering a prior local hash does not prove a remote writer's baseline.
-
-Deliver an architecture decision and versioned record schema covering task
-identity, imports, causality, atomic batches, order, moves, delete/edit conflicts,
-resolution, unknown schema handling, discovery, and activation. Define the
-legacy-import bridge and cache boundary above precisely enough for two separate
-implementations. Include a compatibility matrix for old/new TUI and web clients.
-
-Acceptance: shared example fixtures cover concurrent imports of equal and unequal
-snapshots, missing dependencies, and late legacy writes. Resolve the inability
-to guarantee mixed-version sync explicitly before coding around it.
-
-### PR 2 — Extract storage boundaries without changing behavior
-
-Delivered: `taskstore.Store` and its legacy JSON adapter; task operations independent
-of Bubble Tea; TUI/CLI/reload/maintenance/move integration; and the web JSON store
-boundary. [Write-path inventory and verification](../docs/storage/0002-storage-boundaries.md).
-Paired snapshots retain the revision of data actually loaded/saved through an
-intervening write. No new storage format or migration is activated.
-
-Separate task operations and storage from Bubble Tea state. Route startup, CLI
-capture, reload, maintenance, and configuration moves through a common boundary.
-Keep the existing JSON adapter and current same-bucket conflict behavior intact.
-Introduce an equivalent boundary in the web client.
-
-Acceptance: existing lifecycle and persistence tests pass unchanged; every write
-path is accounted for and uses the existing safeguards.
-
-### PR 3 — Add immutable record storage and durable pending edits
-
-Delivered: standalone `recordstore` validation, immutable local publication, durable
-pending inspection/retry, exact-byte backups, and an account/store-scoped browser
-outbox. [Contracts, verification, and limitations](../docs/storage/0003-immutable-record-storage.md).
-These components remain inactive; replay, migration, and application wiring are
-later stages. The existing JSON adapter remains the public default.
-
-Implement local publication, validation, discovery, retry, and record deduplication.
-Serialize or safely coordinate multiple processes on one machine. Ignore incomplete
-temporary writes; preserve malformed records and report errors without discarding
-valid history. Persist pending edits before acknowledging success. Add the web's
-durable browser outbox with explicit quota/write failure handling.
-
-Acceptance: interrupted writes, disk full, permission failures, duplicate delivery,
-restart/retry, and simultaneous CLI/TUI writes do not lose acknowledged operations.
-Cleared browser storage remains a documented limit for edits not yet uploaded.
-
-### PR 4 — Implement deterministic replay and conflict state
-
-Delivered: pure Go and plain JavaScript validation/replay, causal pending state,
-atomic bucket conflict components with common state and exact alternatives,
-intent checks, inverse undo, and component-scoped resolution. Both clients consume
-expanded shared fixtures with shuffled/duplicated delivery; direct cross-client
-checks compare complete views. Pure legacy normalization verifies activation backups
-and deterministic ID repair; automatic migration and application wiring remain
-stages 5–7. [Contracts and limitations](../docs/storage/0004-deterministic-replay.md).
-
-Implement create, edit, completion/reopen, move, ordering, delete, and resolution
-in both languages. Retain unresolved alternatives as data. Preserve existing
-same-bucket conflict rules initially; finer automatic merges are PR 10's explicit
-policy change. Model multi-task commands as atomic batches. Rebuild disposable
-caches from complete records and retain pending dependencies.
-
-Acceptance: both implementations produce the same state and conflict set for
-shared fixtures under shuffled and duplicated delivery, including concurrent
-ordering, delete/edit, missing parents, and device clock skew.
-
-### PR 5 — Implement automatic migration and late legacy reconciliation
-
-Build the restartable import, recovery copy, activation, and legacy observation
-protocol from PR 1. Wire discovery to the existing configured path. Preserve all
-configuration and data semantics, including undecided retention. Handle duplicate
-or missing legacy task IDs deterministically and visibly preserve ambiguous data.
-
-Acceptance: fault injection at every migration boundary, two offline migrations,
-unequal initial snapshots, late old-client edits, missing sidecars, and repeat
-launches satisfy the migration contract. No successful migration needs a prompt.
-
-### PR 6 — Integrate TUI, CLI, reload, and storage management
-
-Connect the new adapter behind the internal gate. Keep existing controls and
-normal display stable. Make reload reconcile incoming operations without losing
-typing or pending mutations. Add actionable conflict recovery using retained
-versions. Extend `config move` to move/verify the entire store and recovery data,
-with destination collision protection and recoverable interruption handling.
-Provide explicit JSON export and cache rebuild/recovery commands.
-
-Acceptance: add/edit/complete/move/delete/undo survive restart and external arrival;
-move and export preserve the latest state. Normal upgrade startup has no extra
-setup. No path accidentally falls back to writing only the old snapshot.
-
-### PR 7 — Integrate static web and Dropbox transport
-
-Use immutable create-only uploads with verified ID/content matches on retries;
-list records with pagination and reconcile downloads/outbox items. Distinguish a
-missing file from authorization, malformed response, and other API errors.
-Complete browser migration from the configured legacy path. Handle stale cached
-web code, incompatible schemas, expired sessions, and offline restart. Scope local
-state to the account/store so switching accounts cannot replay another outbox.
-
-Acceptance: browser/TUI integration scenarios preserve edits through disconnection,
-token expiry, retry, duplicate uploads, and partial downloads. Existing authorization
-works where its scopes permit; any required scope change is identified before
-release. Web assets and service-worker updates cannot mix incompatible versions.
-
-### PR 8 — Add trustworthy history and preserve retention semantics
-
-Expose a basic task history/recovery view using recorded actions. Record completion
-and reopening times plus the local calendar context needed for daily reporting.
-Exclude imports, retries, and automatic maintenance from user activity counts.
-Apply existing retention choices to task visibility and define historical data
-retention separately: do not silently turn a pruning preference into indefinite
-retention of deleted task contents.
-
-Acceptance: existing retention behavior remains consistent across clients; unknown
-imported history stays unknown. Define and test an explicit history purge path
-and its stale-device behavior. If safe physical purge cannot fit this PR, settle
-and communicate that limitation before activation; do not imply hiding is erasure.
-Defer automatic distributed log compaction until it has a proven protocol.
-
-### PR 9 — Validate and activate the next major release
-
-Run the migration/sync matrix end to end against representative legacy fixtures,
-including large histories and different local time zones. Exercise recovery after
-lost caches, missing records, and partial folder restoration. Set a startup/replay
-performance budget from measured fixtures and meet it before activation.
-
-Enable new storage by default together with the compatible web release. Coordinate
-web deployment so it does not silently migrate production stores before the major
-CLI release is available. Update README storage, backup, downgrade, retention,
-compatibility, and release documentation. Keep GoReleaser/workflows consistent if
-release behavior changes. No new application version file or packaging system.
-
-Acceptance: zero-setup upgrade and fresh install pass on supported platforms;
-recovery is demonstrated; known mixed-version limits are documented. Release
-preparation is separate from authorization to create/push an annotated tag.
-
-### PR 10 — Narrow conflicts to actual competing task changes
-
-Explicitly revise the documented same-bucket conflict policy and corresponding
-project guidance. Merge independent task changes and independent fields only when
-the protocol proves compatibility. Continue surfacing competing titles, delete/edit,
-and ambiguous ordering. Provide a task-focused resolution view in both clients.
-
-Acceptance: concurrent edits to separate tasks in Today combine; genuine competing
-intentions retain both versions until resolved. Resolution converges on every client.
-
-### PR 11 — Add stats and reduce maintenance writes
-
-Build completion trends, completion latency, and rescheduling counts from real
-events, with defined reopen/recomplete counting and calendar rules. Separate user
-rescheduling from automatic rollover. Evaluate derived rollover as a separate
-behavior change within this PR only if small; otherwise split it into another PR.
-Preserve original scheduling history and keep CLI/web lifecycle behavior aligned.
-
-Acceptance: totals remain identical under replay/duplicate delivery, imports do
-not inflate activity, and time-zone changes have documented behavior. Derived
-rollover, if included, preserves existing Today/Future presentation and ordering.
-
-## Verification and handoff gates
-
-- For Go changes: format with `gofmt`, run `go test -count=1 ./...` and
-  `go vet ./...`; persistence, reload, concurrency, and release changes also run
-  `go test -race ./...`. Use the pinned mise toolchain. CI and release gates run
-  on Linux and macOS;
-  include the isolated Omarchy integration tests and a live theme-switch smoke
-  test before release.
-- Run `node --test web/*.test.js` for web changes and shared protocol fixtures.
-  Add behavior-focused cross-client/fault scenarios, not only unit replay tests.
-- Tests use temporary stores and isolated HOME; never access the real task file
-  or `~/.doitdoit_config.json`. Keep generated binaries/caches/dist out of changes.
-- Update third-party notices and run release inventory checks if dependencies,
-  embedded themes, or distributed files change. Run `go mod tidy` only when
-  imports/dependencies require it.
-- Each PR records its delivered behavior, validation, compatibility impact, and
-  remaining limitations. No stage removes recovery material as incidental cleanup.
-
-## Deferred work
-
-Automatic distributed compaction, additional direct provider integrations, a hosted
-service, CRDT library adoption, SQLite analytics caches, and indefinite old-client
-bidirectional compatibility are outside the initial major release. Optimize file
-counts only after measuring them; safe immutable batching can precede compaction.
+# Simple file storage and visible conflict resolution
+
+Status: accepted direction, replacing the immutable-storage roadmap on 2026-09-10.
+The existing JSON file remains authoritative. No storage migration is planned.
+This document replaces the former eleven-stage plan; its stages 6–11 are cancelled.
+
+## Goal
+
+Keep doitdoit a task manager backed by one readable, user-owned JSON file. Retain
+the storage abstraction and the safety improvements already made. Focus the next
+work on showing users which tasks differ when a save conflicts, preserving their
+work, and helping them choose the result.
+
+The current TUI, CLI, and static web application still use JSON storage. The
+immutable publication, replay, and migration libraries have not been activated.
+Restoring this direction requires no conversion of users' task data.
+
+## Keep
+
+- `taskstore.Store`, the JSON adapter, task lifecycle code independent of Bubble
+  Tea, and the existing CLI/TUI/configuration storage boundaries.
+- The existing JSON fields, task IDs, local-calendar date buckets, `Future`,
+  configured paths, and normal file backup and scripting workflows.
+- Atomic replacement, owner-only permissions, `.bak` creation, loaded-data/revision
+  pairing, external-change checks, and safe storage moves.
+- Conservative three-way merging: independent buckets can merge; differing edits
+  to the same bucket remain visible conflicts. Identical results can converge.
+- Live web fixes for stale reloads, edits made during uploads, Dropbox revision
+  protection, and recovery before destructive reload. Keep their regression tests.
+- Existing retention, rollover, ordering, undo, themes, Omarchy integration, and
+  Linux/macOS support. The web companion stays static and self-contained.
+
+## Retire the experimental backend
+
+The unused record-store package, migration adapter, browser protocol/outbox
+modules, and their dedicated tests, schema, fixtures, and design documents have
+been removed from this checkout. Git history preserves the abandoned design.
+The live JSON fixes, UI changes, storage abstraction, and platform improvements
+are retained. Stage 5 PR #28 has been closed. Its migration implementation is abandoned.
+
+No user files or recovery data are removed. Do not activate migration or create
+record-store sidecars. Any future storage-format change needs a new decision.
+
+## Storage contract and limits
+
+There is one authoritative task JSON file, with the existing backup behavior.
+There is no operation log, causal graph, background migration, distributed history,
+new server, or replacement database. Local recovery copies are unsaved drafts,
+not a second synced authority.
+
+Desktop saves compare the loaded revision before atomic replacement. Dropbox web
+saves use revision-checked updates and create-only writes for confirmed absence.
+These protections must remain. Generic folder sync still has a check-to-replace
+race and can hide simultaneous offline writes before the app observes them.
+A conflict interface can resolve versions the app has seen; it cannot recover an
+unobserved version or guarantee that a sync provider has uploaded a local save.
+Document this limit without claiming lossless multi-device synchronization.
+
+## Conflict experience
+
+When another version prevents a save, retain the user's local edits and show a
+persistent message: “Changes need review — your edits have not been saved.” Offer
+“Review changes”. Never replace the draft with the incoming file automatically.
+Pause automatic writes while review is pending; allow navigation and explicit
+recovery export. The first version can pause editing during review to keep the
+interaction predictable.
+
+The review compares three snapshots: the version originally loaded, the local
+draft, and the latest observed file. Label the two current alternatives “Your
+changes” and “File version”; do not infer an author, device, or which is newer
+from timestamps. Show the original value on demand.
+
+- Group differences by date bucket and show task titles, completion state, date,
+  and ordering changes. Mark additions and removals explicitly.
+- Match tasks by existing stable IDs across buckets so moves can be explained.
+  Missing or duplicate IDs fall back to a whole-bucket comparison; do not guess
+  identity from titles or silently repair IDs as part of review.
+- Highlight competing changes to the same task and delete/edit cases. Also show
+  separate-task changes within a conflicted bucket, explaining that both copies
+  changed that list. Displaying task differences does not change the merge policy.
+- For the first release, let users choose “Use your list” or “Use file list” for
+  each conflicted bucket, with an exact preview. Review connected source and
+  destination buckets together for cross-bucket moves; block any result that
+  duplicates a task ID or silently loses a moved task.
+- Offer recovery export before discarding alternatives. Cancellation retains the
+  draft and conflict state. Do not introduce automatic field merging or a “keep
+  both” action that can silently duplicate tasks.
+
+Once choices are complete, show the resulting task lists and a single “Save
+resolved changes” action. Preserve independent bucket changes in that result.
+Save against the revision actually reviewed. If the file changes again, retain
+the draft and choices as recovery material, refresh the comparison, and require
+review of affected choices. Never force an unconditional overwrite or silently
+apply a decision to different input.
+
+Keep this interaction equivalent in TUI and web, using their existing controls.
+The CLI should fail clearly on unresolved conflict, preserve any prepared unsaved
+change before exit, and give a concrete recovery path; it must not open an
+unexpected interactive resolver or report success for an unsaved task.
+
+## Minimal implementation
+
+Use a pure comparison function alongside the existing `taskstore.Merge` boundary.
+Its output contains affected buckets, task differences, and the three snapshots
+needed for review. Keep UI state outside the JSON schema. Resolution produces a
+normal candidate snapshot which passes existing validation and conditional save.
+No event replay, action-intent validator, or cross-device conflict metadata is
+needed. Use small shared examples for equivalent Go/web comparison behavior.
+
+Persist a recoverable draft before a destructive action or before reporting that
+unsaved work is recoverable across restart. Scope recovery to the exact store
+(and Dropbox account for web); retain the baseline, local draft, and relevant
+revision context. Reuse the existing web recovery mechanism where practical.
+Desktop recovery must use atomic writes and `0600` permissions in an application
+local location. Fail visibly if recovery storage fails; retain the in-memory draft
+and block its replacement. Clear recovery only after confirmed save or explicit
+discard. Do not build a general queue, history browser, or background retry engine.
+
+## Delivery plan
+
+1. **Establish the JSON baseline (cleanup implemented in this checkout).** Remove
+   the inactive backend while retaining storage boundaries, live safety fixes,
+   and UI changes. Run the existing tests and verify runtime references continue
+   to use JSON. Existing task files require no migration.
+2. **Describe conflicts and preserve drafts.** Add pure conflict comparison and
+   the minimal scoped recovery snapshot. Keep the existing merge behavior. Test
+   same-task edits, different tasks in one bucket, delete/edit, moves, ordering,
+   ambiguous IDs, recovery failure, and restart with an unsaved draft.
+3. **Ship conflict review in TUI and web.** Add visible markers, comparison,
+   bucket choices, preview, cancellation, export, and revision-checked resolution.
+   Include CLI conflict recovery. Test a second external edit during review and
+   during save, failed saves, and switching files/accounts with pending recovery.
+
+Each PR must deliver a small reviewable behavior. Do not grow these steps into a
+new storage protocol. Task-level manual selection or narrower automatic merging
+can be proposed later with concrete user examples and a separate policy review.
+Cross-device history, analytics, and immutable snapshots are outside this plan.
+
+## Verification
+
+Use temporary files, isolated HOME, and fake Dropbox/browser storage; never test
+against real task files or credentials. Run Go tests, vet, and race checks for
+persistence/reload changes, plus web tests for web changes. CI must pass on Linux
+and macOS, preserving isolated Omarchy coverage. Verify that existing JSON fixtures
+round-trip unchanged and a conflict never silently overwrites either observed
+alternative. Exercise the complete review/save interaction, not just comparison
+helpers. Record known sync limits in the user documentation.
