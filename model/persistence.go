@@ -37,12 +37,15 @@ func (m *Model) recordRevision(revision taskstore.Revision) {
 
 func (m *Model) persist() {
 	revision, err := m.dataStore().Save(taskstore.Data(m.Data), &taskstore.Revision{Hash: m.dataHash, Exists: m.dataExists})
-	if errors.Is(err, ErrDataConflict) {
+	if errors.Is(err, ErrDataConflict) && m.saveErr == nil {
+		// Once a save fails, undo may contain unsaved edits rather than the
+		// loaded baseline. It is no longer safe to use it for a merge retry.
 		err = m.retryPersistOnFreshData()
 	} else if err == nil {
 		m.recordRevision(revision)
 	}
 	m.Err = err
+	m.saveErr = err
 }
 
 // Retry one conservative three-way merge. Competing edits in the same bucket

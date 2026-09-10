@@ -74,6 +74,9 @@ type Model struct {
 
 	// Error handling
 	Err error
+	// A failed save leaves a draft in memory. Input validation and cancellation
+	// may clear Err, but only a successful save may make this draft reloadable.
+	saveErr error
 
 	// Last successful move, delete, or undo; cleared when task history changes.
 	feedback string
