@@ -18,7 +18,7 @@ type Record struct {
 func digest(body []byte) string { sum := sha256.Sum256(body); return hex.EncodeToString(sum[:]) }
 
 // Parse validates a standalone protocol-1 record. Graph-dependent intent,
-// activation/backup matching, and conflict validation belong to replay (PR 4).
+// activation/backup matching, and conflict validation are performed by Replay.
 func Parse(body []byte) (Record, error) {
 	canonical, err := Canonical(body)
 	if err != nil {
