@@ -8,7 +8,12 @@ import (
 )
 
 func TestMigrationUsesConfiguredAnchorWithoutChangingSettings(t *testing.T) {
-	home := t.TempDir()
+	// Exercise ancestor aliases on every platform, including macOS /var paths.
+	realHome := t.TempDir()
+	home := filepath.Join(t.TempDir(), "home")
+	if err := os.Symlink(realHome, home); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("HOME", home)
 	for _, dir := range []string{"Tasks", "local"} {
 		if err := os.Mkdir(filepath.Join(home, dir), 0700); err != nil {
@@ -36,7 +41,12 @@ func TestMigrationUsesConfiguredAnchorWithoutChangingSettings(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if m.Anchor != anchor || m.Store.Root != anchor+".store" {
+			resolvedParent, err := filepath.EvalSymlinks(filepath.Dir(anchor))
+			if err != nil {
+				t.Fatal(err)
+			}
+			resolvedAnchor := filepath.Join(resolvedParent, filepath.Base(anchor))
+			if m.Anchor != resolvedAnchor || m.Store.Root != resolvedAnchor+".store" {
 				t.Fatalf("wrong discovery: %+v", m)
 			}
 			result, err := m.Run()
