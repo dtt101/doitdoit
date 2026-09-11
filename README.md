@@ -200,6 +200,7 @@ it. Save errors appear instead of a success confirmation.
 | `T` | Toggle Today-only focus; return to Today |
 | `a` | Add a task to the selected day or Future |
 | `e` | Edit the selected task title |
+| `n` | Open plain-text notes for the selected task |
 | `Space` or `Enter` | Toggle completion |
 | `m` | Move or schedule the selected task |
 | `m` then `d` | Set or change the selected task’s date |
@@ -212,6 +213,21 @@ it. Save errors appear instead of a success confirmation.
 | `f` | Toggle the Future view |
 | `?` | Open keyboard shortcuts |
 | `q` or `Ctrl+c` | Quit |
+
+Press `n` on a highlighted task to edit its notes. Enter inserts a new line;
+`Esc` closes the editor and automatically saves your changes. If saving fails,
+the editor stays open with your notes intact. Press `Esc` to retry; after closing,
+`u` undoes the notes change. Tasks with notes show a
+small `▤` symbol beside the title. `Tab` switches between editing and a link view, where
+HTTP/HTTPS URLs are clickable using your terminal's usual link gesture (often
+Ctrl-click or Cmd-click). Link activation requires a terminal with OSC 8 support.
+Scroll the link view with arrows or Page Up/Page Down.
+
+Inside notes, use your terminal's usual text selection, copy, and paste shortcuts.
+Pasted text is inserted at the cursor, preserving line breaks. Notes are plain
+text, without Markdown. They are saved in the optional JSON `notes` field and
+follow the task through moves and rollover. The web companion preserves notes
+when editing or syncing tasks, but its UI does not yet display or edit them.
 
 After pressing `m`, choose a destination:
 

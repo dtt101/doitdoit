@@ -87,3 +87,13 @@ test("invalid dates and titles are rejected", () => {
   assert.ok(Domain.parseAddInput("", { kind: "today" }, 3, now).error);
   assert.ok(Domain.storageTarget({ kind: "custom", date: "2026-02-30" }, 3, now).error);
 });
+
+test("notes survive web edits, moves, rollover and JSON round trips", () => {
+  const notes = "Words café\nhttps://example.com";
+  const data = { Future: [{ id: "notes", title: "Original", notes, completed: false }] };
+  Domain.editTask(data, "Future", "notes", "Edited", { key: "2026-08-25", due: "2026-08-25" });
+  Domain.rollOverIncompleteTasks(data, now);
+  Domain.toggleTask(data, "2026-08-26", "notes");
+  Domain.moveTask(data, "2026-08-26", "notes", "Future", 0);
+  assert.equal(JSON.parse(JSON.stringify(data)).Future[0].notes, notes);
+});

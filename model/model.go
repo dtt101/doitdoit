@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -20,6 +21,7 @@ const (
 	Editing
 	ChoosingMoveDestination
 	SettingMoveDate
+	EditingNotes
 )
 
 // moveTarget is either an exact calendar date or the undated Future list.
@@ -54,8 +56,13 @@ type Model struct {
 	RowIdx int
 
 	// State
-	State     State
-	TextInput textinput.Model
+	State        State
+	TextInput    textinput.Model
+	notesInput   textarea.Model
+	notesKey     string
+	notesRow     int
+	notesPreview bool
+	notesOffset  int
 
 	// Cache for date keys to keep order stable during a frame
 	dateKeys []string

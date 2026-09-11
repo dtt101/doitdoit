@@ -13,7 +13,9 @@ import (
 
 func (m Model) View() tea.View {
 	content := ""
-	if m.terminalTooSmall() {
+	if m.State == EditingNotes {
+		content = m.notesOverlay()
+	} else if m.terminalTooSmall() {
 		content = fitLines("Window too small.\nResize to at least 24 x 10.\nq quit", m.width, m.height)
 	} else {
 		columns := m.renderColumns(m.visibleKeys())
@@ -25,6 +27,9 @@ func (m Model) View() tea.View {
 	view := tea.NewView(content)
 	view.AltScreen = true
 	view.MouseMode = tea.MouseModeCellMotion
+	if m.State == EditingNotes {
+		view.MouseMode = tea.MouseModeNone
+	}
 	return view
 }
 
@@ -214,6 +219,9 @@ func (m Model) taskView(task Task, selected bool, width int) string {
 	if m.ShowFuture && task.DueDate != "" {
 		title += fmt.Sprintf(" (%s)", task.DueDate)
 	}
+	if task.Notes != "" {
+		title += " " + lipgloss.NewStyle().Foreground(styles.Subtle).Bold(false).Strikethrough(false).Render("▤")
+	}
 	lines := strings.Split(lipgloss.Wrap(style.Width(max(1, width-4)).Render(title), max(1, width-4), ""), "\n")
 	for i, line := range lines {
 		prefix := "    "
@@ -321,7 +329,7 @@ func (m Model) footerHelpItems() []helpItem {
 			viewToggle = "days"
 			moveLabel = "move/date"
 		}
-		items := []helpItem{{"a", "add"}, {"space", "complete"}, {"m", moveLabel}, {"f", viewToggle}, {"?", "help"}}
+		items := []helpItem{{"a", "add"}, {"space", "complete"}, {"n", "notes"}, {"m", moveLabel}, {"f", viewToggle}, {"?", "help"}}
 		if (m.height == 0 || m.height >= 16) && (m.width == 0 || m.width >= 36) {
 			focusToggle := "focus today"
 			if m.FocusToday {
@@ -426,6 +434,7 @@ func (m Model) helpItems() []helpItem {
 		{navigation, "navigate"},
 		{"a", "add task"},
 		{"e", "edit task"},
+		{"n", "task notes"},
 		{"space / enter", "toggle task"},
 		{"d", "delete task"},
 		{"y", "copy task"},

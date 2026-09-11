@@ -24,6 +24,7 @@ func ParseDate(s string) (time.Time, error) {
 type Task struct {
 	ID        string    `json:"id"`
 	Title     string    `json:"title"`
+	Notes     string    `json:"notes,omitempty"`
 	Completed bool      `json:"completed"`
 	CreatedAt time.Time `json:"created_at"`
 	DueDate   string    `json:"due_date,omitempty"`

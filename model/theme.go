@@ -21,5 +21,8 @@ func (m Model) handleThemeReload(msg ThemeReloadMsg) (tea.Model, tea.Cmd) {
 	textInputStyles.Blurred.Text = textInputStyles.Focused.Text
 	textInputStyles.Blurred.Placeholder = textInputStyles.Focused.Placeholder
 	m.TextInput.SetStyles(textInputStyles)
+	if m.State == EditingNotes {
+		m.styleNotes()
+	}
 	return m, nil
 }

@@ -79,6 +79,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.State == EditingNotes {
+		switch msg.(type) {
+		case tea.WindowSizeMsg, dateTickMsg, reloadTickMsg, dataFileCheckedMsg, ThemeReloadMsg,
+			taskAnimationMsg, copyFlashDoneMsg, brandAnimationMsg:
+		default:
+			return m.updateNotes(msg)
+		}
+	}
 	switch msg := msg.(type) {
 	case taskAnimationMsg:
 		if msg.id != m.taskAnimationID || m.taskFrame == 0 {
@@ -138,6 +146,9 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
+	if m.State == EditingNotes {
+		return m, dateTick()
+	}
 	todayKey := time.Now().Format(dateLayout)
 	dayChanged := m.todayKey != "" && m.todayKey != todayKey
 	if m.todayKey == "" && (len(m.dateKeys) == 0 || m.firstVisibleDate().Before(startOfDay(time.Now()))) {
@@ -176,6 +187,9 @@ func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
 func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
 	m.height = msg.Height
+	if m.State == EditingNotes {
+		m.resizeNotes()
+	}
 	return m, nil
 }
 
@@ -319,6 +333,8 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.State = Adding
 		m.configureTextInput("New task...")
 		return m, nil
+	case "n":
+		return m.openNotes()
 	case "e":
 		currentKey := m.getCurrentKey()
 		if m.hasSelectedTask() {
