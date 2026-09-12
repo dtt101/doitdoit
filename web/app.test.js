@@ -24,7 +24,7 @@ function app() {
   function element() {
     const listeners = new Map();
     return {
-      dataset: {}, style: { setProperty() {} }, value: "", hidden: false, children: [],
+      attributes: {}, dataset: {}, style: { setProperty() {} }, value: "", hidden: false, children: [],
       classList: { add() {}, remove() {}, toggle() {} },
       addEventListener(name, fn) { const list = listeners.get(name) || []; list.push(fn); listeners.set(name, list); },
       emit(name, event = {}) { return Promise.all((listeners.get(name) || []).map(fn => fn({ preventDefault() {}, ...event }))); },
@@ -32,7 +32,8 @@ function app() {
       appendChild(item) { this.children.push(item); if (item.textContent) messages.push(item.textContent); },
       replaceChildren(...items) { this.children = items; },
       querySelectorAll() { return []; }, querySelector() { return element(); }, closest() { return element(); },
-      setAttribute() {}, removeAttribute() {}, remove() {}, focus() {}, close() {},
+      setAttribute(name, value) { this.attributes[name] = value; },
+      removeAttribute(name) { delete this.attributes[name]; }, remove() {}, focus() {}, close() {},
       getBoundingClientRect() { return { left: 0, right: 100, top: 0, bottom: 100, height: 10 }; },
       click() { downloads.push(this); },
     };
@@ -242,4 +243,60 @@ test("reload arriving during an active interaction leaves the board and revision
   a.reply(0, snapshot("remote")); await loading;
   assert.equal(a.state.data.Future[0].title, "base"); assert.equal(a.state.rev, "aaaaaaaaa");
   assert.equal(a.get("sync-indicator").dataset.state, "idle");
+});
+
+
+test("capture keeps invalid input for correction and clears a successful capture", async () => {
+  const a = app();
+  const original = copy(a.state.data);
+  a.get("add-input").value = "!not-a-date book the dentist";
+  await a.get("add-form").emit("submit");
+  assert.equal(a.get("add-input").value, "!not-a-date book the dentist");
+  assert.deepEqual(copy(a.state.data), original);
+  assert.equal(a.state.dirty, false);
+  assert.ok(a.messages.some(message => message.includes("unknown target")));
+  await a.edit("book the dentist");
+  assert.equal(a.get("add-input").value, "");
+  assert.ok(a.state.data.Future.some(task => task.title === "book the dentist"));
+});
+
+test("sync status explains unsaved, syncing, saved and conflict states", async () => {
+  const a = app();
+  const indicator = a.get("sync-indicator");
+  assert.equal(indicator.textContent, "Not connected");
+  await a.edit("first");
+  assert.equal(indicator.textContent, "Unsaved");
+  const saving = a.save(); await tick();
+  assert.equal(indicator.textContent, "Syncing…");
+  a.reply(0, { rev: "bbbbbbbbb" }); await saving;
+  assert.equal(indicator.textContent, "Synced");
+  await a.edit("second");
+  const conflict = a.save(); await tick();
+  a.reply(1, {}, undefined, 409); await conflict;
+  assert.equal(indicator.textContent, "Conflict");
+  await a.edit("third");
+  assert.equal(indicator.textContent, "Conflict");
+});
+
+test("Future shows scheduled dates and exposes completion state without changing task data", async () => {
+  const a = app();
+  a.state.data = { Future: [
+    { id: "scheduled", title: "Book a trip", due_date: "2099-06-21", completed: false },
+    { id: "idea", title: "Learn pottery", completed: true },
+  ] };
+  await a.edit("another idea");
+  const sections = a.get("board").children[0].children;
+  assert.equal(sections[0].children[0].children[0].textContent, "Today");
+  assert.equal(sections[1].children[0].children[0].textContent, "Tomorrow");
+  const future = sections.find(section => section.dataset.key === "Future");
+  const rows = future.children[1].children;
+  const scheduled = rows.find(row => row.dataset.id === "scheduled");
+  const idea = rows.find(row => row.dataset.id === "idea");
+  assert.equal(scheduled.children[0].attributes["aria-pressed"], "false");
+  assert.equal(idea.children[0].attributes["aria-pressed"], "true");
+  assert.equal(scheduled.children[1].children[0].className, "task__due");
+  assert.match(scheduled.children[1].children[0].textContent, /2099/);
+  assert.match(scheduled.children[1].attributes["aria-label"], /scheduled for/);
+  assert.equal(idea.children[1].children.length, 0);
+  assert.equal(a.state.data.Future.find(task => task.id === "scheduled").due_date, "2099-06-21");
 });

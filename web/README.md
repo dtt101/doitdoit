@@ -112,7 +112,12 @@ Use the controls under the bottom prompt to add a task to Today, Tomorrow,
 Future, or a date from the device's date picker. Dates beyond the visible
 five-day window stay in Future until they come into range.
 
-The web companion keeps a flat Future list. The terminal app groups Future into
+The web companion uses a Tokyo Night inspired palette, a compact bottom composer,
+and 44px touch targets. Pinch-to-zoom stays available. Sync status is written out
+(Synced, Syncing, Unsaved, Sync failed, or Conflict). Invalid capture shortcuts
+leave your text in the composer so you can correct them.
+
+The web companion keeps a flat Future list with dates shown on scheduled tasks. The terminal app groups Future into
 Ideas, Scheduled, and Completed, and restricts reordering to the displayed
 section. This presentation difference does not change the shared task format
 or rollover and scheduling rules.
@@ -121,7 +126,7 @@ or rollover and scheduling rules.
 - Drag the `≡` handle to reorder a task or move it between visible days and
   Future. With a keyboard, focus the handle, press Space or Enter to pick up,
   use the arrow keys to move, then press Space or Enter again to save.
-- Tap `[ ]` to toggle completion. Delete is available inside the task editor.
+- Tap the checkbox to toggle completion. Delete is available inside the task editor.
 
 The original optional `!target` prefixes remain available as shortcuts and
 override the selected date control:
@@ -145,7 +150,7 @@ web/
 ├── icons/          # Android, favicon, and Apple home-screen icons
 ├── index.html      # local-only shell and Content Security Policy
 ├── manifest.webmanifest # install metadata and maskable icon declarations
-├── style.css       # the entire visual identity (CRT amber on warm black)
+├── style.css       # Tokyo Night colours, responsive layout, and touch controls
 ├── app.js          # OAuth, mutations, accessible DOM rendering
 ├── domain.js       # shared/testable task lifecycle rules
 ├── sync.js         # shared/testable Dropbox revision operations
@@ -153,6 +158,13 @@ web/
 ├── config.js       # public Dropbox app key + file path
 └── .nojekyll       # tell GitHub Pages not to run Jekyll
 ```
+
+The original double-check icon has an editable source in `icons/icon.svg`.
+The PNG variants are rendered from that source (48px favicon, 180px Apple,
+192px and 512px Android, and 1024px master). The solid background and central
+mark support maskable home-screen icons. To regenerate a size locally with
+librsvg, run `rsvg-convert -w 192 -h 192 icons/icon.svg -o icons/icon-192.png`.
+This is an asset-authoring step only; the app still has no build step.
 
 ## Troubleshooting
 

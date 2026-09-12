@@ -91,3 +91,10 @@ Omarchy is MIT licensed. Copyright (c) David Heinemeier Hansson.
 
 The MIT License terms printed above apply to these palettes. Omarchy is
 available at <https://github.com/basecamp/omarchy>.
+
+## Web companion palette
+
+The Tokyo Night inspired colours in `web/style.css` also use values from the
+bundled Omarchy Tokyo Night palette. The Omarchy attribution and MIT terms
+above apply. The double-check artwork in `web/icons/icon.svg` and its PNG
+variants are original project assets, with no additional third-party artwork.

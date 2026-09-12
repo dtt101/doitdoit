@@ -64,25 +64,13 @@
   let editTarget = { kind: "today", date: "" };
 
   // ── Sync indicator ─────────────────────────────────────────────────
-  const SPIN = ["[|]", "[/]", "[-]", "[\\]"];
-  let spinIdx = 0;
-  let spinTimer = null;
   function setSync(stateName, label) {
     syncEl.dataset.state = stateName;
-    if (stateName === "syncing") {
-      if (!spinTimer) {
-        spinTimer = setInterval(() => {
-          spinIdx = (spinIdx + 1) % SPIN.length;
-          syncEl.textContent = SPIN[spinIdx];
-        }, 100);
-      }
-      return;
-    }
-    if (spinTimer) { clearInterval(spinTimer); spinTimer = null; }
     syncEl.textContent = label || (
-      stateName === "idle" ? "[ok]" :
-      stateName === "dirty" ? "[~~]" :
-      stateName === "error" ? "[!!]" : "[??]"
+      stateName === "idle" ? "Synced" :
+      stateName === "syncing" ? "Syncing…" :
+      stateName === "dirty" ? "Unsaved" :
+      stateName === "error" ? (state.conflict ? "Conflict" : "Sync failed") : "Not connected"
     );
   }
 
@@ -254,7 +242,8 @@
   const parseAddInput = (raw, target) => Domain.parseAddInput(raw, target, VISIBLE_DAYS);
 
   // ── View model + render ───────────────────────────────────────────
-  const DOW = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+  const weekdayFormat = new Intl.DateTimeFormat(undefined, { weekday: "long" });
+  const dayDateFormat = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
 
   function buildView(data) {
     const today = new Date();
@@ -265,14 +254,11 @@
       const d = addDays(today, i);
       const key = todayStr(d);
       const tasks = (data[key] || []).map(toTaskView.bind(null, key));
-      const label = i === 0
-        ? `${DOW[d.getDay()]} ${key} · today`
-        : i === 1
-          ? `${DOW[d.getDay()]} ${key} · tomorrow`
-          : `${DOW[d.getDay()]} ${key}`;
+      const label = i === 0 ? "Today" : i === 1 ? "Tomorrow" : weekdayFormat.format(d);
       days.push({
         key,
         label,
+        date: dayDateFormat.format(d),
         tasks,
         hasTasks: tasks.length > 0,
         count: tasks.length || "",
@@ -283,7 +269,8 @@
     const futureTasks = (data["Future"] || []).map(toTaskView.bind(null, "Future"));
     days.push({
       key: "Future",
-      label: "future",
+      label: "Future",
+      date: "Someday & scheduled",
       tasks: futureTasks,
       hasTasks: futureTasks.length > 0,
       count: futureTasks.length || "",
@@ -298,7 +285,8 @@
       id: String(t.id),
       title: t.title,
       completed: !!t.completed,
-      mark: t.completed ? "x" : " ",
+      mark: t.completed ? "✓" : "",
+      due: dayKey === "Future" && parseDay(t.due_date) ? t.due_date : null,
       dayKey,
     };
   }
@@ -312,17 +300,16 @@
 
       const heading = document.createElement("h2");
       heading.className = "day__head";
-      const rule = document.createElement("span");
-      rule.className = "day__rule";
       const label = document.createElement("span");
       label.className = "day__label";
       label.textContent = day.label;
       const count = document.createElement("span");
       count.className = "day__count";
       count.textContent = day.count;
-      const fillRule = document.createElement("span");
-      fillRule.className = "day__rule day__rule--fill";
-      heading.append(rule, label, count, fillRule);
+      const date = document.createElement("span");
+      date.className = "day__date";
+      date.textContent = day.date;
+      heading.append(label, count, date);
       section.append(heading);
 
       const list = document.createElement("ul");
@@ -336,21 +323,27 @@
         toggle.className = "task__check";
         toggle.dataset.action = "toggle";
         toggle.setAttribute("aria-label", `toggle complete: ${task.title}`);
-        const leftBracket = document.createElement("span");
-        leftBracket.className = "bracket";
-        leftBracket.textContent = "[";
+        toggle.setAttribute("aria-pressed", String(task.completed));
         const mark = document.createElement("span");
         mark.className = "task__mark";
+        mark.setAttribute("aria-hidden", "true");
         mark.textContent = task.mark;
-        const rightBracket = document.createElement("span");
-        rightBracket.className = "bracket";
-        rightBracket.textContent = "]";
-        toggle.append(leftBracket, mark, rightBracket);
+        toggle.append(mark);
         const title = document.createElement("button");
         title.className = "task__title";
         title.dataset.action = "edit";
         title.setAttribute("aria-label", `edit ${task.title}`);
         title.textContent = task.title;
+        if (task.due) {
+          const due = document.createElement("span");
+          due.className = "task__due";
+          const dateText = new Intl.DateTimeFormat(undefined, {
+            day: "numeric", month: "short", year: "numeric",
+          }).format(parseDay(task.due));
+          due.textContent = dateText;
+          title.append(due);
+          title.setAttribute("aria-label", `edit ${task.title}, scheduled for ${dateText}`);
+        }
         const drag = document.createElement("button");
         drag.className = "task__drag";
         drag.dataset.action = "drag";
@@ -363,7 +356,7 @@
       section.append(list);
       const empty = document.createElement("div");
       empty.className = "day__empty" + (day.hasTasks ? " is-hidden" : "");
-      empty.textContent = "— nothing here —";
+      empty.textContent = day.key === "Future" ? "Room for what’s next." : "Nothing planned.";
       section.append(empty);
       fragment.append(section);
     }
@@ -408,7 +401,7 @@
 
   function addTask(rawInput, selectedTarget) {
     const parsed = parseAddInput(rawInput, selectedTarget);
-    if (parsed.error) { toast(parsed.error, "err"); return; }
+    if (parsed.error) { toast(parsed.error, "err"); return false; }
     const t = {
       id: genId(),
       title: parsed.title,
@@ -419,6 +412,7 @@
     Domain.insertTask(state.data, parsed.key, t);
     render({ preserveScroll: true });
     queueSave();
+    return true;
   }
 
   function findTask(dayKey, id) { return Domain.findTask(state.data, dayKey, id); }
@@ -566,7 +560,7 @@
   // ── UI wiring ─────────────────────────────────────────────────────
   function shortDateLabel(value) {
     const date = parseDay(value);
-    if (!date) return "date…";
+    if (!date) return "Date…";
     return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" }).format(date);
   }
 
@@ -579,7 +573,7 @@
     const dateChip = dateInput.closest(".schedule__date");
     dateChip.classList.toggle("is-selected", target.kind === "custom");
     dateInput.value = target.date || "";
-    dateLabel.textContent = target.kind === "custom" && target.date ? shortDateLabel(target.date) : "date…";
+    dateLabel.textContent = target.kind === "custom" && target.date ? shortDateLabel(target.date) : "Date…";
   }
 
   function chooseSchedule(kind, scope) {
@@ -855,6 +849,7 @@
     requestAnimationFrame(syncPromptHeight);
   }
   function showConnect() {
+    setSync("disconnected");
     connectEl.hidden = false;
     board.hidden = true;
     promptBar.hidden = true;
@@ -942,8 +937,7 @@
     e.preventDefault();
     const v = addInput.value;
     if (!v.trim()) return;
-    addTask(v, addTarget);
-    addInput.value = "";
+    if (addTask(v, addTarget)) addInput.value = "";
   });
 
   addSchedule.addEventListener("click", (e) => {

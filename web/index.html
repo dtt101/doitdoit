@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-  <meta name="theme-color" content="#0b0a08" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1a1b26" />
   <meta name="description" content="doitdoit — terminal-native task manager, mobile companion" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; manifest-src 'self'; connect-src https://api.dropboxapi.com https://content.dropboxapi.com" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="doitdoit" />
 
-  <title>doitdoit · terminal task manager</title>
+  <title>doitdoit · your tasks</title>
 
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" type="image/png" sizes="48x48" href="icons/favicon-48.png" />
@@ -20,18 +20,14 @@
 </head>
 <body>
 
-<div class="grain" aria-hidden="true"></div>
-<div class="scanlines" aria-hidden="true"></div>
-<div class="vignette" aria-hidden="true"></div>
-
 <header class="hdr">
   <div class="hdr__brand" aria-label="doitdoit">
-    <span class="brand__sym" aria-hidden="true">▒</span>
+    <img class="brand__sym" src="icons/icon.svg" width="36" height="36" alt="" />
     <span class="brand__mark">doitdoit</span>
   </div>
   <div class="hdr__meta">
     <span class="meta__path" id="meta-path">/Apps/doitdoit/doitdoit.json</span>
-    <span class="meta__sync" id="sync-indicator" data-state="idle" title="sync state">[ok]</span>
+    <span class="meta__sync" id="sync-indicator" data-state="disconnected" role="status" aria-live="polite">Not connected</span>
     <button class="meta__menu" id="btn-menu" aria-label="menu" hidden>···</button>
   </div>
 </header>
@@ -40,29 +36,20 @@
 
   <section id="connect" class="connect" hidden>
     <div class="connect__inner">
-      <div class="connect__art" aria-hidden="true">
-        <span class="art__line">┌──────────────────┐</span>
-        <span class="art__line art__line--mid">│ <em>doitdoit</em> ⏎ │</span>
-        <span class="art__line">└──────────────────┘</span>
-      </div>
-
-      <h1 class="connect__title">terminal-native<br/>task manager.</h1>
+      <img class="connect__art" src="icons/icon.svg" width="96" height="96" alt="" />
+      <h1 class="connect__title">A little space<br/>to get things done.</h1>
       <p class="connect__lead">
-        this device pairs with the dropbox file your CLI already syncs.
-        no server, no backend — your tasks stay yours.
+        Your terminal tasks, wherever you are. Connect the Dropbox file you
+        already use to capture an idea or tick something off.
       </p>
-
-      <button id="btn-connect" class="btn btn--prime" type="button">
-        <span class="btn__caret">&gt;</span> connect dropbox
-      </button>
+      <button id="btn-connect" class="btn btn--prime" type="button">Connect Dropbox <span aria-hidden="true">↗</span></button>
 
       <details class="connect__details">
-        <summary>what happens when i click that?</summary>
+        <summary>How does connecting work?</summary>
         <div class="details__body">
-          <p><span class="dim">01.</span> dropbox sends you back here with an auth code (OAuth 2.0 + PKCE — no client secret needed).</p>
-          <p><span class="dim">02.</span> we exchange it for an access token, kept in <code>localStorage</code>. it never leaves this device.</p>
-          <p><span class="dim">03.</span> we read &amp; write a single JSON file at <code>/Apps/doitdoit/doitdoit.json</code> in your Dropbox.</p>
-          <p><span class="dim">04.</span> the same file your TUI uses. mutate from either; the other catches up on next load.</p>
+          <p>Sign in to Dropbox and allow doitdoit to access your task file.</p>
+          <p>Your tasks stay in Dropbox. This browser saves its connection credentials on this device and uses them to sync with Dropbox.</p>
+          <p>Changes appear in your terminal app and here on the next sync. If edits clash, we tell you and offer a recovery copy.</p>
         </div>
       </details>
     </div>
@@ -71,34 +58,34 @@
   <section id="board" class="board" hidden></section>
 
   <div class="empty-state" id="empty-state" hidden>
-    <p class="empty-state__line">— inbox zero —</p>
-    <p class="empty-state__sub">add a task below to get started</p>
+    <p class="empty-state__line">A clear slate.</p>
+    <p class="empty-state__sub">Add your first task below.</p>
   </div>
 </main>
 
 <footer class="prompt" id="prompt-bar" hidden>
   <form id="add-form" class="prompt__form" autocomplete="off">
     <div class="prompt__entry">
-      <span class="prompt__caret" aria-hidden="true">&gt;</span>
+      <span class="prompt__caret" aria-hidden="true">+</span>
       <input
         id="add-input"
         class="prompt__input"
         type="text"
         autocomplete="off"
-        autocapitalize="off"
-        autocorrect="off"
-        spellcheck="false"
-        placeholder="add a task…"
+        autocapitalize="sentences"
+        autocorrect="on"
+        spellcheck="true"
+        placeholder="What needs doing?"
         aria-label="new task"
       />
-      <button class="prompt__submit" type="submit" aria-label="add task">⏎</button>
+      <button class="prompt__submit" type="submit" aria-label="add task">Add</button>
     </div>
     <div class="schedule" id="add-schedule" aria-label="schedule task">
-      <button class="schedule__chip is-selected" type="button" data-add-schedule="today" aria-pressed="true">today</button>
-      <button class="schedule__chip" type="button" data-add-schedule="tomorrow" aria-pressed="false">tomorrow</button>
-      <button class="schedule__chip" type="button" data-add-schedule="future" aria-pressed="false">future</button>
+      <button class="schedule__chip is-selected" type="button" data-add-schedule="today" aria-pressed="true">Today</button>
+      <button class="schedule__chip" type="button" data-add-schedule="tomorrow" aria-pressed="false">Tomorrow</button>
+      <button class="schedule__chip" type="button" data-add-schedule="future" aria-pressed="false">Future</button>
       <label class="schedule__chip schedule__date">
-        <span id="add-date-label">date…</span>
+        <span id="add-date-label">Date…</span>
         <input id="add-date" type="date" aria-label="choose a custom task date" />
       </label>
     </div>
@@ -108,50 +95,50 @@
     <span class="dot">·</span>
     <span>drag ≡ to reorder</span>
     <span class="dot">·</span>
-    <span>tap [&nbsp;] to toggle</span>
+    <span>tap a checkbox to complete</span>
   </div>
 </footer>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <div class="sr-only" id="drag-status" aria-live="assertive"></div>
 
-<dialog id="menu-dialog" class="menu">
-  <div class="menu__hdr">menu</div>
+<dialog id="menu-dialog" class="menu" aria-labelledby="menu-title">
+  <div class="menu__hdr" id="menu-title">Dropbox &amp; recovery</div>
   <button class="menu__item" data-act="reload">⟳ force reload</button>
   <button class="menu__item" data-act="recovery">⇩ download recovery copy</button>
   <button class="menu__item" data-act="copy-path">⎘ copy file path</button>
   <button class="menu__item menu__item--danger" data-act="logout">⏻ disconnect dropbox</button>
-  <button class="menu__close" data-act="close">close</button>
+  <button class="menu__close" data-act="close">Close</button>
 </dialog>
 
-<dialog id="edit-dialog" class="editor">
+<dialog id="edit-dialog" class="editor" aria-labelledby="editor-title">
   <form id="edit-form" class="editor__form" autocomplete="off">
     <div class="editor__handle" aria-hidden="true"></div>
     <div class="editor__hdr">
-      <span>edit task</span>
+      <span id="editor-title">Edit task</span>
       <button class="editor__close" type="button" data-edit-action="cancel" aria-label="close editor">✕</button>
     </div>
     <label class="editor__field">
-      <span class="editor__label">task</span>
+      <span class="editor__label">Task</span>
       <input id="edit-title" type="text" autocomplete="off" aria-label="task title" required />
     </label>
     <fieldset class="editor__field">
-      <legend class="editor__label">schedule</legend>
+      <legend class="editor__label">Schedule</legend>
       <div class="schedule schedule--editor" id="edit-schedule">
-        <button class="schedule__chip" type="button" data-edit-schedule="today" aria-pressed="false">today</button>
-        <button class="schedule__chip" type="button" data-edit-schedule="tomorrow" aria-pressed="false">tomorrow</button>
-        <button class="schedule__chip" type="button" data-edit-schedule="future" aria-pressed="false">future</button>
+        <button class="schedule__chip" type="button" data-edit-schedule="today" aria-pressed="false">Today</button>
+        <button class="schedule__chip" type="button" data-edit-schedule="tomorrow" aria-pressed="false">Tomorrow</button>
+        <button class="schedule__chip" type="button" data-edit-schedule="future" aria-pressed="false">Future</button>
         <label class="schedule__chip schedule__date">
-          <span id="edit-date-label">date…</span>
+          <span id="edit-date-label">Date…</span>
           <input id="edit-date" type="date" aria-label="choose a custom task date" />
         </label>
       </div>
     </fieldset>
     <div class="editor__actions">
-      <button class="editor__delete" type="button" data-edit-action="delete">delete</button>
+      <button class="editor__delete" type="button" data-edit-action="delete">Delete</button>
       <span class="editor__spacer"></span>
-      <button class="editor__cancel" type="button" data-edit-action="cancel">cancel</button>
-      <button class="editor__save" type="submit">save</button>
+      <button class="editor__cancel" type="button" data-edit-action="cancel">Cancel</button>
+      <button class="editor__save" type="submit">Save</button>
     </div>
   </form>
 </dialog>
