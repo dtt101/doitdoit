@@ -53,7 +53,7 @@ test("retention defaults to forever and prunes only after an explicit choice", (
   assert.deepEqual(pruned.Future, []);
 });
 
-test("future distribution and add targeting match the visible window", () => {
+test("legacy Future migration and add targeting are independent of the visible window", () => {
   const data = {
     "2026-08-27": [{ id: "done", completed: true }],
     Future: [
@@ -61,12 +61,13 @@ test("future distribution and add targeting match the visible window", () => {
       { id: "later", due_date: "2026-09-20" },
     ],
   };
-  Domain.distributeFutureTasks(data, 3, now);
+  Domain.migrateDatedFutureTasks(data);
   assert.equal(data["2026-08-27"][0].id, "soon");
   assert.equal(data["2026-08-27"][1].id, "done");
-  assert.equal(data.Future[0].id, "later");
+  assert.deepEqual(data.Future, []);
+  assert.equal(data["2026-09-20"][0].id, "later");
   assert.deepEqual(
-    Domain.parseAddInput("!future write postcard", { kind: "today" }, 3, now),
+    Domain.parseAddInput("!future write postcard", { kind: "today" }, now),
     { title: "write postcard", key: "Future", due: "" },
   );
 });
@@ -84,8 +85,8 @@ test("completion grouping is stable and reports whether it repaired data", () =>
 });
 
 test("invalid dates and titles are rejected", () => {
-  assert.ok(Domain.parseAddInput("", { kind: "today" }, 3, now).error);
-  assert.ok(Domain.storageTarget({ kind: "custom", date: "2026-02-30" }, 3, now).error);
+  assert.ok(Domain.parseAddInput("", { kind: "today" }, now).error);
+  assert.ok(Domain.storageTarget({ kind: "custom", date: "2026-02-30" }, now).error);
 });
 
 test("notes survive web edits, moves, rollover and JSON round trips", () => {
@@ -96,4 +97,23 @@ test("notes survive web edits, moves, rollover and JSON round trips", () => {
   Domain.toggleTask(data, "2026-08-26", "notes");
   Domain.moveTask(data, "2026-08-26", "notes", "Future", 0);
   assert.equal(JSON.parse(JSON.stringify(data)).Future[0].notes, notes);
+});
+
+
+test("migration preserves fields and ordering before normal lifecycle, and is idempotent", () => {
+  const legacy = { id: "far", due_date: "2099-01-01", notes: "café\nDetails", completed: false, created_at: "2026-01-01T12:00:00Z" };
+  const data = { "2099-01-01": [{ id: "existing" }, { id: "done", completed: true }], Future: [
+    { id: "idea" }, legacy, { id: "bad", due_date: "invalid" },
+    { id: "past-open", due_date: "2026-08-25" },
+    { id: "past-done", due_date: "2026-08-25", completed: true },
+  ] };
+  assert.equal(Domain.migrateDatedFutureTasks(data), true);
+  assert.deepEqual(data["2099-01-01"].map(t => t.id), ["existing", "far", "done"]);
+  assert.deepEqual(data["2099-01-01"][1], legacy);
+  assert.deepEqual(data.Future.map(t => t.id), ["idea", "bad"]);
+  assert.equal(Domain.migrateDatedFutureTasks(data), false);
+  Domain.rollOverIncompleteTasks(data, now);
+  assert.deepEqual(data["2026-08-25"].map(t => t.id), ["past-done"]);
+  assert.equal(data["2026-08-26"][0].due_date, "2026-08-26");
+  assert.deepEqual(Domain.storageTarget({ kind: "custom", date: "2099-01-01" }, now), { key: "2099-01-01", due: "2099-01-01" });
 });

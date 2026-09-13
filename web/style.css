@@ -93,7 +93,7 @@ code { font: .9em var(--font-mono); overflow-wrap: anywhere; }
 .day__count:empty { display: none; }
 .day__empty { padding: 0 18px 16px; color: var(--fg-dim); font-size: 14px; }
 .day__empty.is-hidden { display: none; }
-.task { display: flex; align-items: center; gap: 8px; position: relative; min-height: 60px; padding: 8px 10px; border-top: 1px solid var(--rule); transition: background 140ms; }
+.task { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; column-gap: 8px; position: relative; min-height: 60px; padding: 8px 10px; border-top: 1px solid var(--rule); transition: background 140ms; }
 .task:hover, .task:focus-within { background: #7aa2f707; }
 .task__check { display: grid; place-items: center; flex-shrink: 0; width: 44px; min-height: 44px; }
 .task__mark { display: grid; place-items: center; width: 23px; height: 23px; border: 1.5px solid var(--fg-dim); border-radius: 7px; color: transparent; font-size: 16px; font-weight: 700; line-height: 1; }
@@ -102,6 +102,10 @@ code { font: .9em var(--font-mono); overflow-wrap: anywhere; }
 .task__title { flex: 1; min-width: 0; min-height: 44px; padding: 8px 0; font-size: 16px; line-height: 1.5; text-align: left; overflow-wrap: anywhere; }
 .task--done .task__title { color: var(--fg-dim); text-decoration: line-through; text-decoration-color: #697398; }
 .task__due { display: block; margin-top: 3px; color: var(--accent-dim); font-size: 12px; }
+.task--has-notes { grid-template-columns: 44px minmax(0, 1fr) 44px 44px; }
+.task--has-notes .task__drag { grid-column: 4; grid-row: 1; }
+.task__notes-button { grid-column: 3; grid-row: 1; display: grid; place-items: center; width: 44px; min-height: 44px; border-radius: 10px; color: var(--accent-dim); transition: color 140ms, background 140ms; }
+.task__notes-button:hover, .task__notes-button:focus-visible { color: var(--accent-bright); background: var(--bg-rise); }
 .task__drag { flex-shrink: 0; width: 44px; min-height: 44px; border-radius: 9px; color: var(--fg-dim); font-size: 22px; touch-action: none; cursor: grab; }
 .task__drag:hover { background: var(--bg-rise); color: var(--fg); }
 .task__drag:active, .task__drag[aria-pressed="true"] { background: var(--accent); color: var(--bg); cursor: grabbing; }
@@ -189,3 +193,14 @@ code { font: .9em var(--font-mono); overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Notes stay out of the board; only the open viewer holds the full text. */
+.notes-dialog { position: fixed; inset: 0; margin: auto; width: min(680px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); color: var(--fg); background: var(--bg-elev); border: 1px solid var(--rule-bright); border-radius: 20px; padding: 0; overflow: hidden; }
+.notes-dialog[open] { display: flex; flex-direction: column; }
+.notes-dialog::backdrop { background: #10111bb8; backdrop-filter: blur(5px); }
+.notes-dialog__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 20px; border-bottom: 1px solid var(--rule); flex-shrink: 0; }
+.notes-dialog__titles { min-width: 0; }
+.notes-dialog__header h2 { font-size: 20px; }
+#notes-task-title { color: var(--fg-soft); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 6px; }
+#notes-close { flex-shrink: 0; }
+.notes-dialog__content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; font-size: 15px; line-height: 1.6; }

@@ -235,11 +235,11 @@
   // ── Shared domain logic (also exercised by web/domain.test.js) ─────
   const Domain = window.DoitdoitDomain;
   const { todayStr, parseDay, addDays, rollOverIncompleteTasks,
-    distributeFutureTasks } = Domain;
-  const storageTarget = (target) => Domain.storageTarget(target, VISIBLE_DAYS);
+    migrateDatedFutureTasks } = Domain;
+  const storageTarget = (target) => Domain.storageTarget(target);
   const targetForTask = (dayKey, task) => Domain.targetForTask(dayKey, task);
   const pruneOldTasks = (data) => Domain.pruneOldTasks(data, RETENTION_DAYS);
-  const parseAddInput = (raw, target) => Domain.parseAddInput(raw, target, VISIBLE_DAYS);
+  const parseAddInput = (raw, target) => Domain.parseAddInput(raw, target);
 
   // ── View model + render ───────────────────────────────────────────
   const weekdayFormat = new Intl.DateTimeFormat(undefined, { weekday: "long" });
@@ -250,11 +250,15 @@
     const todayKey = todayStr(today);
     const days = [];
 
-    for (let i = 0; i < VISIBLE_DAYS; i++) {
-      const d = addDays(today, i);
-      const key = todayStr(d);
+    const keys = new Set(Array.from({ length: VISIBLE_DAYS }, (_, i) => todayStr(addDays(today, i))));
+    // Keep distant scheduled tasks reachable without filling every intervening day.
+    for (const key of Object.keys(data)) {
+      if (parseDay(key) && key >= todayKey && data[key].length) keys.add(key);
+    }
+    for (const key of [...keys].sort()) {
+      const d = parseDay(key);
       const tasks = (data[key] || []).map(toTaskView.bind(null, key));
-      const label = i === 0 ? "Today" : i === 1 ? "Tomorrow" : weekdayFormat.format(d);
+      const label = key === todayKey ? "Today" : key === todayStr(addDays(today, 1)) ? "Tomorrow" : weekdayFormat.format(d);
       days.push({
         key,
         label,
@@ -262,7 +266,7 @@
         tasks,
         hasTasks: tasks.length > 0,
         count: tasks.length || "",
-        cls: i === 0 ? "today" : "future",
+        cls: key === todayKey ? "today" : "future",
       });
     }
 
@@ -270,7 +274,7 @@
     days.push({
       key: "Future",
       label: "Future",
-      date: "Someday & scheduled",
+      date: "",
       tasks: futureTasks,
       hasTasks: futureTasks.length > 0,
       count: futureTasks.length || "",
@@ -284,6 +288,7 @@
     return {
       id: String(t.id),
       title: t.title,
+      hasNotes: typeof t.notes === "string" && t.notes.length > 0,
       completed: !!t.completed,
       mark: t.completed ? "✓" : "",
       due: dayKey === "Future" && parseDay(t.due_date) ? t.due_date : null,
@@ -316,7 +321,7 @@
       list.className = "tasks";
       for (const task of day.tasks) {
         const row = document.createElement("li");
-        row.className = "task" + (task.completed ? " task--done" : "");
+        row.className = "task" + (task.completed ? " task--done" : "") + (task.hasNotes ? " task--has-notes" : "");
         row.dataset.id = task.id;
         row.dataset.key = task.dayKey;
         const toggle = document.createElement("button");
@@ -350,7 +355,32 @@
         drag.setAttribute("aria-label", `reorder ${task.title}`);
         drag.setAttribute("aria-pressed", "false");
         drag.textContent = "≡";
-        row.append(toggle, title, drag);
+        row.append(toggle, title);
+        if (task.hasNotes) {
+          const notes = document.createElement("button");
+          notes.className = "task__notes-button";
+          notes.type = "button";
+          notes.dataset.action = "notes";
+          notes.setAttribute("aria-label", `view notes for ${task.title}`);
+          notes.setAttribute("aria-haspopup", "dialog");
+          notes.title = "View notes";
+          const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          icon.setAttribute("viewBox", "0 0 24 24");
+          icon.setAttribute("width", "19");
+          icon.setAttribute("height", "19");
+          icon.setAttribute("fill", "none");
+          icon.setAttribute("stroke", "currentColor");
+          icon.setAttribute("stroke-width", "1.6");
+          icon.setAttribute("stroke-linecap", "round");
+          icon.setAttribute("stroke-linejoin", "round");
+          icon.setAttribute("aria-hidden", "true");
+          const lines = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          lines.setAttribute("d", "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z M14 3v6h6 M8 13h8 M8 17h5");
+          icon.append(lines);
+          notes.append(icon);
+          row.append(notes);
+        }
+        row.append(drag);
         list.append(row);
       }
       section.append(list);
@@ -367,8 +397,6 @@
     if (!state.data) return;
     const preserveScroll = opts.preserveScroll !== false && state.rendered;
     const scrollY = preserveScroll ? window.scrollY : 0;
-    // re-distribute on each render so future-dated tasks flow into visible days
-    distributeFutureTasks(state.data, VISIBLE_DAYS);
     const view = buildView(state.data);
     board.classList.toggle("board--animate", !!opts.animate);
     renderBoard(view);
@@ -534,13 +562,13 @@
       state.rev = rev;
       state.dirty = false;
       state.conflict = false;
+      const migrated = migrateDatedFutureTasks(state.data);
       const r1 = rollOverIncompleteTasks(state.data);
       const r2 = pruneOldTasks(state.data);
-      distributeFutureTasks(state.data, VISIBLE_DAYS);
       if (before !== JSON.stringify(state.data) || !state.rendered) {
         render({ animate: !state.rendered, preserveScroll: state.rendered });
       }
-      if (r1 || r2) {
+      if (migrated || r1 || r2) {
         queueSave();
         // Maintenance uses the same snapshot acknowledgement and serialization.
         if (saveTimer) clearTimeout(saveTimer);
@@ -874,6 +902,26 @@
   }
 
   // delegated click handler for tasks
+  const notesDialog = $("notes-dialog");
+  const notesContent = $("notes-content");
+  let notesTrigger = null;
+  function openNotes(dayKey, id, trigger) {
+    const found = Domain.findTask(state.data, dayKey, id);
+    if (!found || typeof found.task.notes !== "string" || !found.task.notes) return;
+    $("notes-task-title").textContent = found.task.title;
+    notesContent.textContent = found.task.notes;
+    notesTrigger = trigger;
+    notesDialog.showModal();
+    notesContent.scrollTop = 0;
+  }
+  $("notes-close").addEventListener("click", () => notesDialog.close());
+  notesDialog.addEventListener("close", () => {
+    notesContent.textContent = "";
+    $("notes-task-title").textContent = "";
+    if (notesTrigger?.isConnected) notesTrigger.focus({ preventScroll: true });
+    notesTrigger = null;
+  });
+
   board.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-action]");
     if (!btn) return;
@@ -884,6 +932,7 @@
     const action = btn.dataset.action;
     if (action === "toggle") toggleTask(dayKey, id);
     else if (action === "edit") openEditor(dayKey, id);
+    else if (action === "notes") openNotes(dayKey, id, btn);
     else if (action === "delete") {
       li.classList.add("task--exit");
       // wait for exit animation, then mutate

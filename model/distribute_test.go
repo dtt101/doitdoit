@@ -35,7 +35,7 @@ func taskIDsByDate(d TodoData) map[string]map[string]bool {
 	return out
 }
 
-func TestDistributeFutureTasks(t *testing.T) {
+func TestMigrateDatedFutureTasks(t *testing.T) {
 	const visibleDays = 3
 
 	// Each zone is exercised independently. The extreme offsets (±) are the
@@ -67,12 +67,13 @@ func TestDistributeFutureTasks(t *testing.T) {
 				},
 			}
 
-			data.DistributeFutureTasks(visibleDays)
+			data.migrateDatedFutureTasks()
+			data.rollOverIncompleteTasks()
 
 			byDate := taskIDsByDate(data)
 
 			// Tasks that should remain in Future, untouched.
-			wantFuture := map[string]bool{"no-due": true, "bad-due": true, "beyond": true}
+			wantFuture := map[string]bool{"no-due": true, "bad-due": true}
 			gotFuture := byDate["Future"]
 			if len(gotFuture) != len(wantFuture) {
 				t.Fatalf("Future bucket = %v, want exactly %v", gotFuture, wantFuture)
@@ -100,26 +101,26 @@ func TestDistributeFutureTasks(t *testing.T) {
 				t.Errorf("expected last-visible task on %s, got %v", d, byDate[d])
 			}
 
-			// The beyond-window task must NOT have been placed on any date.
+			// Even distant tasks move to their exact dates.
 			beyondDate := dayKey(visibleDays)
-			if byDate[beyondDate]["beyond"] {
-				t.Errorf("task due beyond the window was distributed onto %s", beyondDate)
+			if !byDate[beyondDate]["beyond"] {
+				t.Errorf("distant task was not migrated onto %s", beyondDate)
 			}
 		})
 	}
 }
 
-func TestDistributeFutureTasksNoFutureBucket(t *testing.T) {
+func TestMigrateDatedFutureTasksNoFutureBucket(t *testing.T) {
 	// Missing bucket must not panic and must not create one spuriously.
 	data := TodoData{}
-	data.DistributeFutureTasks(3)
+	data.migrateDatedFutureTasks()
 	if _, ok := data["Future"]; ok {
 		t.Errorf("did not expect a Future bucket to be created, got %v", data)
 	}
 
 	// Empty bucket is left exactly as-is.
 	empty := TodoData{"Future": []Task{}}
-	empty.DistributeFutureTasks(3)
+	empty.migrateDatedFutureTasks()
 	if len(empty["Future"]) != 0 {
 		t.Errorf("expected Future to remain empty, got %v", empty["Future"])
 	}
@@ -192,7 +193,7 @@ func TestRolloverAndDistributionKeepCompletedTasksAtBottom(t *testing.T) {
 	}
 	assertTaskOrder(t, data[today], []string{"today-open", "rolled", "today-done"})
 
-	if !data.distributeFutureTasksThrough(startOfDay(time.Now()).AddDate(0, 0, 1)) {
+	if !data.migrateDatedFutureTasks() {
 		t.Fatal("expected distribution to report a change")
 	}
 	assertTaskOrder(t, data[tomorrow], []string{"distributed", "tomorrow-done"})

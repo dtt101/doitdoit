@@ -74,7 +74,7 @@ func TestMovePickerFutureOffsetUsesToday(t *testing.T) {
 	}
 }
 
-func TestMoveBeyondVisibleWindowIsHeldInFuture(t *testing.T) {
+func TestMoveBeyondVisibleWindowUsesDateBucket(t *testing.T) {
 	today := time.Now().Format(dateLayout)
 	target := time.Now().AddDate(0, 0, 7).Format(dateLayout)
 	m := Model{
@@ -86,8 +86,8 @@ func TestMoveBeyondVisibleWindowIsHeldInFuture(t *testing.T) {
 
 	m = pressRune(pressRune(m, 'm'), '7')
 
-	if got := m.Data["Future"]; len(got) != 1 || got[0].DueDate != target {
-		t.Fatalf("expected dated task held in Future, got %v", got)
+	if got := m.Data[target]; len(got) != 1 || got[0].DueDate != target {
+		t.Fatalf("expected task in its date bucket, got %v", got)
 	}
 }
 
@@ -330,8 +330,8 @@ func TestMoveDateInputSchedulesExactDate(t *testing.T) {
 	if m.State != Browsing || m.Err != nil {
 		t.Fatalf("expected valid date to close cleanly, got state=%v err=%v", m.State, m.Err)
 	}
-	if got := m.Data["Future"]; len(got) != 1 || got[0].DueDate != target {
-		t.Fatalf("expected exact date held in Future, got %v", got)
+	if got := m.Data[target]; len(got) != 1 || got[0].DueDate != target {
+		t.Fatalf("expected task in exact date bucket, got %v", got)
 	}
 	if m.lastMoveTarget == nil || m.lastMoveTarget.Date != target {
 		t.Fatalf("expected exact date to become repeat target, got %v", m.lastMoveTarget)

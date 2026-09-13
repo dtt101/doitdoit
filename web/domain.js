@@ -43,7 +43,7 @@
     return changed;
   }
 
-  function storageTarget(target, visibleDays, now = new Date()) {
+  function storageTarget(target, now = new Date()) {
     if (target.kind === "future") return { key: "Future", due: "" };
     let date = target.kind === "tomorrow"
       ? addDays(now, 1)
@@ -53,7 +53,7 @@
     const today = startOfDay(now);
     if (date < today) date = today;
     const due = todayStr(date);
-    return { key: date > addDays(today, visibleDays - 1) ? "Future" : due, due };
+    return { key: due, due };
   }
 
   function targetForTask(dayKey, task, now = new Date()) {
@@ -103,26 +103,20 @@
     return changed;
   }
 
-  function distributeFutureTasks(data, visibleDays, now = new Date()) {
+  function migrateDatedFutureTasks(data) {
     const future = data.Future || [];
-    if (!future.length) return false;
-    const today = startOfDay(now);
-    const lastVisible = addDays(today, visibleDays - 1);
     const remain = [];
     let changed = false;
     for (const task of future) {
-      const due = parseDay(task.due_date);
-      if (!due || due > lastVisible) { remain.push(task); continue; }
-      const target = due < today ? todayStr(today) : task.due_date;
-      (data[target] || (data[target] = [])).push(task);
+      if (!parseDay(task.due_date)) { remain.push(task); continue; }
+      insertTask(data, task.due_date, task);
       changed = true;
     }
-    data.Future = remain;
-    if (groupTasksByCompletion(data)) changed = true;
+    if (changed) data.Future = remain;
     return changed;
   }
 
-  function parseAddInput(raw, selectedTarget, visibleDays, now = new Date()) {
+  function parseAddInput(raw, selectedTarget, now = new Date()) {
     let title = raw.trim();
     let target = selectedTarget;
     const match = /^!(\S+)\s+(.+)$/.exec(title);
@@ -134,7 +128,7 @@
       else return { error: "unknown target — use !future or !YYYY-MM-DD" };
     }
     if (!title) return { error: "task title cannot be empty" };
-    const destination = storageTarget(target, visibleDays, now);
+    const destination = storageTarget(target, now);
     if (destination.error) return destination;
     return { title, key: destination.key, due: destination.due };
   }
@@ -208,7 +202,7 @@
   }
 
   return { todayStr, parseDay, addDays, startOfDay, storageTarget, targetForTask,
-    rollOverIncompleteTasks, pruneOldTasks, distributeFutureTasks, parseAddInput,
+    rollOverIncompleteTasks, pruneOldTasks, migrateDatedFutureTasks, parseAddInput,
     insertBeforeCompleted, groupTasksByCompletion, findTask, insertTask, editTask,
     toggleTask, deleteTask, moveTask };
 });

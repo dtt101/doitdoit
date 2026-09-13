@@ -92,7 +92,7 @@ func (m Model) handleDataFileChecked(msg dataFileCheckedMsg) (tea.Model, tea.Cmd
 }
 
 // applyReloadedData swaps in externally-changed data while keeping the cursor
-// on the same task where possible. Rollover/prune/distribution run in memory
+// on the same task where possible. Migration/rollover/prune run in memory
 // only — persisting here would bump the file's mtime and ping-pong writes
 // with the web app; changes reach disk on the user's next edit.
 func (m *Model) applyReloadedData(data TodoData) {
@@ -103,10 +103,10 @@ func (m *Model) applyReloadedData(data TodoData) {
 	}
 
 	m.Data = data
+	m.Data.migrateDatedFutureTasks()
 	m.carriedForward = m.Data.carryForwardCount()
 	m.Data.rollOverIncompleteTasks()
 	m.Data.pruneOldTasks(m.RetentionDays)
-	m.Data.distributeFutureTasksThrough(m.lastVisibleDate())
 	m.Data.groupTasksByCompletion()
 	m.clearMoveUndo()
 

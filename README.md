@@ -165,17 +165,21 @@ When unfinished tasks carry forward, a session notice reports how many moved
 to Today. It appears in the footer when space allows; `?` also explains rollover.
 The count reflects rollover observed during this session and is never stored.
 
-Press `f` for the separate Future list, grouped into **Ideas (undated)**,
-**Scheduled**, and **Completed**. `J`/`K` reorder within the displayed section.
+Press `f` for the separate Future list. Completed tasks appear in a **Completed**
+section. `J`/`K` reorder within the displayed section.
 To set or change a date, select a task, press `m` then `d`, enter `YYYY-MM-DD`
 or `MM-DD`, and press Enter. `MM-DD` uses the current year; past dates move
 the task to Today.
 
-Tasks with a specific future date remain there until that date enters the
-three-day planning window, while undated ideas wait until you decide what
-to do with them. Resizing or toggling Today
-focus only changes the display: it does not reschedule tasks or change that
-planning window's size. Use left/right to reach days hidden by a narrow window.
+Setting a date immediately moves a task out of Future into that date's calendar
+bucket, however far away. Moving a task to Future clears its date. Navigation,
+resizing, and Today focus only change the display; they never move or save tasks.
+
+On load, legacy tasks in Future with valid dates move to their recorded date
+buckets before normal rollover and retention run. Overdue incomplete tasks roll
+to Today; completed tasks keep their historical dates, subject to retention.
+The migration uses the normal revision-checked save and backup. Malformed dates
+stay untouched in Future under **Invalid dates** so you can correct them.
 
 ### Keybindings
 
@@ -225,8 +229,8 @@ Scroll the link view with arrows or Page Up/Page Down.
 Inside notes, use your terminal's usual text selection, copy, and paste shortcuts.
 Pasted text is inserted at the cursor, preserving line breaks. Notes are plain
 text, without Markdown. They are saved in the optional JSON `notes` field and
-follow the task through moves and rollover. The web companion preserves notes
-when editing or syncing tasks, but its UI does not yet display or edit them.
+follow the task through moves and rollover. The web companion opens notes in a scrollable viewer via the note icon and preserves them
+when editing or syncing tasks. Notes editing is available in the TUI.
 
 After pressing `m`, choose a destination:
 

@@ -116,7 +116,7 @@ func (m *Model) reorderTask(direction int) bool {
 		}
 	}
 	// Reordering stays within the displayed section, including Ideas and
-	// Scheduled in Future. Completion grouping remains a bucket invariant.
+	// invalid-date recovery rows in Future. Completion grouping remains intact.
 	if newRowIdx < 0 || tasks[m.RowIdx].Completed != tasks[newRowIdx].Completed {
 		return false
 	}
@@ -162,10 +162,7 @@ func (m *Model) scheduleTask(target moveTarget) bool {
 		dueDate = parsed.Format(dateLayout)
 		target = moveTarget{Date: dueDate}
 
-		lastVisible := m.lastVisibleDate()
-		if !parsed.After(lastVisible) {
-			targetKey = dueDate
-		}
+		targetKey = dueDate
 	}
 
 	if sourceKey == targetKey && task.DueDate == dueDate {

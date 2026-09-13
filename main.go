@@ -112,7 +112,7 @@ Use --help or -h to show help; use doitdoit add --help for capture options.
 		os.Exit(1)
 	}
 
-	// Keep the three-day scheduling window independent of responsive layout.
+	// The calendar window controls presentation only.
 	m, err := model.NewModelWithRetention(finalPath, 3, retentionDays)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing model: %v\n", err)

@@ -45,8 +45,7 @@ func (m Model) footerStyle() lipgloss.Style {
 	return styles.HelpStyle
 }
 
-// Keep the logical date window intact: resizing must not redistribute tasks or
-// change how far ahead scheduled tasks are stored in dated buckets.
+// Choose columns for presentation only; resizing never changes task storage.
 func (m Model) visibleColumnCount() int {
 	if m.ShowFuture || m.FocusToday {
 		return 1

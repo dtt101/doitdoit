@@ -152,7 +152,6 @@ func newModelWithStore(filePath string, visibleDays, retentionDays int, store ta
 		todayKey:       time.Now().Format(dateLayout),
 	}
 	m.configureTextInput("New task...")
-	m.Data.DistributeFutureTasks(visibleDays)
 	m.updateDateKeys()
 	m.recordRevision(snapshot.Revision)
 	return m, nil
@@ -181,10 +180,6 @@ func (m Model) firstVisibleDate() time.Time {
 		}
 	}
 	return startOfDay(time.Now())
-}
-
-func (m Model) lastVisibleDate() time.Time {
-	return m.firstVisibleDate().AddDate(0, 0, m.VisibleDays-1)
 }
 
 // shiftDateWindow moves the viewport by one day. It never permits dates before

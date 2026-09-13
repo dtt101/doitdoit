@@ -171,58 +171,26 @@ func (d Data) PruneOldTasks(retentionDays int) bool {
 	return changed
 }
 
-// DistributeFutureTasks moves tasks from "Future" to specific dates if they are
-// due within the initial viewport starting today.
-func (d Data) DistributeFutureTasks(visibleDays int) {
-	d.DistributeFutureTasksThrough(StartOfDay(time.Now()).AddDate(0, 0, visibleDays-1))
-}
-
-// DistributeFutureTasksThrough moves dated tasks out of Future once their date
-// has been loaded by the scrolling viewport. Undated tasks always remain in the
-// separate Future list.
-func (d Data) DistributeFutureTasksThrough(lastVisible time.Time) bool {
-	futureTasks, ok := d["Future"]
-	if !ok || len(futureTasks) == 0 {
+// MigrateDatedFutureTasks moves legacy scheduled tasks to their recorded date
+// buckets. Invalid dates stay untouched for recovery. Run before rollover and
+// retention so completed history and overdue tasks follow normal lifecycle rules.
+func (d Data) MigrateDatedFutureTasks() bool {
+	future := d["Future"]
+	if len(future) == 0 {
 		return false
 	}
-
-	today := StartOfDay(time.Now())
-	todayStr := today.Format(DateLayout)
-
-	remainingFuture := make([]Task, 0)
+	remaining := make([]Task, 0, len(future))
 	changed := false
-
-	for _, task := range futureTasks {
-		if task.DueDate == "" {
-			remainingFuture = append(remainingFuture, task)
+	for _, task := range future {
+		if _, err := ParseDate(task.DueDate); err != nil {
+			remaining = append(remaining, task)
 			continue
 		}
-
-		dueDate, err := ParseDate(task.DueDate)
-		if err != nil {
-			remainingFuture = append(remainingFuture, task)
-			continue
-		}
-
-		// If due date falls within visible range
-		if !dueDate.After(lastVisible) {
-			targetDate := task.DueDate
-			// If overdue, move to today
-			if dueDate.Before(today) {
-				targetDate = todayStr
-			}
-
-			// Add to target date
-			d[targetDate] = append(d[targetDate], task)
-			changed = true
-		} else {
-			remainingFuture = append(remainingFuture, task)
-		}
-	}
-
-	d["Future"] = remainingFuture
-	if d.GroupTasksByCompletion() {
+		d.Insert(task.DueDate, task)
 		changed = true
+	}
+	if changed {
+		d["Future"] = remaining
 	}
 	return changed
 }

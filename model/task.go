@@ -34,13 +34,12 @@ func loadWithRollover(path string, retentionDays int) (TodoData, int, error) {
 	snapshot, count, err := taskstore.LoadStore(taskstore.NewJSON(path), retentionDays)
 	return TodoData(snapshot.Data), count, err
 }
-func (d TodoData) carryForwardCount() int         { return taskstore.Data(d).CarryForwardCount() }
-func (d TodoData) groupTasksByCompletion() bool   { return taskstore.Data(d).GroupTasksByCompletion() }
-func (d TodoData) rollOverIncompleteTasks() bool  { return taskstore.Data(d).RollOverIncompleteTasks() }
-func (d TodoData) pruneOldTasks(days int) bool    { return taskstore.Data(d).PruneOldTasks(days) }
-func (d TodoData) DistributeFutureTasks(days int) { taskstore.Data(d).DistributeFutureTasks(days) }
-func (d TodoData) distributeFutureTasksThrough(date time.Time) bool {
-	return taskstore.Data(d).DistributeFutureTasksThrough(date)
+func (d TodoData) carryForwardCount() int        { return taskstore.Data(d).CarryForwardCount() }
+func (d TodoData) groupTasksByCompletion() bool  { return taskstore.Data(d).GroupTasksByCompletion() }
+func (d TodoData) rollOverIncompleteTasks() bool { return taskstore.Data(d).RollOverIncompleteTasks() }
+func (d TodoData) pruneOldTasks(days int) bool   { return taskstore.Data(d).PruneOldTasks(days) }
+func (d TodoData) migrateDatedFutureTasks() bool {
+	return taskstore.Data(d).MigrateDatedFutureTasks()
 }
 func (d TodoData) SortedKeys() []string { return taskstore.Data(d).SortedKeys() }
 func (d TodoData) Save(path string) error {

@@ -11,23 +11,20 @@ type taskSection struct {
 
 func (m Model) taskSections(key string) []taskSection {
 	active := taskSection{}
-	scheduled := taskSection{label: "Scheduled"}
-	if key == "Future" {
-		active.label = "Ideas (undated)"
-	}
+	invalid := taskSection{label: "Invalid dates"}
 	done := taskSection{label: "Completed", collapsed: m.HideCompleted, canCollapse: true}
 	for i, task := range m.Data[key] {
 		if task.Completed {
 			done.rows = append(done.rows, i)
 		} else if key == "Future" && task.DueDate != "" {
-			scheduled.rows = append(scheduled.rows, i)
+			invalid.rows = append(invalid.rows, i)
 		} else {
 			active.rows = append(active.rows, i)
 		}
 	}
 	sections := []taskSection{active}
 	if key == "Future" {
-		sections = append(sections, scheduled)
+		sections = append(sections, invalid)
 	}
 	if len(done.rows) > 0 {
 		sections = append(sections, done)

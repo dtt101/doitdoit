@@ -21,7 +21,8 @@ window.DOITDOIT_CONFIG = {
   // The leading "/" is required by the Dropbox API.
   dropboxFilePath: "/config.json",
 
-  // Number of upcoming days rendered (today + next N-1).
+  // Minimum upcoming days rendered (today + next N-1).
+  // Occupied later dates are also shown; this does not affect task storage.
   visibleDays: 5,
 
   // Zero means keep completed history forever. Set a positive number only

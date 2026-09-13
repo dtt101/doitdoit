@@ -7,7 +7,7 @@ import (
 )
 
 // CaptureTask adds one task without constructing the interactive model.
-// Far-future tasks use the Future bucket so they remain discoverable there.
+// Only undated tasks use the Future bucket.
 func CaptureTask(path, title, when string, retentionDays int) (Task, string, error) {
 	return Capture(NewJSON(path), title, when, retentionDays)
 }
@@ -37,15 +37,10 @@ func CaptureWithNotes(store Store, title, when, notes string, retentionDays int)
 		return Task{}, "", err
 	}
 
-	task := Task{ID: fmt.Sprintf("%d", now.UnixNano()), Title: title, Notes: notes, CreatedAt: now}
+	task := Task{ID: fmt.Sprintf("%d", now.UnixNano()), Title: title, Notes: notes, DueDate: target, CreatedAt: now}
 	key := target
 	if future {
 		key = "Future"
-		if target != "" {
-			task.DueDate = target
-		}
-	} else {
-		task.DueDate = target
 	}
 	data.Insert(key, task)
 	if _, err := store.Save(data, &snapshot.Revision); err != nil {
@@ -72,8 +67,6 @@ func CaptureTarget(when string, now time.Time) (target string, future bool, err 
 		if date.Before(today) {
 			date = today
 		}
-		// Match the default three-day TUI window. More distant dates stay in
-		// Future until the corresponding day enters the visible window.
-		return date.Format(DateLayout), date.After(today.AddDate(0, 0, 2)), nil
+		return date.Format(DateLayout), false, nil
 	}
 }

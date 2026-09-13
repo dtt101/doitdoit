@@ -22,7 +22,7 @@ script, or remote font is required.
   conflict checks; a confirmed missing file is created with `mode: "add"` and
   renaming disabled. Other download errors and invalid revision metadata fail
   visibly.
-- **Domain logic**: rollover, distribution, ordering, and explicit retention
+- **Domain logic**: rollover, legacy Future migration, ordering, and explicit retention
   behavior live in `domain.js` and are tested with the same lifecycle rules as
   the CLI. Retention defaults to forever; set `retentionDays` to a positive
   value only after making an equivalent explicit choice in the CLI.
@@ -110,18 +110,21 @@ Dropbox app's redirect URIs to test the OAuth round-trip locally.
 
 Use the controls under the bottom prompt to add a task to Today, Tomorrow,
 Future, or a date from the device's date picker. Dates beyond the visible
-five-day window stay in Future until they come into range.
+five-day window appear as additional dated sections.
 
 The web companion uses a Tokyo Night inspired palette, a compact bottom composer,
 and 44px touch targets. Pinch-to-zoom stays available. Sync status is written out
 (Synced, Syncing, Unsaved, Sync failed, or Conflict). Invalid capture shortcuts
 leave your text in the composer so you can correct them.
 
-The web companion keeps a flat Future list with dates shown on scheduled tasks. The terminal app groups Future into
-Ideas, Scheduled, and Completed, and restricts reordering to the displayed
-section. This presentation difference does not change the shared task format
-or rollover and scheduling rules.
+Future holds undated tasks. Setting a date moves the task immediately into its
+date bucket; moving it back to Future clears the date. On load, legacy dated
+Future tasks migrate before rollover and retention, using revision-checked
+uploads. Invalid dates remain untouched for correction. Rendering does not mutate
+tasks. The terminal separates completed tasks and any invalid-date recovery rows
+in Future; the web companion keeps a flat list.
 
+- Select the note icon beside a task title to open its notes in a scrollable dialog. Text is selectable and line breaks are preserved. Close with the close button or Escape.
 - Tap a task title to edit its title or schedule.
 - Drag the `≡` handle to reorder a task or move it between visible days and
   Future. With a keyboard, focus the handle, press Space or Enter to pick up,

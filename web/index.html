@@ -143,6 +143,17 @@
   </form>
 </dialog>
 
+<dialog id="notes-dialog" class="notes-dialog" aria-labelledby="notes-heading notes-task-title">
+  <header class="notes-dialog__header">
+    <div class="notes-dialog__titles">
+      <h2 id="notes-heading">Notes</h2>
+      <p id="notes-task-title"></p>
+    </div>
+    <button id="notes-close" class="editor__close" type="button" aria-label="close notes" autofocus>✕</button>
+  </header>
+  <div id="notes-content" class="notes-dialog__content" tabindex="0" role="region" aria-label="Task notes"></div>
+</dialog>
+
 <script src="config.js"></script>
 <script src="domain.js"></script>
 <script src="sync.js"></script>

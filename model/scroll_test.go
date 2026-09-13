@@ -1,6 +1,7 @@
 package model
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -14,17 +15,21 @@ func pressBrowsingKey(t *testing.T, m Model, key rune) Model {
 	return updated.(Model)
 }
 
-func TestRightNavigationScrollsViewportAndLoadsDueTasks(t *testing.T) {
+func TestRightNavigationScrollsWithoutWritingTasks(t *testing.T) {
 	today := dayKey(0)
 	dueDate := dayKey(3)
 	m := Model{
-		Data:        TodoData{"Future": {{ID: "due", Title: "Due later", DueDate: dueDate}}},
+		Data:        TodoData{dueDate: {{ID: "due", Title: "Due later", DueDate: dueDate}}, "Future": {{ID: "legacy", DueDate: dueDate}}},
 		FilePath:    filepath.Join(t.TempDir(), "tasks.json"),
 		VisibleDays: 3,
 		State:       Browsing,
 		todayKey:    today,
 	}
 	m.updateDateKeysFrom(startOfDayNow())
+	if err := m.Data.Save(m.FilePath); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(m.FilePath)
 
 	m = pressBrowsingKey(t, m, 'l')
 	m = pressBrowsingKey(t, m, 'l')
@@ -40,10 +45,17 @@ func TestRightNavigationScrollsViewportAndLoadsDueTasks(t *testing.T) {
 		t.Fatalf("focus column = %d, want right edge 2", m.ColIdx)
 	}
 	if got := m.Data[dueDate]; len(got) != 1 || got[0].ID != "due" {
-		t.Fatalf("due-date tasks = %v, want task loaded from Future", got)
+		t.Fatalf("due-date tasks = %v, want scheduled task", got)
 	}
-	if len(m.Data["Future"]) != 0 {
-		t.Fatalf("Future = %v, want dated task removed", m.Data["Future"])
+	after, err := os.ReadFile(m.FilePath)
+	if err != nil || string(before) != string(after) {
+		t.Fatal("navigation wrote task data")
+	}
+	if _, err := os.Stat(m.FilePath + ".bak"); !os.IsNotExist(err) {
+		t.Fatal("navigation created backup")
+	}
+	if len(m.Data["Future"]) != 1 {
+		t.Fatalf("navigation migrated data outside the load boundary: %v", m.Data["Future"])
 	}
 }
 

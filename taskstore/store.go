@@ -40,8 +40,11 @@ func LoadStore(store Store, retentionDays int) (Snapshot, int, error) {
 		return Snapshot{}, 0, err
 	}
 	data := snapshot.Data
+	dirty := data.MigrateDatedFutureTasks()
 	count := data.CarryForwardCount()
-	dirty := data.RollOverIncompleteTasks()
+	if data.RollOverIncompleteTasks() {
+		dirty = true
+	}
 	if retentionDays > 0 && data.PruneOldTasks(retentionDays) {
 		dirty = true
 	}

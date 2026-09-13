@@ -33,7 +33,7 @@ function app() {
       replaceChildren(...items) { this.children = items; },
       querySelectorAll() { return []; }, querySelector() { return element(); }, closest() { return element(); },
       setAttribute(name, value) { this.attributes[name] = value; },
-      removeAttribute(name) { delete this.attributes[name]; }, remove() {}, focus() {}, close() {},
+      removeAttribute(name) { delete this.attributes[name]; }, remove() {}, focus() {}, showModal() { this.open = true; }, close() { this.open = false; },
       getBoundingClientRect() { return { left: 0, right: 100, top: 0, bottom: 100, height: 10 }; },
       click() { downloads.push(this); },
     };
@@ -41,7 +41,7 @@ function app() {
   const get = id => { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); };
   const document = Object.assign(element(), {
     getElementById: get, createElement: element, createDocumentFragment: element,
-    documentElement: element(), visibilityState: "visible",
+    createElementNS: element, documentElement: element(), visibilityState: "visible",
   });
   const window = Object.assign(element(), {
     DOITDOIT_CONFIG: {}, DoitdoitSync: Sync, DoitdoitDomain: Domain,
@@ -278,25 +278,77 @@ test("sync status explains unsaved, syncing, saved and conflict states", async (
   assert.equal(indicator.textContent, "Conflict");
 });
 
-test("Future shows scheduled dates and exposes completion state without changing task data", async () => {
+test("load migrates dated Future tasks with a conditional save and renders distant dates", async () => {
   const a = app();
-  a.state.data = { Future: [
-    { id: "scheduled", title: "Book a trip", due_date: "2099-06-21", completed: false },
+  const legacy = { Future: [
+    { id: "scheduled", title: "Book a trip", due_date: "2099-06-21", notes: "Details\nMore", completed: false },
     { id: "idea", title: "Learn pottery", completed: true },
   ] };
-  await a.edit("another idea");
+  const loading = a.reload(); await tick();
+  a.reply(0, legacy, "bbbbbbbbb"); await tick();
+  assert.equal(a.requests.length, 2);
+  const saved = JSON.parse(a.requests[1].options.body);
+  assert.deepEqual(saved.Future, [legacy.Future[1]]);
+  assert.deepEqual(saved["2099-06-21"], [legacy.Future[0]]);
+  const arg = JSON.parse(a.requests[1].options.headers["Dropbox-API-Arg"]);
+  assert.equal(arg.mode.update, "bbbbbbbbb");
+  a.reply(1, { rev: "ccccccccc" }); await loading;
+  assert.equal(a.state.dirty, false);
   const sections = a.get("board").children[0].children;
-  assert.equal(sections[0].children[0].children[0].textContent, "Today");
-  assert.equal(sections[1].children[0].children[0].textContent, "Tomorrow");
   const future = sections.find(section => section.dataset.key === "Future");
-  const rows = future.children[1].children;
-  const scheduled = rows.find(row => row.dataset.id === "scheduled");
-  const idea = rows.find(row => row.dataset.id === "idea");
-  assert.equal(scheduled.children[0].attributes["aria-pressed"], "false");
-  assert.equal(idea.children[0].attributes["aria-pressed"], "true");
-  assert.equal(scheduled.children[1].children[0].className, "task__due");
-  assert.match(scheduled.children[1].children[0].textContent, /2099/);
-  assert.match(scheduled.children[1].attributes["aria-label"], /scheduled for/);
-  assert.equal(idea.children[1].children.length, 0);
-  assert.equal(a.state.data.Future.find(task => task.id === "scheduled").due_date, "2099-06-21");
+  assert.equal(future.children[1].children.length, 1);
+  const distant = sections.find(section => section.dataset.key === "2099-06-21");
+  assert.equal(distant.children[1].children[0].dataset.id, "scheduled");
+  const again = a.reload(); await tick();
+  a.reply(2, saved, "ccccccccc"); await again;
+  assert.equal(a.requests.length, 3, "repeat load must not upload");
+});
+
+test("migration upload conflicts retain the migrated draft for recovery", async () => {
+  const a = app();
+  const loading = a.reload(); await tick();
+  a.reply(0, { Future: [{ id: "legacy", due_date: "2099-01-01" }] }); await tick();
+  a.reply(1, {}, undefined, 409); await loading;
+  assert.equal(a.state.conflict, true);
+  assert.equal(a.state.dirty, true);
+  assert.equal(a.state.data["2099-01-01"][0].id, "legacy");
+});
+
+
+test("notes icon opens large plain-text notes without expanding the task list or saving", async () => {
+  const a = app();
+  const notes = "  café\n<img src=x onerror=alert(1)>\n" + "Long notes\n".repeat(10000);
+  a.state.data = {
+    Future: [{ id: "idea", title: "Idea", notes }, { id: "empty", title: "Empty", notes: "" }, { id: "legacy", title: "Legacy" }],
+    "2099-01-01": [{ id: "done", title: "Done", completed: true, notes: "Different notes" }],
+  };
+  await a.edit("another idea");
+  const before = copy(a.state.data);
+  const dirty = a.state.dirty;
+  const sections = a.get("board").children[0].children;
+  const rows = sections.flatMap(section => section.children[1].children);
+  for (const id of ["idea", "done"]) {
+    const row = rows.find(row => row.dataset.id === id);
+    const button = row.children.find(child => child.className === "task__notes-button");
+    assert.equal(button.textContent, undefined, "board must not contain note text");
+    assert.equal(button.children[0].attributes["aria-hidden"], "true");
+    assert.equal(button.attributes["aria-haspopup"], "dialog");
+    assert.match(button.attributes["aria-label"], /view notes for/);
+    button.closest = () => row;
+    await a.get("board").emit("click", { target: { closest: () => button } });
+    assert.equal(a.get("notes-dialog").open, true);
+    assert.equal(a.get("notes-content").textContent, id === "idea" ? notes : "Different notes");
+    assert.equal(a.get("notes-content").children.length, 0);
+    assert.equal(a.get("notes-task-title").textContent, id === "idea" ? "Idea" : "Done");
+    await a.get("notes-close").emit("click");
+    assert.equal(a.get("notes-dialog").open, false);
+    await a.get("notes-dialog").emit("close");
+    assert.equal(a.get("notes-content").textContent, "");
+  }
+  for (const id of ["empty", "legacy"]) {
+    assert.equal(rows.find(row => row.dataset.id === id).children.some(child => child.className === "task__notes-button"), false);
+  }
+  assert.deepEqual(copy(a.state.data), before);
+  assert.equal(a.state.dirty, dirty);
+  assert.equal(a.requests.length, 0);
 });

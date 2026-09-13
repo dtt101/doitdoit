@@ -170,7 +170,6 @@ func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
 		}
 		m.updateDateKeysFrom(firstDay)
 		m.todayKey = todayKey
-		m.Data.distributeFutureTasksThrough(m.lastVisibleDate())
 		m.ColIdx = 0
 		for i, dateKey := range m.dateKeys {
 			if !m.FocusToday && dateKey == focusedDate {
@@ -297,10 +296,8 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if !m.ShowFuture && !m.FocusToday {
 			if m.ColIdx < len(m.dateKeys)-1 {
 				m.ColIdx++
-			} else if m.shiftDateWindow(1) {
-				if m.Data.distributeFutureTasksThrough(m.lastVisibleDate()) {
-					m.persist()
-				}
+			} else {
+				m.shiftDateWindow(1)
 			}
 			m.clampRow()
 		}

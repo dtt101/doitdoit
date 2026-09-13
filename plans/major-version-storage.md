@@ -1,7 +1,10 @@
 # Simple file storage and visible conflict resolution
 
 Status: accepted direction, replacing the immutable-storage roadmap on 2026-09-10.
-The existing JSON file remains authoritative. No storage migration is planned.
+The existing JSON file remains authoritative. No backend migration is planned.
+On load, legacy dated tasks in Future are normalized into their date buckets
+before rollover and retention. Future is reserved for undated tasks; calendar
+navigation and layout never change task storage.
 This document replaces the former eleven-stage plan; its stages 6–11 are cancelled.
 
 ## Goal
