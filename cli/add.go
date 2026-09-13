@@ -15,8 +15,9 @@ func RunAddCommand(args []string, out io.Writer) int {
 	flags.SetOutput(out)
 	when := flags.String("when", "today", "today, tomorrow, future, or YYYY-MM-DD")
 	filePath := flags.String("file", "", "task JSON file (overrides config)")
+	notes := flags.String("notes", "", "plain-text notes for the task")
 	flags.Usage = func() {
-		fmt.Fprintln(out, "Usage: doitdoit add [--when <target>] [--file <path>] <title>")
+		fmt.Fprintln(out, "Usage: doitdoit add [--when <target>] [--file <path>] [--notes <text>] <title>")
 	}
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -46,7 +47,7 @@ func RunAddCommand(args []string, out io.Writer) int {
 		return 1
 	}
 	retention, _ := cfg.Retention()
-	_, key, err := taskstore.CaptureTask(path, title, *when, retention)
+	_, key, err := taskstore.CaptureWithNotes(taskstore.NewJSON(path), title, *when, *notes, retention)
 	if err != nil {
 		fmt.Fprintf(out, "Error adding task: %v\n", err)
 		return 1

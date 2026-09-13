@@ -278,7 +278,17 @@ doitdoit config retention <days> Set a positive retention period
 doitdoit config omarchy-hook install|status|remove
 ```
 
-For example, `doitdoit add --when tomorrow "send the invoice"` is suitable for shell aliases, launchers, and scripts. Titles can be quoted or supplied as multiple arguments.
+For example, `doitdoit add --when tomorrow "send the invoice"` is suitable for shell aliases, launchers, and scripts. Titles can be quoted or supplied as multiple arguments. Put flags before the title.
+
+Use `--notes` to include plain-text notes when creating a task:
+
+```bash
+doitdoit add --when tomorrow --notes "Include September expenses" "send the invoice"
+doitdoit add --notes $'First line\nSecond line' "task with multiline notes"
+```
+
+Notes preserve whitespace and line breaks and use the same optional JSON `notes`
+field as the TUI. The multiline example uses Bash's `$'…'` quoting.
 
 ## Mobile companion
 

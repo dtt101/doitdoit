@@ -14,6 +14,12 @@ func CaptureTask(path, title, when string, retentionDays int) (Task, string, err
 
 // Capture runs non-interactive task creation against the same store as the TUI.
 func Capture(store Store, title, when string, retentionDays int) (Task, string, error) {
+	return CaptureWithNotes(store, title, when, "", retentionDays)
+}
+
+// CaptureWithNotes creates a task with plain-text notes in the same conditional
+// save as its title and schedule. Notes are preserved verbatim.
+func CaptureWithNotes(store Store, title, when, notes string, retentionDays int) (Task, string, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return Task{}, "", fmt.Errorf("task title cannot be empty")
@@ -31,7 +37,7 @@ func Capture(store Store, title, when string, retentionDays int) (Task, string, 
 		return Task{}, "", err
 	}
 
-	task := Task{ID: fmt.Sprintf("%d", now.UnixNano()), Title: title, CreatedAt: now}
+	task := Task{ID: fmt.Sprintf("%d", now.UnixNano()), Title: title, Notes: notes, CreatedAt: now}
 	key := target
 	if future {
 		key = "Future"

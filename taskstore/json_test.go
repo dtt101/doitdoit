@@ -80,7 +80,7 @@ func TestCaptureAndMaintenanceUseLoadedRevision(t *testing.T) {
 					t.Fatal(err)
 				}
 			}}
-			_, _, err := Capture(injected, "capture", "future", 0)
+			_, _, err := CaptureWithNotes(injected, "capture", "future", "unsaved notes\nsecond line", 0)
 			if !errors.Is(err, ErrDataConflict) {
 				t.Fatalf("capture error=%v", err)
 			}

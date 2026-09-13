@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/dtt101/doitdoit/config"
+	"github.com/dtt101/doitdoit/taskstore"
 )
 
 func TestRunAddCommand(t *testing.T) {
@@ -26,6 +27,53 @@ func TestRunAddCommand(t *testing.T) {
 	contents, err := os.ReadFile(path)
 	if err != nil || !strings.Contains(string(contents), "write postcard") {
 		t.Fatalf("contents=%q err=%v", contents, err)
+	}
+}
+
+func TestRunAddCommandNotes(t *testing.T) {
+	for _, notes := range []string{"", "Include expenses", "  café 📝\n\tSecond line\n"} {
+		t.Run(notes, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			path := filepath.Join(home, "tasks.json")
+			var out bytes.Buffer
+			args := []string{"--file", path, "--when", "future", "--notes", notes, "send", "invoice"}
+			if code := RunAddCommand(args, &out); code != 0 {
+				t.Fatalf("code=%d output=%q", code, out.String())
+			}
+			snapshot, err := taskstore.NewJSON(path).Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			tasks := snapshot.Data["Future"]
+			if len(tasks) != 1 || tasks[0].Title != "send invoice" || tasks[0].Notes != notes {
+				t.Fatalf("unexpected tasks: %#v", tasks)
+			}
+			contents, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if notes == "" && strings.Contains(string(contents), `"notes"`) {
+				t.Fatal("empty notes should be omitted from JSON")
+			}
+		})
+	}
+}
+
+func TestRunAddCommandInvalidNotesArgumentsDoNotWrite(t *testing.T) {
+	for _, args := range [][]string{{"--notes"}, {"--notes", "only notes"}, {"--when", "invalid", "--notes", "details", "Task"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			path := filepath.Join(home, "tasks.json")
+			var out bytes.Buffer
+			if code := RunAddCommand(append([]string{"--file", path}, args...), &out); code == 0 {
+				t.Fatalf("unexpected success: %q", out.String())
+			}
+			if _, err := os.Stat(path); !os.IsNotExist(err) {
+				t.Fatalf("task file should not exist: %v", err)
+			}
+		})
 	}
 }
 
