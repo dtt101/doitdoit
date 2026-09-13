@@ -88,3 +88,23 @@ func TestRunAddCommandRequiresTitleAndPath(t *testing.T) {
 		t.Fatalf("code=%d output=%q", code, out.String())
 	}
 }
+
+func TestRunAddCommandHelp(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// Help must succeed without reading even a broken config or creating files.
+	if err := os.WriteFile(filepath.Join(home, ".doitdoit_config.json"), []byte("invalid"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, arg := range []string{"--help", "-h"} {
+		var out bytes.Buffer
+		if code := RunAddCommand([]string{arg}, &out); code != 0 {
+			t.Fatalf("%s: code=%d output=%q", arg, code, out.String())
+		}
+		for _, want := range []string{"--notes", "today, tomorrow, future, or YYYY-MM-DD", "overrides config", "flags before the title"} {
+			if !strings.Contains(out.String(), want) {
+				t.Errorf("%s: help missing %q", arg, want)
+			}
+		}
+	}
+}

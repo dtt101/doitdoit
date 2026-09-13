@@ -88,7 +88,7 @@ func TestSingleDayArgumentStillAllowsCalendarNavigation(t *testing.T) {
 	m = resizeModel(m, 200, 24)
 	m = pressRune(m, 'l')
 	if len(m.visibleKeys()) != 1 || m.getCurrentKey() != dayKey(1) || m.FocusToday {
-		t.Fatal("-days 1 must be a navigable calendar, independent of Today focus")
+		t.Fatal("a one-day window must be a navigable calendar, independent of Today focus")
 	}
 	m = pressRune(m, 't')
 	if len(m.visibleKeys()) != 1 || m.getCurrentKey() != dayKey(0) {

@@ -24,13 +24,46 @@ func main() {
 		}
 	}
 	filePathFlag := flag.String("file", "", "Path to the JSON data file (overrides config)")
-	visibleDays := flag.Int("days", 3, "Maximum day columns to display (fewer in narrow windows)")
-	flag.Parse()
+	flag.Usage = func() {
+		fmt.Fprint(flag.CommandLine.Output(), `doitdoit — a terminal task manager
 
-	if *visibleDays < 1 {
-		fmt.Fprintln(os.Stderr, "Error: -days must be at least 1")
-		os.Exit(2)
+Usage:
+  doitdoit [--file <path>]
+  doitdoit add [--when <target>] [--file <path>] [--notes <text>] <title>
+  doitdoit config <command>
+
+Run without a command to open the interactive task manager.
+The layout adapts to the terminal width. Use left/right to navigate days,
+t to return to Today, or T to toggle Today focus.
+
+Interactive options:
+`)
+		flag.PrintDefaults()
+		fmt.Fprint(flag.CommandLine.Output(), `
+Add options (put flags before the title):
+  --when <target>  today (default), tomorrow, future, or YYYY-MM-DD
+  --file <path>    Task JSON file for this command (overrides config)
+  --notes <text>   Plain-text notes; preserves whitespace and line breaks
+  Titles can be quoted or supplied as multiple arguments.
+
+Config commands:
+  show                          Show storage path, theme, and retention
+  move <path>                   Move the task file and update config
+  theme [name]                  Show available themes or select a theme
+  retention [forever|days]       Show or set completed-history retention
+                                Use forever or a positive number of days
+  omarchy-hook install|status|remove
+                                Manage opt-in live Omarchy theme updates
+
+Examples:
+  doitdoit --file ~/tasks.json
+  doitdoit add --when tomorrow --notes "Include expenses" "Send invoice"
+  doitdoit config retention 30
+
+Use --help or -h to show help; use doitdoit add --help for capture options.
+`)
 	}
+	flag.Parse()
 
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -79,7 +112,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	m, err := model.NewModelWithRetention(finalPath, *visibleDays, retentionDays)
+	// Keep the three-day scheduling window independent of responsive layout.
+	m, err := model.NewModelWithRetention(finalPath, 3, retentionDays)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing model: %v\n", err)
 		os.Exit(1)

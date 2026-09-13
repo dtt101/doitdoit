@@ -18,8 +18,15 @@ func RunAddCommand(args []string, out io.Writer) int {
 	notes := flags.String("notes", "", "plain-text notes for the task")
 	flags.Usage = func() {
 		fmt.Fprintln(out, "Usage: doitdoit add [--when <target>] [--file <path>] [--notes <text>] <title>")
+		fmt.Fprintln(out, "\nAdd a task without opening the TUI. Put flags before the title.")
+		fmt.Fprintln(out, "Titles can be quoted or supplied as multiple arguments. Notes preserve whitespace and line breaks.")
+		fmt.Fprintln(out, "\nOptions:")
+		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
 		return 2
 	}
 	title := strings.TrimSpace(strings.Join(flags.Args(), " "))

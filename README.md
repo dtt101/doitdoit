@@ -141,9 +141,8 @@ Completed history is preserved forever by default. Choose a positive pruning per
 ## Daily workflow
 
 The default view shows up to three days, with one day per column. Narrow windows
-show fewer columns, keeping the selected day on screen. Use `-days 7` for up to
-seven columns when space allows, or `-days 1` for a single scrolling day. Move
-right to see later days and left to return toward Today.
+show fewer columns, keeping the selected day on screen. Move right to see later
+days and left to return toward Today.
 
 Press `t` to jump back to Today. Press `T` to focus on Today alone; press it again
 to restore the responsive multi-day layout at Today. Focus mode stays on Today
@@ -173,7 +172,7 @@ or `MM-DD`, and press Enter. `MM-DD` uses the current year; past dates move
 the task to Today.
 
 Tasks with a specific future date remain there until that date enters the
-planning window set by `-days`, while undated ideas wait until you decide what
+three-day planning window, while undated ideas wait until you decide what
 to do with them. Resizing or toggling Today
 focus only changes the display: it does not reschedule tasks or change that
 planning window's size. Use left/right to reach days hidden by a narrow window.
@@ -261,7 +260,6 @@ Bundled themes:
 
 ```text
 doitdoit                         Launch the TUI
-doitdoit -days <number>          Set the maximum day columns (default: 3)
 doitdoit -file <path>            Use a different data file for this session
 doitdoit add <title>             Add a task to Today without opening the TUI
 doitdoit add --when <target> <title>
