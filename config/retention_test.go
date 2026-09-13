@@ -28,6 +28,68 @@ func TestResolveRetentionDefaultsToForeverOnEOF(t *testing.T) {
 	}
 }
 
+func TestResolveRetentionInputAndConfirmation(t *testing.T) {
+	const prompt = "Choose how long to keep completed task history.\nEnter 'forever' or a positive number of days [forever]: "
+	const invalid = "Please enter 'forever' or a positive whole number of days.\n"
+	const forever = "Completed task history will be kept forever.\n"
+	for _, tc := range []struct {
+		name  string
+		input string
+		days  int
+		out   string
+	}{
+		{"empty EOF", "", 0, prompt + forever},
+		{"blank line", "\n", 0, prompt + forever},
+		{"explicit forever", " FoReVeR \n", 0, prompt + forever},
+		{"days at EOF", "14", 14, prompt + "Completed task history will be kept for 14 days.\n"},
+		{"invalid EOF", "nope", 0, prompt + invalid + forever},
+		{"zero EOF", "0", 0, prompt + invalid + forever},
+		{"negative EOF", "-1", 0, prompt + invalid + forever},
+		{"retry then EOF", "nope\n", 0, prompt + invalid + prompt + forever},
+		{"retry then days", "nope\n14\n", 14, prompt + invalid + prompt + "Completed task history will be kept for 14 days.\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := withTempHome(t)
+			cfg := &Config{StoragePath: filepath.Join(home, "tasks.json"), Theme: "nord"}
+			var out bytes.Buffer
+			days, err := ResolveRetention(cfg, strings.NewReader(tc.input), &out)
+			if err != nil || days != tc.days || out.String() != tc.out {
+				t.Fatalf("days=%d err=%v output=%q; want days=%d output=%q", days, err, out.String(), tc.days, tc.out)
+			}
+			saved, err := LoadConfig()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, decided := saved.Retention(); !decided || got != tc.days {
+				t.Fatalf("saved retention=%d,%v; want %d,true", got, decided, tc.days)
+			}
+			if saved.StoragePath != cfg.StoragePath || saved.Theme != cfg.Theme {
+				t.Fatalf("other config fields changed: %#v", saved)
+			}
+		})
+	}
+}
+
+func TestResolveRetentionSaveFailure(t *testing.T) {
+	for _, input := range []string{"forever\n", "14\n", "invalid"} {
+		t.Run(input, func(t *testing.T) {
+			home := withTempHome(t)
+			// A directory at the config path prevents atomic replacement on both supported platforms.
+			if err := os.Mkdir(filepath.Join(home, ".doitdoit_config.json"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			var out bytes.Buffer
+			days, err := ResolveRetention(&Config{}, strings.NewReader(input), &out)
+			if days != 0 || err == nil || !strings.HasPrefix(err.Error(), "saving retention choice: ") {
+				t.Fatalf("days=%d err=%v", days, err)
+			}
+			if strings.Contains(out.String(), "Completed task history will be kept") {
+				t.Fatalf("reported success after save failure: %q", out.String())
+			}
+		})
+	}
+}
+
 func TestResolveRetentionCustomAndExisting(t *testing.T) {
 	withTempHome(t)
 	cfg := &Config{}

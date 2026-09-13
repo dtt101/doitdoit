@@ -82,33 +82,28 @@ func ResolveRetention(cfg *Config, in io.Reader, out io.Writer) (int, error) {
 		if err != nil && err != io.EOF {
 			return 0, fmt.Errorf("reading retention choice: %w", err)
 		}
-		if choice == "" || choice == "forever" {
-			cfg.SetRetention(0)
-			if err := SaveConfig(cfg); err != nil {
-				return 0, fmt.Errorf("saving retention choice: %w", err)
+		days := 0
+		if choice != "" && choice != "forever" {
+			parsedDays, parseErr := strconv.Atoi(choice)
+			if parseErr == nil && parsedDays > 0 {
+				days = parsedDays
+			} else {
+				fmt.Fprintln(out, "Please enter 'forever' or a positive whole number of days.")
+				if err != io.EOF {
+					continue
+				}
 			}
-			fmt.Fprintln(out, "Completed task history will be kept forever.")
-			return 0, nil
 		}
 
-		days, parseErr := strconv.Atoi(choice)
-		if parseErr == nil && days > 0 {
-			cfg.SetRetention(days)
-			if err := SaveConfig(cfg); err != nil {
-				return 0, fmt.Errorf("saving retention choice: %w", err)
-			}
+		cfg.SetRetention(days)
+		if err := SaveConfig(cfg); err != nil {
+			return 0, fmt.Errorf("saving retention choice: %w", err)
+		}
+		if days == 0 {
+			fmt.Fprintln(out, "Completed task history will be kept forever.")
+		} else {
 			fmt.Fprintf(out, "Completed task history will be kept for %d days.\n", days)
-			return days, nil
 		}
-
-		fmt.Fprintln(out, "Please enter 'forever' or a positive whole number of days.")
-		if err == io.EOF {
-			cfg.SetRetention(0)
-			if saveErr := SaveConfig(cfg); saveErr != nil {
-				return 0, fmt.Errorf("saving retention choice: %w", saveErr)
-			}
-			fmt.Fprintln(out, "Completed task history will be kept forever.")
-			return 0, nil
-		}
+		return days, nil
 	}
 }
