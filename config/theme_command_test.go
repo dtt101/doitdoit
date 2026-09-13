@@ -20,6 +20,46 @@ func TestRunCommandThemeShow(t *testing.T) {
 	}
 }
 
+func TestRunCommandThemeDescriptions(t *testing.T) {
+	for _, tc := range []struct {
+		theme string
+		want  string
+	}{
+		{"", "system (follows Omarchy when present)"},
+		{"system", "system"},
+		{"nord", "nord"},
+	} {
+		t.Run("theme="+tc.theme, func(t *testing.T) {
+			withTempHome(t)
+			if err := SaveConfig(&Config{Theme: tc.theme}); err != nil {
+				t.Fatal(err)
+			}
+			for _, command := range []struct {
+				name   string
+				prefix string
+			}{
+				{"show", "Theme: "},
+				{"theme", "Current theme: "},
+			} {
+				var out bytes.Buffer
+				if code := RunCommand([]string{"config", command.name}, &out); code != 0 {
+					t.Fatalf("%s: code=%d output=%q", command.name, code, out.String())
+				}
+				want := command.prefix + tc.want
+				found := false
+				for _, line := range strings.Split(out.String(), "\n") {
+					if line == want {
+						found = true
+					}
+				}
+				if !found {
+					t.Errorf("%s: output=%q, want line %q", command.name, out.String(), want)
+				}
+			}
+		})
+	}
+}
+
 func TestRunCommandThemeSet(t *testing.T) {
 	withTempHome(t)
 	var out bytes.Buffer

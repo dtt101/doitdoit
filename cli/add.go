@@ -59,10 +59,6 @@ func RunAddCommand(args []string, out io.Writer) int {
 		fmt.Fprintf(out, "Error adding task: %v\n", err)
 		return 1
 	}
-	label := key
-	if key == "Future" {
-		label = "Future"
-	}
-	fmt.Fprintf(out, "Added to %s: %s\n", label, title)
+	fmt.Fprintf(out, "Added to %s: %s\n", key, title)
 	return 0
 }

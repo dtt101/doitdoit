@@ -43,13 +43,16 @@ func runShow(out io.Writer) int {
 		return 1
 	}
 	fmt.Fprintf(out, "Storage Path: %s\n", cfg.StoragePath)
-	theme := cfg.Theme
-	if theme == "" {
-		theme = "system (follows Omarchy when present)"
-	}
-	fmt.Fprintf(out, "Theme: %s\n", theme)
+	fmt.Fprintf(out, "Theme: %s\n", themeDescription(cfg))
 	fmt.Fprintf(out, "Retention: %s\n", retentionDescription(cfg))
 	return 0
+}
+
+func themeDescription(cfg *Config) string {
+	if cfg.Theme == "" {
+		return "system (follows Omarchy when present)"
+	}
+	return cfg.Theme
 }
 
 func retentionDescription(cfg *Config) string {
@@ -103,11 +106,7 @@ func runTheme(args []string, out io.Writer) int {
 	}
 
 	if len(args) < 1 {
-		current := cfg.Theme
-		if current == "" {
-			current = "system (follows Omarchy when present)"
-		}
-		fmt.Fprintf(out, "Current theme: %s\n", current)
+		fmt.Fprintf(out, "Current theme: %s\n", themeDescription(cfg))
 		names := append([]string{styles.ThemeNameSystem}, styles.BuiltinThemeNames()...)
 		fmt.Fprintf(out, "Available themes: %s\n", strings.Join(names, ", "))
 		return 0
