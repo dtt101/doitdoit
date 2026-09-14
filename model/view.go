@@ -110,7 +110,19 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 	}
 
 	tasks := m.Data[dateStr]
+	adding := focused && m.State == Adding
+	appendNewTask := func() {
+		if len(doc.lines) > 0 {
+			doc.lines = append(doc.lines, "")
+		}
+		appendInput()
+		adding = false
+	}
 	for _, section := range m.taskSections(dateStr) {
+		// Keep capture beside unfinished work, even when history is collapsed.
+		if adding && section.label == "Completed" {
+			appendNewTask()
+		}
 		if len(section.rows) == 0 {
 			continue
 		}
@@ -155,12 +167,9 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 			}
 		}
 	}
-	if focused && m.State == Adding {
-		if len(tasks) > 0 {
-			doc.lines = append(doc.lines, "")
-		}
-		appendInput()
-	} else if len(tasks) == 0 {
+	if adding {
+		appendNewTask()
+	} else if len(tasks) == 0 && !(focused && m.State == Adding) {
 		message := "Nothing planned yet.\nSelect this day to add a task."
 		if focused {
 			switch {

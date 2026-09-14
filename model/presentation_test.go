@@ -48,6 +48,54 @@ func TestTaskMarkersAndCountsWithoutColour(t *testing.T) {
 	}
 }
 
+func TestNewTaskInputBeforeCompletedHistory(t *testing.T) {
+	for _, future := range []bool{false, true} {
+		for _, collapsed := range []bool{false, true} {
+			for _, active := range []bool{false, true} {
+				m := newFeedbackTestModel(t)
+				m.ShowFuture = future
+				m.HideCompleted = collapsed
+				key := m.getCurrentKey()
+				m.Data[key] = nil
+				if active {
+					m.Data[key] = append(m.Data[key], Task{ID: "active", Title: "Unfinished work"})
+				}
+				for range 30 {
+					m.Data[key] = append(m.Data[key], Task{Title: "Finished work", Completed: true})
+				}
+				m.RowIdx = len(m.Data[key]) - 1
+				m = pressRune(m, 'a')
+				m.TextInput.SetValue("Draft task")
+				view := ansi.Strip(m.renderDaySection(key, m.ColIdx, 60))
+				input := strings.Index(view, " +  Draft task")
+				completed := strings.Index(view, "Completed 30")
+				if input < 0 || completed < input || (active && strings.Index(view, "Unfinished work") > input) {
+					t.Fatalf("input must follow unfinished work and precede completed history:\n%s", view)
+				}
+				for _, width := range []int{24, 48, 80} {
+					m = resizeModel(m, width, 16)
+					assertFitsTerminal(t, m)
+					if !strings.Contains(ansi.Strip(m.View().Content), " +  Draft task") {
+						t.Fatalf("input scrolled out of view at width %d", width)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestNewTaskInputOnEmptyDay(t *testing.T) {
+	m := newFeedbackTestModel(t)
+	key := m.getCurrentKey()
+	m.Data[key] = nil
+	m = pressRune(m, 'a')
+	m.TextInput.SetValue("Draft task")
+	view := ansi.Strip(m.renderDaySection(key, m.ColIdx, 60))
+	if strings.Count(view, " +  Draft task") != 1 || strings.Contains(view, "Press a") {
+		t.Fatalf("empty day should show a single input without the browsing hint:\n%s", view)
+	}
+}
+
 func TestCollapseIsPresentationOnlyAndSkipsHiddenTasks(t *testing.T) {
 	m := newFeedbackTestModel(t)
 	key := m.getCurrentKey()

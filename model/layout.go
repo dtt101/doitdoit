@@ -106,6 +106,8 @@ func (m Model) columnGeometry(count int) columnGeometry {
 
 func (m Model) inputPrefix() string {
 	switch m.State {
+	case Adding:
+		return " +  "
 	case Editing:
 		return "Edit: "
 	case SettingMoveDate:
