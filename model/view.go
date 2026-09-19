@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dtt101/doitdoit/styles"
 )
 
@@ -272,23 +273,36 @@ func (m Model) helpView() string {
 		}
 	}
 	footer := wrapFooterItems(prefix, items, m.footerContentWidth())
-	if m.State == Browsing && m.Err == nil && m.feedback != "" {
-		feedbackItems := []string{lipgloss.NewStyle().Foreground(styles.Text).Render(m.feedback)}
-		if m.moveUndo != nil {
-			feedbackItems = append(feedbackItems, group("u", "undo"))
-		}
-		footer += "\n" + wrapFooterItems("", feedbackItems, m.footerContentWidth())
-	}
 	if m.State == Browsing && m.Err == nil && m.carriedForward > 0 && (m.height == 0 || m.height >= 16) {
 		footer += "\n" + lipgloss.Wrap(desc(m.rolloverNotice()), max(1, m.footerContentWidth()), "")
 	}
 	return m.footerStyle().Render(footer)
 }
 
+// Reserve one quiet status row so feedback never moves the board or shortcuts.
+// Keep the recovery action intact even when the message must be shortened.
+func (m Model) feedbackView() string {
+	if m.State != Browsing || m.Err != nil || m.saveErr != nil || m.feedback == "" {
+		return ""
+	}
+	suffix := ""
+	if m.moveUndo != nil {
+		suffix = " · " + styles.KeyStyle.Render("u") + " undo"
+	}
+	message := m.feedback
+	if width := m.footerContentWidth(); width > 0 {
+		message = ansi.Truncate(message, max(0, width-lipgloss.Width(suffix)), "…")
+	}
+	return lipgloss.NewStyle().Foreground(styles.Subtle).
+		MarginLeft(m.footerStyle().GetMarginLeft()).Render(message + suffix)
+}
+
 func (m Model) footerView() string {
 	footer := m.helpView()
 	if errView := m.errorView(); errView != "" {
 		footer = errView + "\n" + footer
+	} else {
+		footer = m.feedbackView() + "\n" + footer
 	}
 	return footer
 }
@@ -400,9 +414,9 @@ func (m Model) brandBounds() (x, y, width int, ok bool) {
 	columns := lipgloss.JoinHorizontal(lipgloss.Top, m.renderColumns(m.visibleKeys())...)
 
 	x = m.appStyle().GetMarginLeft() + m.footerStyle().GetMarginLeft()
-	y = m.appStyle().GetMarginTop() + lipgloss.Height(columns) + m.footerStyle().GetMarginTop()
+	y = m.appStyle().GetMarginTop() + lipgloss.Height(columns) + 1 + m.footerStyle().GetMarginTop()
 	if errView := m.errorView(); errView != "" {
-		y += lipgloss.Height(errView)
+		y += lipgloss.Height(errView) - 1
 	}
 	if x < 0 || x+brandWidth > m.width || y < 0 || y >= m.height {
 		return 0, 0, 0, false

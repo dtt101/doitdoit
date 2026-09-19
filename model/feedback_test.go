@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -88,7 +89,7 @@ func TestDeleteFeedbackAndUndoMatchSavedData(t *testing.T) {
 	m := newFeedbackTestModel(t)
 	today := m.dateKeys[0]
 	m = pressRune(m, 'd')
-	footer := ansi.Strip(m.helpView())
+	footer := ansi.Strip(m.feedbackView())
 	if !strings.Contains(footer, "Task deleted") || !strings.Contains(footer, "u undo") {
 		t.Fatalf("missing delete confirmation and recovery: %q", footer)
 	}
@@ -97,7 +98,7 @@ func TestDeleteFeedbackAndUndoMatchSavedData(t *testing.T) {
 		t.Fatalf("delete not saved: %v, %v", saved, err)
 	}
 	m = pressRune(m, 'u')
-	footer = ansi.Strip(m.helpView())
+	footer = ansi.Strip(m.feedbackView())
 	if !strings.Contains(footer, "Undid last change") || strings.Contains(footer, "u undo") || strings.Contains(footer, "Task deleted") {
 		t.Fatalf("undo confirmation is stale: %q", footer)
 	}
@@ -126,7 +127,7 @@ func TestMoveFeedbackUsesActualDestination(t *testing.T) {
 				updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 				m = updated.(Model)
 			}
-			footer := ansi.Strip(m.helpView())
+			footer := ansi.Strip(m.feedbackView())
 			if m.Err != nil || !strings.Contains(footer, "Moved to "+tc.want) || !strings.Contains(footer, "u undo") {
 				t.Fatalf("unexpected move result: err=%v footer=%q", m.Err, footer)
 			}
@@ -139,8 +140,8 @@ func TestMoveFeedbackUsesActualDestination(t *testing.T) {
 	m := newFeedbackTestModel(t)
 	m = pressRune(pressRune(m, 'm'), '1')
 	m = pressRune(m, '.')
-	if m.Err != nil || len(m.Data[dayKey(1)]) != 2 || !strings.Contains(m.helpView(), "Moved to tomorrow") {
-		t.Fatalf("repeat move did not confirm its destination: %v, %q", m.Err, m.helpView())
+	if m.Err != nil || len(m.Data[dayKey(1)]) != 2 || !strings.Contains(m.feedbackView(), "Moved to tomorrow") {
+		t.Fatalf("repeat move did not confirm its destination: %v, %q", m.Err, m.feedbackView())
 	}
 }
 
@@ -148,11 +149,11 @@ func TestFeedbackFollowsUndoHistory(t *testing.T) {
 	m := newFeedbackTestModel(t)
 	m = pressRune(m, 'd')
 	m = pressRune(pressRune(m, 'f'), 'f')
-	if !strings.Contains(m.helpView(), "Task deleted") {
+	if !strings.Contains(m.feedbackView(), "Task deleted") {
 		t.Fatal("navigation lost the last action feedback")
 	}
 	m = pressSpace(m)
-	if strings.Contains(m.helpView(), "Task deleted") || m.feedback != "" {
+	if strings.Contains(m.feedbackView(), "Task deleted") || m.feedback != "" {
 		t.Fatal("a new mutation retained stale delete feedback")
 	}
 	m = pressRune(m, 'd')
@@ -161,7 +162,7 @@ func TestFeedbackFollowsUndoHistory(t *testing.T) {
 		modTime: m.dataModTime.Add(time.Second),
 	})
 	m = updated.(Model)
-	if m.feedback != "" || strings.Contains(m.helpView(), "u undo") {
+	if m.feedback != "" || strings.Contains(m.feedbackView(), "u undo") {
 		t.Fatal("external reload retained feedback for invalidated undo history")
 	}
 }
@@ -179,8 +180,8 @@ func TestFailedActionsDoNotClaimSuccess(t *testing.T) {
 		if action == 'm' {
 			m = pressRune(m, '1')
 		}
-		if m.Err == nil || m.feedback != "" || strings.Contains(m.helpView(), "u undo") || m.errorView() == "" {
-			t.Fatalf("failed %q claimed success: err=%v footer=%q", action, m.Err, m.helpView())
+		if m.Err == nil || m.feedback != "" || strings.Contains(m.feedbackView(), "u undo") || m.errorView() == "" {
+			t.Fatalf("failed %q claimed success: err=%v footer=%q", action, m.Err, m.feedbackView())
 		}
 	}
 	m := newFeedbackTestModel(t)
@@ -207,5 +208,46 @@ func TestNoOpAndCancelledMovesDoNotClaimSuccess(t *testing.T) {
 	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if updated.(Model).feedback != "" {
 		t.Fatal("cancelled move produced success feedback")
+	}
+}
+
+// Exercise the rendered screen, not just the notification string: deleting and
+// undoing must leave every keyboard hint and the task viewport in place.
+func TestFeedbackDoesNotDisruptKeyboardHints(t *testing.T) {
+	for _, size := range [][2]int{{24, 10}, {30, 12}, {48, 16}, {80, 24}, {120, 30}} {
+		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
+			m := resizeModel(newFeedbackTestModel(t), size[0], size[1])
+			hints := ansi.Strip(m.helpView())
+			geometry := m.columnGeometry(m.visibleColumnCount())
+			hintRow := func(m Model) int {
+				for i, line := range strings.Split(ansi.Strip(m.View().Content), "\n") {
+					if strings.Contains(line, "a add") {
+						return i
+					}
+				}
+				t.Fatal("add shortcut is missing")
+				return -1
+			}
+			row := hintRow(m)
+			for _, action := range []rune{'d', 'u'} {
+				m = pressRune(m, action)
+				assertFitsTerminal(t, m)
+				if ansi.Strip(m.helpView()) != hints || hintRow(m) != row {
+					t.Fatal("feedback changed or moved keyboard hints")
+				}
+				if m.columnGeometry(m.visibleColumnCount()) != geometry {
+					t.Fatal("feedback resized the task viewport")
+				}
+				if lipgloss.Height(m.feedbackView()) != 1 {
+					t.Fatal("feedback must occupy exactly one line")
+				}
+			}
+			m.feedback = strings.Repeat("界", 100)
+			m.moveUndo = &moveUndoSnapshot{}
+			assertFitsTerminal(t, m)
+			if !strings.HasSuffix(ansi.Strip(m.feedbackView()), " · u undo") {
+				t.Fatal("a long message hid the undo action")
+			}
+		})
 	}
 }
