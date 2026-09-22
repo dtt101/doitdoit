@@ -126,3 +126,35 @@ func TestInputConfiguredOnModeSwitch(t *testing.T) {
 		t.Fatalf("expected input to be reset for date entry, got %q", m.TextInput.Value())
 	}
 }
+
+func TestTerminalPasteIntoTextInput(t *testing.T) {
+	for name, state := range map[string]State{"add": Adding, "edit": Editing, "date": SettingMoveDate} {
+		t.Run(name, func(t *testing.T) {
+			m := Model{State: state, TextInput: textinput.New(), Data: make(TodoData)}
+			m.configureTextInput("input")
+			m.TextInput.SetValue("before after")
+			m.TextInput.SetCursor(7)
+			updated, _ := m.Update(tea.PasteMsg{Content: "café 📋\nnext\t"})
+			m = updated.(Model)
+			if got := m.TextInput.Value(); got != "before café 📋 next after" {
+				t.Fatalf("paste at cursor: %q", got)
+			}
+			if m.State != state || len(m.Data) != 0 {
+				t.Fatal("paste must only update the draft, without submitting")
+			}
+		})
+	}
+}
+
+func TestTerminalPasteIgnoredOutsideActiveInput(t *testing.T) {
+	for _, state := range []State{Browsing, ChoosingMoveDestination, Adding} {
+		m := Model{State: state, TextInput: textinput.New(), ShowHelp: state == Adding}
+		m.configureTextInput("input")
+		m.TextInput.SetValue("unchanged")
+		updated, _ := m.Update(tea.PasteMsg{Content: "q\na\nd\n"})
+		m = updated.(Model)
+		if m.TextInput.Value() != "unchanged" || m.State != state {
+			t.Fatal("paste changed an inactive input or triggered shortcuts")
+		}
+	}
+}

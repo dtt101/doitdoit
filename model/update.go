@@ -126,6 +126,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseClickMsg:
 		return m.handleMouseClick(msg)
 	default:
+		// Text inputs also need terminal paste events and asynchronous messages
+		// from their own commands (such as clipboard reads and cursor blinks).
+		if !m.ShowHelp && !m.terminalTooSmall() {
+			switch m.State {
+			case Adding, Editing, SettingMoveDate:
+				var cmd tea.Cmd
+				m.TextInput, cmd = m.TextInput.Update(msg)
+				return m, cmd
+			}
+		}
 		return m, nil
 	}
 }
