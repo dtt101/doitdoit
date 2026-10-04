@@ -75,7 +75,7 @@ func TestNotesConflictKeepsDraft(t *testing.T) {
 	}
 	m.notesInput.SetValue("local notes")
 	m = notesKey(m, tea.KeyEsc, 0)
-	if !errors.Is(m.saveErr, ErrDataConflict) || m.State != EditingNotes || m.notesInput.Value() != "local notes" {
+	if !errors.Is(m.saveErr, ErrDataConflict) || m.State != Browsing || m.pending == nil || m.pending.Draft[m.notesKey][0].Notes != "local notes" {
 		t.Fatalf("lost conflict draft: %v", m.saveErr)
 	}
 	loaded, _ := taskstore.NewJSON(m.FilePath).Load()
@@ -174,7 +174,7 @@ func TestNotesCloseUnchangedDoesNotWrite(t *testing.T) {
 	}
 }
 
-func TestNotesCloseRetriesFailedSave(t *testing.T) {
+func TestNotesConflictResolvesThroughReview(t *testing.T) {
 	m := notesModel(t)
 	baseline := taskstore.Clone(taskstore.Data(m.Data))
 	remote := taskstore.Clone(baseline)
@@ -185,14 +185,16 @@ func TestNotesCloseRetriesFailedSave(t *testing.T) {
 	}
 	m.notesInput.SetValue("local notes")
 	m = notesKey(m, tea.KeyEsc, 0)
-	if m.State != EditingNotes || m.saveErr == nil {
-		t.Fatal("failed save closed editor")
+	if m.State != Browsing || m.saveErr == nil || m.pending == nil {
+		t.Fatal("failed save did not pause editing with recovery")
 	}
 	// Restore the loaded file to resolve the conflict, then retry closing.
 	if _, err := store.Save(baseline, nil); err != nil {
 		t.Fatal(err)
 	}
-	m = notesKey(m, tea.KeyEsc, 0)
+	m = pressRune(m, 'r')
+	m = pressRune(m, 'p')
+	m = pressKeyCode(m, tea.KeyEnter)
 	loaded, err := store.Load()
 	if err != nil || m.State != Browsing || m.saveErr != nil || loaded.Data[m.notesKey][0].Notes != "local notes" {
 		t.Fatalf("retry did not save draft and close: %v / %v", err, m.saveErr)

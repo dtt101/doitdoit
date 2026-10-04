@@ -39,6 +39,12 @@ func LoadStore(store Store, retentionDays int) (Snapshot, int, error) {
 	if err != nil {
 		return Snapshot{}, 0, err
 	}
+	return MaintainSnapshot(store, snapshot, retentionDays)
+}
+
+// MaintainSnapshot lets interactive startup inspect recovery before any
+// lifecycle replacement, while retaining the exact revision originally read.
+func MaintainSnapshot(store Store, snapshot Snapshot, retentionDays int) (Snapshot, int, error) {
 	data := snapshot.Data
 	dirty := data.MigrateDatedFutureTasks()
 	count := data.CarryForwardCount()

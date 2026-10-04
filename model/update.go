@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/dtt101/doitdoit/taskstore"
 )
 
 type copyFlashDoneMsg struct{}
@@ -156,7 +157,7 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
-	if m.State == EditingNotes {
+	if m.State == EditingNotes || m.review != nil || m.pending != nil || len(m.conflictPaths) > 0 {
 		return m, dateTick()
 	}
 	todayKey := time.Now().Format(dateLayout)
@@ -203,6 +204,19 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.review != nil {
+		return m.handleReviewKey(msg)
+	}
+	if m.pending != nil && !m.pendingKeyAllowed(msg.String()) && !m.ShowHelp {
+		return m, nil
+	}
+	if (msg.String() == "q" || msg.String() == "ctrl+c") && m.pending != nil {
+		_, m.recoveryErr = taskstore.WriteRecovery(m.pending.StorePath, *m.pending, true)
+		if m.recoveryErr != nil && m.recoveryExport == "" {
+			m.openConflictReview()
+			return m, nil
+		}
+	}
 	if m.terminalTooSmall() {
 		if msg.String() == "q" || msg.String() == "ctrl+c" {
 			return m, tea.Quit
@@ -300,6 +314,9 @@ func (m Model) handleEditingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "r":
+		m.openConflictReview()
+		return m, nil
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "right", "l":

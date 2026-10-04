@@ -62,13 +62,16 @@ func (m Model) handleReloadTick() (tea.Model, tea.Cmd) {
 	if !m.canReload() {
 		return m, reloadTick()
 	}
+	if snapshot, err := m.dataStore().Load(); err == nil {
+		m.scanConflicts(snapshot)
+	}
 	return m, checkStore(m.dataStore(), m.dataHash, m.dataExists)
 }
 
 // Check both before reading and when the result arrives: input or a failed
 // save may have happened while the background check was in flight.
 func (m Model) canReload() bool {
-	return m.State == Browsing && m.saveErr == nil
+	return m.State == Browsing && m.saveErr == nil && m.pending == nil && m.review == nil
 }
 
 func (m Model) handleDataFileChecked(msg dataFileCheckedMsg) (tea.Model, tea.Cmd) {
@@ -86,6 +89,7 @@ func (m Model) handleDataFileChecked(msg dataFileCheckedMsg) (tea.Model, tea.Cmd
 	}
 
 	if !sameJSON(m.Data, msg.data) {
+		m.baseline = taskstore.Clone(taskstore.Data(msg.data))
 		m.applyReloadedData(msg.data)
 	}
 	return m, reloadTick()

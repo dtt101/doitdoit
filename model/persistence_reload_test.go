@@ -49,17 +49,13 @@ func TestConflictDraftSurvivesReloadAndInputCancellation(t *testing.T) {
 	updated, _ := m.Update(checked)
 	m = updated.(Model)
 	m = pressRune(m, 'e')
-	m.TextInput.SetValue("")
-	m = pressKeyCode(m, tea.KeyEnter)
-	if !strings.Contains(m.errorView(), "task title cannot be empty") {
-		t.Fatal("draft warning hid input validation")
+	if m.State != Browsing || m.pending == nil {
+		t.Fatal("editing must pause until the draft is resolved")
 	}
+	m = pressRune(m, 'r')
 	m = pressKeyCode(m, tea.KeyEsc)
-	if m.Err != nil {
-		t.Fatalf("input cancellation did not clear transient error: %v", m.Err)
-	}
-	if !strings.Contains(m.errorView(), "Changes not saved") {
-		t.Fatal("input cancellation hid the unsaved draft warning")
+	if !strings.Contains(m.errorView(), "changes need review") {
+		t.Fatal("cancellation hid the unsaved draft warning")
 	}
 	// Repeated checks must leave data, revision and undo untouched.
 	undo, hash, modTime := m.moveUndo, m.dataHash, m.dataModTime
