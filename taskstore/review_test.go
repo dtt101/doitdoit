@@ -113,3 +113,56 @@ func TestReviewOrderingAndAmbiguousConnectedLists(t *testing.T) {
 		t.Fatalf("fallback: %v %v", result, err)
 	}
 }
+
+func TestRecoveryKeepsCurrentAndExcludesCompletedWork(t *testing.T) {
+	current := Data{"Future": {
+		{ID: "done", Title: "Finished", Completed: true},
+		{ID: "open", Title: "Current title"},
+		{ID: "new", Title: "Current only"},
+	}}
+	copy := Data{"Future": {
+		{ID: "done", Title: "Finished"},
+		{ID: "open", Title: "Old title"},
+		{ID: "deleted", Title: "Deleted task"},
+		{ID: "old-done", Title: "Old completed", Completed: true},
+	}}
+	r := CompareRecovery(current, copy)
+	if len(r.Differences) != 3 {
+		t.Fatalf("expected only unfinished task decisions: %+v", r.Differences)
+	}
+	for _, d := range r.Differences {
+		if d.ID == "done" || d.ID == "old-done" || d.Choice != UseCurrent {
+			t.Fatalf("offered completed work or defaulted to restoring a copy: %+v", d)
+		}
+	}
+	result, err := r.Resolve()
+	if err != nil || !reflect.DeepEqual(result, current) {
+		t.Fatalf("default resurrected deleted work: %v %v", result, err)
+	}
+	chooseAll(&r, UseAlternative)
+	result, err = r.Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexed := taskIndex(result)
+	if !indexed["done"].Task.Completed || indexed["old-done"] != nil || indexed["deleted"] == nil || indexed["open"].Task.Title != "Old title" {
+		t.Fatalf("explicit restore changed completed work or lost selected work: %v", result)
+	}
+}
+
+func TestRecoverySkipsListAndOrderChoicesContainingCompletedWork(t *testing.T) {
+	for _, current := range []Data{
+		{"Future": {{ID: "done", Completed: true}, {ID: "open"}}},
+		{"Future": {{ID: "done", Completed: true}, {ID: "open"}, {ID: "open"}}},
+	} {
+		copy := Data{"Future": {{ID: "open"}, {ID: "done"}}}
+		r := CompareRecovery(current, copy)
+		if len(r.Differences) != 0 {
+			t.Fatalf("whole-list decision could change completed work: %+v", r.Differences)
+		}
+		result, err := r.Resolve()
+		if err != nil || !reflect.DeepEqual(result, current) {
+			t.Fatalf("excluded decisions changed current tasks: %v %v", result, err)
+		}
+	}
+}

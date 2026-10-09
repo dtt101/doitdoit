@@ -2,6 +2,7 @@ package model
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -47,8 +48,12 @@ func TestConflictKeepCurrentDeletesCopyWithoutRewriting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if m.review != nil {
+		t.Fatal("saved copy interrupted startup")
+	}
+	m = pressRune(m, 'r')
 	if m.review == nil {
-		t.Fatal("startup did not open review")
+		t.Fatal("explicit recovery did not open review")
 	}
 	m = pressRune(m, 'K')
 	m = pressRune(m, 'p')
@@ -103,6 +108,7 @@ func TestConflictImportExplicitDeletionAndMultipleCopies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	m = pressRune(m, 'r')
 	// Whichever filename sorts first, explicitly select its entire alternative.
 	firstPath := m.review.source.Path
 	for i := range m.review.comparison.Differences {
@@ -135,6 +141,7 @@ func TestConflictChangesDuringReviewInvalidatePreview(t *testing.T) {
 		t.Run(change, func(t *testing.T) {
 			path, source := conflictFixture(t, taskstore.Data{"Future": {{ID: "a", Title: "current"}}}, taskstore.Data{"Future": {{ID: "a", Title: "alternative"}}})
 			m, _ := NewModel(path, 3)
+			m = pressRune(m, 'r')
 			m = pressRune(m, '2')
 			m = pressRune(m, 'p')
 			target := path
@@ -208,6 +215,7 @@ func TestConflictDraftRestartAndFailedRecoveryBlocksQuit(t *testing.T) {
 func TestConflictFailuresRetainCopies(t *testing.T) {
 	path, source := conflictFixture(t, taskstore.Data{"Future": {{ID: "a", Title: "old"}}}, taskstore.Data{"Future": {{ID: "a", Title: "new"}}})
 	m, _ := NewModel(path, 3)
+	m = pressRune(m, 'r')
 	m.store = &failingDraftStore{JSONStore: taskstore.NewJSON(path), err: errors.New("disk full")}
 	m.storePath = path
 	m = pressRune(m, '2')
@@ -236,7 +244,8 @@ func TestConflictBackgroundDiscoveryDefersAndRawRetentionPreview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.review == nil || len(m.review.comparison.Differences) != 3 {
+	m = pressRune(m, 'r')
+	if m.review == nil || len(m.review.comparison.Differences) != 2 {
 		t.Fatal("startup pruned raw evidence")
 	}
 	for i, d := range m.review.comparison.Differences {
@@ -246,7 +255,7 @@ func TestConflictBackgroundDiscoveryDefersAndRawRetentionPreview(t *testing.T) {
 	}
 	m = pressRune(m, 'p')
 	body := m.reviewBody()
-	if !strings.Contains(body, "Your history setting will also remove") || !strings.Contains(body, "old completed") || !strings.Contains(body, "Carried forward to Today") {
+	if strings.Contains(body, "old completed") || !strings.Contains(body, "Carried forward to Today") {
 		t.Fatal("preview hid lifecycle effects", body)
 	}
 	m = pressKeyCode(m, tea.KeyEsc)
@@ -267,6 +276,7 @@ func TestConflictBackgroundDiscoveryDefersAndRawRetentionPreview(t *testing.T) {
 func TestConflictDialogFitsTerminalAndKeepsControls(t *testing.T) {
 	path, _ := conflictFixture(t, taskstore.Data{"Future": {{ID: "a", Title: "current"}}}, taskstore.Data{"Future": {{ID: "a", Title: "copy", Notes: strings.Repeat("long notes\n", 100)}}})
 	m, _ := NewModel(path, 3)
+	m = pressRune(m, 'r')
 	for _, size := range [][2]int{{80, 24}, {120, 40}, {24, 10}} {
 		m.width, m.height = size[0], size[1]
 		view := ansi.Strip(m.conflictView())
@@ -285,9 +295,10 @@ func TestReviewUsesTaskActionsAndHidesStorageDetails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	m = pressRune(m, 'r')
 	m.width, m.height = 100, 30
 	view := ansi.Strip(m.conflictView())
-	for _, want := range []string{"Review tasks", "Missing task", "Buy coffee", "Don't add", "Add task"} {
+	for _, want := range []string{"Recover tasks", "Task from saved copy", "Buy coffee", "Delete", "Restore", "tasks you deleted"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("missing task-focused guidance %q:\n%s", want, view)
 		}
@@ -312,12 +323,12 @@ func TestReviewUsesTaskActionsAndHidesStorageDetails(t *testing.T) {
 	}
 }
 
-func TestReviewDescribesStatusChangeAsTaskAction(t *testing.T) {
-	path, _ := conflictFixture(t, taskstore.Data{"Future": {{ID: "a", Title: "Send update", Completed: true}}}, taskstore.Data{"Future": {{ID: "a", Title: "Send update"}}})
-	m, err := NewModel(path, 3)
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestDraftReviewDescribesStatusChangeAsTaskAction(t *testing.T) {
+	m := Model{review: &conflictReview{comparison: taskstore.Compare(
+		taskstore.Data{"Future": {{ID: "a", Title: "Send update", Completed: true}}},
+		taskstore.Data{"Future": {{ID: "a", Title: "Send update"}}},
+		taskstore.Data{"Future": {{ID: "a", Title: "Send update", Completed: true}}},
+	)}}
 	body := ansi.Strip(m.conflictView())
 	for _, want := range []string{"Status: Done → Not done", "Keep as is", "Mark not done"} {
 		if !strings.Contains(body, want) {
@@ -332,6 +343,7 @@ func TestReviewPanelMatchesNotesAndOverlaysBoard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	m = pressRune(m, 'r')
 	m.width, m.height = 120, 40
 	panel := ansi.Strip(m.conflictView())
 	if lipgloss.Width(panel) > 64 || lipgloss.Height(panel) > 20 {
@@ -348,7 +360,112 @@ func TestReviewPanelMatchesNotesAndOverlaysBoard(t *testing.T) {
 		t.Fatalf("review overlay size %dx%d, Today visible=%v:\n%s", lipgloss.Width(overlay), lipgloss.Height(overlay), strings.Contains(overlay, "Today"), overlay)
 	}
 	m = pressRune(m, '2')
-	if !strings.Contains(ansi.Strip(m.conflictView()), "Add task ✓") {
+	if !strings.Contains(ansi.Strip(m.conflictView()), "Restore ✓") {
 		t.Fatal("selected choice has no visible feedback")
+	}
+}
+
+func TestSavedCopiesDoNotInterruptStartupOrRestoreDeletedTasks(t *testing.T) {
+	today := time.Now().Format(dateLayout)
+	old := time.Now().AddDate(0, 0, -20).Format(dateLayout)
+	path, source := conflictFixture(t,
+		taskstore.Data{old: {{ID: "open", Title: "Carry forward"}, {ID: "done", Title: "Prune", Completed: true}}},
+		taskstore.Data{"Future": {{ID: "deleted", Title: "Deleted task"}, {ID: "old-done", Title: "Completed copy task", Completed: true}}},
+	)
+	copyBytes, _ := os.ReadFile(source)
+	m, err := NewModelWithRetention(path, 3, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.review != nil || m.pending != nil || !strings.Contains(m.conflictStatus(), "recover tasks") {
+		t.Fatal("saved copy interrupted normal startup", m.conflictStatus())
+	}
+	if len(m.Data[today]) != 1 || m.Data[today][0].ID != "open" || len(m.Data[old]) != 0 || len(m.Data["Future"]) != 0 {
+		t.Fatal("copy blocked maintenance or restored old work", m.Data)
+	}
+	currentBytes, _ := os.ReadFile(path)
+	m = pressRune(m, 'r')
+	if m.review == nil {
+		t.Fatal("saved copy unavailable for explicit recovery")
+	}
+	if strings.Contains(ansi.Strip(m.conflictView()), "Completed copy task") {
+		t.Fatal("showed done task")
+	}
+	m = pressRune(m, 'p')
+	if !strings.Contains(m.reviewBody(), "Nothing") {
+		t.Fatal("default preview restored old work", m.reviewBody())
+	}
+	m = pressKeyCode(m, tea.KeyEnter)
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(currentBytes, after) {
+		t.Fatal("default recovery changed current tasks")
+	}
+	dir, _ := taskstore.RecoveryDirectory(path)
+	exports, _ := filepath.Glob(filepath.Join(dir, "review-*.json"))
+	if len(exports) != 1 {
+		t.Fatal("missing recovery export", exports)
+	}
+	contents, _ := os.ReadFile(exports[0])
+	var recovery taskstore.Recovery
+	if err := json.Unmarshal(contents, &recovery); err != nil {
+		t.Fatal(err)
+	}
+	if recovery.Source == nil || !bytes.Equal(recovery.Source.Bytes, copyBytes) {
+		t.Fatal("export lost exact source bytes or hidden completed task")
+	}
+	// The source is only removed after explicit preview/save, with original bytes protected.
+	if _, err := os.Stat(source); !os.IsNotExist(err) {
+		t.Fatal("explicitly reviewed source remains")
+	}
+}
+
+func TestCompletedOnlySavedCopyIsPreservedWithoutNotice(t *testing.T) {
+	path, source := conflictFixture(t,
+		taskstore.Data{"Future": {{ID: "a", Title: "Done now", Completed: true}}},
+		taskstore.Data{"Future": {{ID: "a", Title: "Old unfinished"}, {ID: "b", Title: "Done then", Completed: true}}},
+	)
+	before, _ := os.ReadFile(source)
+	m, err := NewModel(path, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m = pressRune(m, 'r')
+	if m.review != nil || m.conflictStatus() != "" {
+		t.Fatal("completed work prompted recovery")
+	}
+	after, err := os.ReadFile(source)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("hidden copy was discarded", err)
+	}
+}
+
+func TestSavedCopyRecoveryPreviewHidesAndPreservesDoneTasks(t *testing.T) {
+	path, _ := conflictFixture(t,
+		taskstore.Data{"Future": {{ID: "done", Title: "Completed current task", Completed: true}, {ID: "open", Title: "Current open task"}}},
+		taskstore.Data{"Future": {{ID: "done", Title: "Old unfinished version"}, {ID: "open", Title: "Copied open task"}, {ID: "old-done", Title: "Completed copied task", Completed: true}}},
+	)
+	m, err := NewModel(path, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m = pressRune(m, 'r')
+	if m.review == nil || len(m.review.comparison.Differences) != 1 {
+		t.Fatal("completed work offered for recovery")
+	}
+	m = pressRune(m, '2')
+	m = pressRune(m, 'p')
+	m = pressRune(m, 'v')
+	body := m.reviewBody()
+	if strings.Contains(body, "Completed") || strings.Contains(body, "Old unfinished") || !strings.Contains(body, "Copied open task") {
+		t.Fatal("full recovery preview showed completed work", body)
+	}
+	m = pressKeyCode(m, tea.KeyEnter)
+	loaded, err := taskstore.NewJSON(path).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks := loaded.Data["Future"]
+	if len(tasks) != 2 || tasks[0].Title != "Copied open task" || tasks[1].Title != "Completed current task" || !tasks[1].Completed {
+		t.Fatal("restoring unfinished work changed completed work", tasks)
 	}
 }

@@ -179,6 +179,36 @@ func Compare(current, alternative, base Data) Review {
 	return r
 }
 
+// CompareRecovery treats a discovered copy as optional recovery material, not
+// evidence of missing tasks or later edits. Completed work on either side is
+// excluded. Whole-list/order choices containing completed work are excluded too,
+// so restoring a list cannot remove or reopen completed tasks indirectly.
+// Both full snapshots remain available for resolution and recovery exports.
+func CompareRecovery(current, alternative Data) Review {
+	r := Compare(current, alternative, nil)
+	differences := r.Differences[:0]
+	for _, d := range r.Differences {
+		if (d.Current != nil && d.Current.Task.Completed) || (d.Alternative != nil && d.Alternative.Task.Completed) {
+			continue
+		}
+		completed := false
+		for _, bucket := range d.Buckets {
+			for _, data := range []Data{current, alternative} {
+				for _, task := range data[bucket] {
+					completed = completed || task.Completed
+				}
+			}
+		}
+		if completed {
+			continue
+		}
+		d.Choice = UseCurrent
+		differences = append(differences, d)
+	}
+	r.Differences = differences
+	return r
+}
+
 func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {

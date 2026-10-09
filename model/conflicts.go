@@ -36,9 +36,6 @@ func (m *Model) startRecovery(snapshot taskstore.Snapshot) error {
 		return nil
 	}
 	m.scanConflicts(snapshot)
-	if len(m.conflictPaths) > 0 {
-		m.openConflictReview()
-	}
 	return nil
 }
 
@@ -73,7 +70,7 @@ func (m *Model) scanConflicts(snapshot taskstore.Snapshot) {
 				diagnostics = append(diagnostics, "Cleanup failed: "+err.Error())
 				m.conflictPaths = append(m.conflictPaths, path)
 			}
-		} else {
+		} else if len(taskstore.CompareRecovery(current.Snapshot.Data, source.Snapshot.Data).Differences) > 0 {
 			m.conflictPaths = append(m.conflictPaths, path)
 		}
 	}
@@ -145,7 +142,7 @@ func (m *Model) openConflictReview() {
 			return
 		}
 		r.source = &source
-		r.comparison = taskstore.Compare(file.Data, source.Snapshot.Data, nil)
+		r.comparison = taskstore.CompareRecovery(file.Data, source.Snapshot.Data)
 	}
 	m.review = r
 	m.State = Browsing
@@ -429,7 +426,7 @@ func (m Model) conflictStatus() string {
 		return m.conflictNotice
 	}
 	if len(m.conflictPaths) > 0 {
-		return "Some tasks need your attention. Press r to review."
+		return "Saved Dropbox copies are available. Press r to recover tasks."
 	}
 	return ""
 }

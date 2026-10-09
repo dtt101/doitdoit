@@ -165,7 +165,7 @@ func newModelWithStore(filePath string, visibleDays, retentionDays int, store ta
 	if err := m.startRecovery(snapshot); err != nil {
 		return Model{}, err
 	}
-	if m.review == nil && m.pending == nil && len(m.conflictPaths) == 0 && m.conflictNotice == "" {
+	if m.review == nil && m.pending == nil && m.conflictNotice == "" {
 		snapshot, m.carriedForward, err = taskstore.MaintainSnapshot(store, snapshot, retentionDays)
 		if err != nil {
 			return Model{}, err

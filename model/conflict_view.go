@@ -132,7 +132,20 @@ func (m Model) reviewBody() string {
 				keys = append(keys, key)
 			}
 			sort.Strings(keys)
-			return "Your tasks after saving:\n\n" + listText(r.preview, keys)
+			display := r.preview
+			if r.source != nil {
+				display = taskstore.Clone(r.preview)
+				for bucket, tasks := range display {
+					unfinished := tasks[:0]
+					for _, task := range tasks {
+						if !task.Completed {
+							unfinished = append(unfinished, task)
+						}
+					}
+					display[bucket] = unfinished
+				}
+			}
+			return "Your tasks after saving:\n\n" + listText(display, keys)
 		}
 		changes := taskstore.Compare(r.comparison.Current, r.preview, nil)
 		lines := []string{"Here's what will change:"}
@@ -199,7 +212,13 @@ func (m Model) reviewCardBody(width int) string {
 	}
 	d := r.comparison.Differences[r.index]
 	label := map[string]string{"add": "Missing task", "change": "Task changed", "remove": "Keep or delete", "order": "Task order", "lists": "Review task list"}[d.Kind]
+	if r.source != nil && d.Kind == "add" {
+		label = "Task from saved copy"
+	}
 	lines := []string{muted.Render(label), ""}
+	if r.source != nil {
+		lines = append(lines, muted.Render(lipgloss.Wrap("Saved copies may contain tasks you deleted or changed later.", width, "")), "")
+	}
 	if d.Kind == "add" || d.Kind == "remove" {
 		task := d.Alternative
 		if task == nil {
@@ -251,6 +270,9 @@ func (m Model) renderConflictPanel() (string, int) {
 	width = max(panel.GetHorizontalFrameSize()+1, width)
 	inner := width - panel.GetHorizontalFrameSize()
 	label := "Review tasks"
+	if r.source != nil {
+		label = "Recover tasks"
+	}
 	count := ""
 	if len(r.comparison.Differences) > 0 {
 		count = fmt.Sprintf("%d/%d", r.index+1, len(r.comparison.Differences))
@@ -274,6 +296,9 @@ func (m Model) renderConflictPanel() (string, int) {
 	if len(r.comparison.Differences) > 0 && !r.previewing && !r.discarding && !r.moreHelp {
 		d := r.comparison.Differences[r.index]
 		first, second := reviewActions(d)
+		if r.source != nil && d.Kind == "add" {
+			first, second = "Delete", "Restore"
+		}
 		choice := func(key, label string, selected bool) string {
 			if selected {
 				return styles.SelectedTaskStyle.Render(key + " " + label + " ✓")

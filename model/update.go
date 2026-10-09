@@ -157,7 +157,7 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
-	if m.State == EditingNotes || m.review != nil || m.pending != nil || len(m.conflictPaths) > 0 {
+	if m.State == EditingNotes || m.review != nil || m.pending != nil {
 		return m, dateTick()
 	}
 	todayKey := time.Now().Format(dateLayout)

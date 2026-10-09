@@ -74,18 +74,26 @@ snapshots. Compare raw snapshots before startup maintenance writes. Silently
 remove a copy only if every task matches the current file in content, bucket,
 and shared relative order; extra current tasks are not evidence of deletion.
 Malformed data, unknown fields, and ambiguous IDs never qualify for automatic
-cleanup. Ignore neither meaningful differences nor source-read failures.
+cleanup. Keep excluded completed differences in their source copies; report
+source-read failures.
 
-Keep the ordinary review task-focused: missing tasks, specific changed fields, and plain task actions. Do not show filenames, copy counts, storage terminology, or unchanged creation timestamps. Preview changes first, with the complete resulting list available on demand. “Save & finish” updates the authoritative task list and removes resolved copies in the background. Keep export and advanced controls under `?`.
+Keep the ordinary review task-focused: missing tasks, specific changed fields, and plain task actions. Do not show filenames, copy counts, storage terminology, or unchanged creation timestamps. Preview changes first, with the resulting unfinished list available on demand for saved copies. “Save & finish” updates the authoritative task list and removes resolved copies in the background. Keep export and advanced controls under `?`.
 
-Open review at startup. Background discovery displays a notice without
-interrupting typing; `r` opens review or rescans. Process files in filename order
-and recalculate after each resolution. Show additions, changed tasks, current-only
-tasks, and ordering. Creation timestamps do not identify the latest edit.
+Discovered copies are optional recovery material: display a notice at startup
+and during background discovery without opening review or blocking normal
+rollover and retention; `r` opens review or rescans. Process files in filename order
+and recalculate after each resolution. Show unfinished additions, changed tasks, current-only
+tasks, and ordering. Exclude tasks completed on either side, including old
+unfinished versions of tasks now completed. Exclude whole-list/order decisions
+containing completed tasks. Preserve copies with only excluded differences
+without prompting. Keep full snapshots and exact bytes for recovery exports.
+Creation timestamps do not identify the latest edit.
 
-Users explicitly import/skip missing tasks, select complete task versions, and
-keep/delete current-only tasks. Keep current-only tasks by default. Moves are one
-task decision across buckets. Ordering is a separate list choice, with retained
+Users explicitly restore/skip tasks from saved copies, select complete task
+versions, and keep/delete current-only tasks. Default every discovered-copy
+decision to keeping current. Label copied tasks as recovery material, not missing
+work: there is no baseline to establish whether an absent task was deleted.
+Moves are one task decision across buckets. Ordering is a separate list choice, with retained
 current-only tasks appended after the selected alternative order. Missing or
 duplicate IDs require whole-list choices for connected buckets; no title matching,
 ID repair, automatic field merge, or newly introduced duplicate ID is allowed.

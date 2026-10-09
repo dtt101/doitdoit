@@ -134,15 +134,15 @@ This makes a few useful workflows almost effortless:
 
 The TUI checks for external changes every few seconds and reloads them without disturbing you while you are typing. Before every save it verifies that the file still matches the version it loaded. Independent date-list changes can merge; competing changes within a list require review. Each replacement keeps the previous valid contents in the task file's `.bak` sibling.
 
-### Review Dropbox conflicts
+### Recover tasks from Dropbox copies
 
 On startup, the terminal checks for Dropbox “conflicted copy” files beside your configured task file, including conflicted `.bak` files. It leaves ordinary `.bak` files, historical backups, and subdirectories alone. Copies whose tasks already match the current file are silently deleted; additional tasks in the current file are kept. Copies with missing or duplicate task IDs are never automatically deleted.
 
-When decisions are needed, a compact review panel opens over the task board, using the same styling as Notes. It shows one task at a time; the chosen action is marked with a check, and long details scroll while the choices stay visible. Copies arriving while you work produce a notice; press **`r`** to review them or rescan. Review one copy at a time:
+Saved copies produce an optional recovery notice; they do not open a review on startup or block normal rollover and retention. Press **`r`** to recover tasks or rescan. The compact panel shows one unfinished task at a time and defaults to keeping your current file. Old copies can contain tasks you deliberately deleted or changed later: absence alone cannot distinguish a deletion from an unsynced addition. Completed tasks on either side are excluded, including old unfinished versions of tasks now marked done. Copies containing only excluded differences are preserved without prompting. Recover from one copy at a time:
 
-1. Use **arrows / `j` / `k`** to select a task. The screen offers task actions: **Don’t add / Add task**, **Keep as is / Update task**, or **Keep task / Delete task**. Press **`1`** or **`2`** to choose. Status-only changes offer **Mark done** or **Mark not done**. Enter toggles the choice. Missing tasks do not establish which copy contains a deletion.
-2. Choose ordering separately when lists differ. Moves are shown as one task decision. Ambiguous IDs require choosing connected whole lists; the app will not guess task identity from titles or introduce duplicate IDs.
-3. **`K`** explicitly keeps the current version for every difference. **`p`** summarizes what will be added, updated, or deleted, including any rollover or retention effects. Press **`v`** to see all tasks after saving. **Page Up / Page Down** scroll long notes and lists.
+1. Use **arrows / `j` / `k`** to select a task. The screen offers task actions: **Delete / Restore**, **Keep as is / Update task**, or **Keep task / Delete task**. Press **`1`** or **`2`** to choose. Enter toggles the choice. Restoring a task is always an explicit choice.
+2. Choose ordering separately when lists differ. Moves are shown as one task decision. Ambiguous IDs require choosing connected whole lists. List and ordering choices containing completed work are excluded from saved-copy recovery. The app will not guess task identity from titles or introduce duplicate IDs.
+3. **`K`** explicitly keeps the current version for every difference. **`p`** summarizes what will be added, updated, or deleted, including any rollover or retention effects. Press **`v`** to see unfinished tasks after saving. **Page Up / Page Down** scroll long notes and lists.
 4. **Enter — Save & finish** applies the choices to your main task list and removes the resolved copies in the background. **Esc** returns to choices, then defers review without changing anything. If a file changes during review, the app requires fresh choices.
 
 Task timestamps record creation, not the last edit. They never automatically decide which status is newer. Selecting a changed task chooses its complete version, including notes, completion, and date.
