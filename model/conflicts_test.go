@@ -188,12 +188,18 @@ func TestConflictDraftRestartAndFailedRecoveryBlocksQuit(t *testing.T) {
 		t.Fatal("pending recovery not cleared")
 	}
 	// A filesystem error prevents persistent recovery and must block ordinary quit.
-	blocked := filepath.Join(t.TempDir(), "not-a-directory")
+	m = newDraftTestModel(t)
+	// Use the resolved recovery path: macOS does not use XDG_CONFIG_HOME.
+	blocked, err := taskstore.RecoveryDirectory(m.FilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(blocked), 0700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(blocked, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("XDG_CONFIG_HOME", blocked)
-	m = newDraftTestModel(t)
 	m.editTask("unsafe to quit")
 	writeDraftTestRemote(t, m, TodoData{"Future": {{ID: "a", Title: "remote"}}})
 	m.persist()
