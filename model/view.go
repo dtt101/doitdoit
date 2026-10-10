@@ -14,7 +14,9 @@ import (
 
 func (m Model) View() tea.View {
 	content := ""
-	if m.State == EditingNotes {
+	if m.review != nil {
+		content = m.conflictOverlay()
+	} else if m.State == EditingNotes {
 		content = m.notesOverlay()
 	} else if m.terminalTooSmall() {
 		content = fitLines("Window too small.\nResize to at least 24 x 10.\nq quit", m.width, m.height)
@@ -467,6 +469,7 @@ func (m Model) helpItems() []helpItem {
 		{".", "repeat move"},
 		{"u", "undo last change"},
 		{"c", "show/hide completed"},
+		{"r", "review conflicts / rescan copies"},
 		{"f", viewToggle},
 		{"t", "return to Today"},
 		{"T", "toggle Today focus"},
@@ -590,7 +593,7 @@ func (m Model) renderHelpOverlay(background string) string {
 }
 
 func (m Model) errorView() string {
-	if m.Err == nil && m.saveErr == nil {
+	if m.Err == nil && m.saveErr == nil && m.conflictStatus() == "" {
 		return ""
 	}
 	message := fmt.Sprintf("Error: %v", m.Err)
@@ -604,6 +607,12 @@ func (m Model) errorView() string {
 			message += " File changed externally."
 		} else {
 			message += fmt.Sprintf(" %v", detail)
+		}
+	}
+	if status := m.conflictStatus(); status != "" {
+		message = status
+		if m.Err != nil && !errors.Is(m.Err, ErrDataConflict) {
+			message += " " + m.Err.Error()
 		}
 	}
 	content := lipgloss.NewStyle().Foreground(styles.Warning).Render(message)

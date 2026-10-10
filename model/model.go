@@ -83,7 +83,14 @@ type Model struct {
 	Err error
 	// A failed save leaves a draft in memory. Input validation and cancellation
 	// may clear Err, but only a successful save may make this draft reloadable.
-	saveErr error
+	saveErr        error
+	baseline       taskstore.Data
+	pending        *taskstore.Recovery
+	review         *conflictReview
+	conflictPaths  []string
+	conflictNotice string
+	recoveryErr    error
+	recoveryExport string
 
 	// Last successful move, delete, or undo; cleared when task history changes.
 	feedback string
@@ -134,26 +141,38 @@ func newModelWithStore(filePath string, visibleDays, retentionDays int, store ta
 		return Model{}, fmt.Errorf("visible days must be at least 1")
 	}
 
-	snapshot, carriedForward, err := taskstore.LoadStore(store, retentionDays)
+	snapshot, err := store.Load()
 	if err != nil {
 		return Model{}, err
 	}
 
 	m := Model{
-		Data:           TodoData(snapshot.Data),
-		store:          store,
-		storePath:      filePath,
-		carriedForward: carriedForward,
-		FilePath:       filePath,
-		VisibleDays:    visibleDays,
-		RetentionDays:  retentionDays,
-		State:          Browsing,
-		TextInput:      textinput.New(),
-		todayKey:       time.Now().Format(dateLayout),
+		Data:          TodoData(snapshot.Data),
+		store:         store,
+		storePath:     filePath,
+		FilePath:      filePath,
+		VisibleDays:   visibleDays,
+		RetentionDays: retentionDays,
+		State:         Browsing,
+		TextInput:     textinput.New(),
+		todayKey:      time.Now().Format(dateLayout),
 	}
 	m.configureTextInput("New task...")
 	m.updateDateKeys()
-	m.recordRevision(snapshot.Revision)
+	m.baseline = taskstore.Clone(snapshot.Data)
+	m.dataHash, m.dataExists = snapshot.Revision.Hash, snapshot.Revision.Exists
+	m.dataModTime, m.dataSize = snapshot.ModTime, snapshot.Size
+	if err := m.startRecovery(snapshot); err != nil {
+		return Model{}, err
+	}
+	if m.review == nil && m.pending == nil && m.conflictNotice == "" {
+		snapshot, m.carriedForward, err = taskstore.MaintainSnapshot(store, snapshot, retentionDays)
+		if err != nil {
+			return Model{}, err
+		}
+		m.Data = TodoData(snapshot.Data)
+		m.recordRevision(snapshot.Revision)
+	}
 	return m, nil
 }
 

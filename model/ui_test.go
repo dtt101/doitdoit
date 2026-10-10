@@ -111,6 +111,7 @@ func TestRepeatMoveUsesAbsoluteDestination(t *testing.T) {
 	today := time.Now().Format(dateLayout)
 	target := time.Now().AddDate(0, 0, 2).Format(dateLayout)
 	m := Model{
+		FilePath: filepath.Join(t.TempDir(), "tasks.json"),
 		Data: TodoData{today: {
 			{ID: "1", Title: "Task 1"},
 			{ID: "2", Title: "Task 2"},
@@ -132,6 +133,7 @@ func TestUndoRestoresLastMoveAndFocus(t *testing.T) {
 	today := time.Now().Format(dateLayout)
 	tomorrow := time.Now().AddDate(0, 0, 1).Format(dateLayout)
 	m := Model{
+		FilePath: filepath.Join(t.TempDir(), "tasks.json"),
 		Data: TodoData{today: {
 			{ID: "1", Title: "Task 1"},
 			{ID: "2", Title: "Task 2"},
@@ -159,6 +161,7 @@ func TestUndoRestoresLastMoveAndFocus(t *testing.T) {
 func TestReorderAndUndo(t *testing.T) {
 	today := time.Now().Format(dateLayout)
 	m := Model{
+		FilePath: filepath.Join(t.TempDir(), "tasks.json"),
 		Data: TodoData{today: {
 			{ID: "1", Title: "Task 1"},
 			{ID: "2", Title: "Task 2"},

@@ -61,83 +61,76 @@ Document this limit without claiming lossless multi-device synchronization.
 
 ## Conflict experience
 
-When another version prevents a save, retain the user's local edits and show a
-persistent message: “Changes need review — your edits have not been saved.” Offer
-“Review changes”. Never replace the draft with the incoming file automatically.
-Pause automatic writes while review is pending; allow navigation and explicit
-recovery export. The first version can pause editing during review to keep the
-interaction predictable.
+The terminal implementation extends the original whole-list proposal with
+explicit task selection and discovery of Dropbox conflict copies. The JSON
+schema and conservative automatic `Merge` policy remain unchanged. Web review
+and CLI recovery integration are deferred; their current behavior is unchanged.
 
-The review compares three snapshots: the version originally loaded, the local
-draft, and the latest observed file. Label the two current alternatives “Your
-changes” and “File version”; do not infer an author, device, or which is newer
-from timestamps. Show the original value on demand.
+### Discovered copies
 
-- Group differences by date bucket and show task titles, completion state, date,
-  and ordering changes. Mark additions and removals explicitly.
-- Match tasks by existing stable IDs across buckets so moves can be explained.
-  Missing or duplicate IDs fall back to a whole-bucket comparison; do not guess
-  identity from titles or silently repair IDs as part of review.
-- Highlight competing changes to the same task and delete/edit cases. Also show
-  separate-task changes within a conflicted bucket, explaining that both copies
-  changed that list. Displaying task differences does not change the merge policy.
-- For the first release, let users choose “Use your list” or “Use file list” for
-  each conflicted bucket, with an exact preview. Review connected source and
-  destination buckets together for cross-bucket moves; block any result that
-  duplicates a task ID or silently loses a moved task.
-- Offer recovery export before discarding alternatives. Cancellation retains the
-  draft and conflict state. Do not introduce automatic field merging or a “keep
-  both” action that can silently duplicate tasks.
+Scan only Dropbox-named conflict copies adjacent to the configured task file,
+including conflicted `.bak` files. Preserve ordinary backups and historical
+snapshots. Compare raw snapshots before startup maintenance writes. Silently
+remove a copy only if every task matches the current file in content, bucket,
+and shared relative order; extra current tasks are not evidence of deletion.
+Malformed data, unknown fields, and ambiguous IDs never qualify for automatic
+cleanup. Keep excluded completed differences in their source copies; report
+source-read failures.
 
-Once choices are complete, show the resulting task lists and a single “Save
-resolved changes” action. Preserve independent bucket changes in that result.
-Save against the revision actually reviewed. If the file changes again, retain
-the draft and choices as recovery material, refresh the comparison, and require
-review of affected choices. Never force an unconditional overwrite or silently
-apply a decision to different input.
+Keep the ordinary review task-focused: missing tasks, specific changed fields, and plain task actions. Do not show filenames, copy counts, storage terminology, or unchanged creation timestamps. Preview changes first, with the resulting unfinished list available on demand for saved copies. “Save & finish” updates the authoritative task list and removes resolved copies in the background. Keep export and advanced controls under `?`.
 
-Keep this interaction equivalent in TUI and web, using their existing controls.
-The CLI should fail clearly on unresolved conflict, preserve any prepared unsaved
-change before exit, and give a concrete recovery path; it must not open an
-unexpected interactive resolver or report success for an unsaved task.
+Discovered copies are optional recovery material: display a notice at startup
+and during background discovery without opening review or blocking normal
+rollover and retention; `r` opens review or rescans. Process files in filename order
+and recalculate after each resolution. Show unfinished additions, changed tasks, current-only
+tasks, and ordering. Exclude tasks completed on either side, including old
+unfinished versions of tasks now completed. Exclude whole-list/order decisions
+containing completed tasks. Preserve copies with only excluded differences
+without prompting. Keep full snapshots and exact bytes for recovery exports.
+Creation timestamps do not identify the latest edit.
 
-## Minimal implementation
+Users explicitly restore/skip tasks from saved copies, select complete task
+versions, and keep/delete current-only tasks. Default every discovered-copy
+decision to keeping current. Label copied tasks as recovery material, not missing
+work: there is no baseline to establish whether an absent task was deleted.
+Moves are one task decision across buckets. Ordering is a separate list choice, with retained
+current-only tasks appended after the selected alternative order. Missing or
+duplicate IDs require whole-list choices for connected buckets; no title matching,
+ID repair, automatic field merge, or newly introduced duplicate ID is allowed.
 
-Use a pure comparison function alongside the existing `taskstore.Merge` boundary.
-Its output contains affected buckets, task differences, and the three snapshots
-needed for review. Keep UI state outside the JSON schema. Resolution produces a
-normal candidate snapshot which passes existing validation and conditional save.
-No event replay, action-intent validator, or cross-device conflict metadata is
-needed. Use small shared examples for equivalent Go/web comparison behavior.
+`K` keeps current for all differences. `p` previews exact resulting lists and
+normal rollover/retention effects; Enter applies the result. Choosing an unchanged
+result does not rewrite the main file or its regular backup. Esc defers review.
+Before deleting a nonredundant reviewed source, preserve exact source bytes and
+the pre-resolution file in local recovery storage. Failed saves retain the source;
+cleanup failures remain visible and retryable. Check both reviewed inputs before
+saving or deletion. Changed inputs require refreshed review, never force-save.
 
-Persist a recoverable draft before a destructive action or before reporting that
-unsaved work is recoverable across restart. Scope recovery to the exact store
-(and Dropbox account for web); retain the baseline, local draft, and relevant
-revision context. Reuse the existing web recovery mechanism where practical.
-Desktop recovery must use atomic writes and `0600` permissions in an application
-local location. Fail visibly if recovery storage fails; retain the in-memory draft
-and block its replacement. Clear recovery only after confirmed save or explicit
-discard. Do not build a general queue, history browser, or background retry engine.
+### Failed saves
 
-## Delivery plan
+Retain the loaded baseline independently of undo. After a failed save, persist a
+local draft with its baseline and revision context, pause editing and automatic
+writes, and offer review of “Your changes” and “File version”. Navigation and
+export remain available. Unopposed task changes are proposed in the explicit
+review, without broadening the existing automatic bucket-merge policy. Show the
+baseline on demand. Cancellation keeps the draft and conflict warning.
 
-1. **Establish the JSON baseline (cleanup implemented in this checkout).** Remove
-   the inactive backend while retaining storage boundaries, live safety fixes,
-   and UI changes. Run the existing tests and verify runtime references continue
-   to use JSON. Existing task files require no migration.
-2. **Describe conflicts and preserve drafts.** Add pure conflict comparison and
-   the minimal scoped recovery snapshot. Keep the existing merge behavior. Test
-   same-task edits, different tasks in one bucket, delete/edit, moves, ordering,
-   ambiguous IDs, recovery failure, and restart with an unsaved draft.
-3. **Ship conflict review in TUI and web.** Add visible markers, comparison,
-   bucket choices, preview, cancellation, export, and revision-checked resolution.
-   Include CLI conflict recovery. Test a second external edit during review and
-   during save, failed saves, and switching files/accounts with pending recovery.
+Pending recovery is scoped to the resolved task-file path and restored before
+startup maintenance. Atomic owner-only recovery files live under
+`os.UserConfigDir()/doitdoit/recovery/`; they are not synced authorities. Preserve
+old choices as recovery material when inputs change. Clear pending recovery only
+after a confirmed save or explicit discard. Block ordinary quit if recovery
+cannot be persisted; keep the in-memory draft and offer export or explicit
+discard. Explicit exports and resolved alternatives remain available until the
+user removes them. Do not build a history browser or retry queue.
 
-Each PR must deliver a small reviewable behavior. Do not grow these steps into a
-new storage protocol. Task-level manual selection or narrower automatic merging
-can be proposed later with concrete user examples and a separate policy review.
-Cross-device history, analytics, and immutable snapshots are outside this plan.
+### Implementation boundary
+
+Pure `taskstore.Compare` / `Review.Resolve` helpers describe and resolve two- or
+three-snapshot reviews. File discovery, strict recovery decoding, guarded cleanup,
+and local recovery persistence remain independent of Bubble Tea. The model owns
+review UI state, preview, lifecycle effects, and conditional application through
+`taskstore.Store`. The normal task schema and storage API remain compatible.
 
 ## Verification
 

@@ -132,7 +132,30 @@ This makes a few useful workflows almost effortless:
 - Create tasks from another script or tool using a simple, open JSON format.
 - Use `-file` to open a different task list for a project or a one-off session.
 
-The TUI checks for external changes every few seconds and reloads them without disturbing you while you are typing. Before every save it verifies that the file still matches the version it loaded; a detected conflict is reported instead of overwriting the external change. After a failed save, background reloads pause so your unsaved edits remain in memory; the warning stays visible until a save succeeds. These drafts do not survive quitting: keep the app open and copy any unsaved task text before closing it. Each replacement also keeps the previous valid contents in `doitdoit.json.bak`. There is still an unavoidable narrow race between verification and an atomic rename, so avoid editing the same synced file on two devices at exactly the same moment.
+The TUI checks for external changes every few seconds and reloads them without disturbing you while you are typing. Before every save it verifies that the file still matches the version it loaded. Independent date-list changes can merge; competing changes within a list require review. Each replacement keeps the previous valid contents in the task file's `.bak` sibling.
+
+### Recover tasks from Dropbox copies
+
+On startup, the terminal checks for Dropbox “conflicted copy” files beside your configured task file, including conflicted `.bak` files. It leaves ordinary `.bak` files, historical backups, and subdirectories alone. Copies whose tasks already match the current file are silently deleted; additional tasks in the current file are kept. Copies with missing or duplicate task IDs are never automatically deleted.
+
+Saved copies produce an optional recovery notice; they do not open a review on startup or block normal rollover and retention. Press **`r`** to recover tasks or rescan. The compact panel shows one unfinished task at a time and defaults to keeping your current file. Old copies can contain tasks you deliberately deleted or changed later: absence alone cannot distinguish a deletion from an unsynced addition. Completed tasks on either side are excluded, including old unfinished versions of tasks now marked done. Copies containing only excluded differences are preserved without prompting. Recover from one copy at a time:
+
+1. Use **arrows / `j` / `k`** to select a task. The screen offers task actions: **Delete / Restore**, **Keep as is / Update task**, or **Keep task / Delete task**. Press **`1`** or **`2`** to choose. Enter toggles the choice. Restoring a task is always an explicit choice.
+2. Choose ordering separately when lists differ. Moves are shown as one task decision. Ambiguous IDs require choosing connected whole lists. List and ordering choices containing completed work are excluded from saved-copy recovery. The app will not guess task identity from titles or introduce duplicate IDs.
+3. **`K`** explicitly keeps the current version for every difference. **`p`** summarizes what will be added, updated, or deleted, including any rollover or retention effects. Press **`v`** to see unfinished tasks after saving. **Page Up / Page Down** scroll long notes and lists.
+4. **Enter — Save & finish** applies the choices to your main task list and removes the resolved copies in the background. **Esc** returns to choices, then defers review without changing anything. If a file changes during review, the app requires fresh choices.
+
+Task timestamps record creation, not the last edit. They never automatically decide which status is newer. Selecting a changed task chooses its complete version, including notes, completion, and date.
+
+Before removing a reviewed, nonredundant copy, the app exports both alternatives to a local, owner-only recovery directory. Press **`?`** for additional controls, including **`x`** to export explicitly; the screen shows the export path. Recovery lives under `os.UserConfigDir()/doitdoit/recovery/`, in a directory scoped to the resolved task-file path (normally `~/.config` on Linux and `~/Library/Application Support` on macOS). Exports remain there until you remove them; regular synced backups remain separate.
+
+### Recover an unsaved terminal edit
+
+A failed save pauses editing and automatic writes and displays **“Your changes need review before they can be saved.”** Press **`r`** to review the suggested task changes; **`b`** shows the original values. Noncompeting changes are proposed in the preview, but conflicting decisions require your choice. This does not change the conservative automatic merge policy.
+
+The draft and its baseline are saved in local recovery storage and reopened on the next launch. **`q`** safely quits when recovery succeeds. If recovery storage fails, normal quit is blocked: use **`x`** to export/retry recovery, or **`D`**, then **`y`**, to explicitly discard the draft. Cancelling review preserves pending edits. Recovery is cleared only after successful resolution or explicit discard.
+
+This review is available in the terminal; the experimental web app retains its download-recovery/reload workflow, and noninteractive CLI commands do not open a resolver. Folder sync still has a narrow race between verification and replacement or cleanup. Review can recover versions it has observed; it cannot guarantee Dropbox has uploaded a local save or recover an unseen offline version. Let Dropbox finish syncing when switching machines.
 
 Back up both the task JSON file and `~/.doitdoit_config.json` before migrations or major upgrades, and test that the backup can be read. Need to relocate an existing task file later? `doitdoit config move <new_path>` moves it and updates your configuration, but refuses any existing file, directory, or symlink at the destination so it cannot overwrite data.
 
@@ -216,6 +239,7 @@ it. Save errors appear instead of a success confirmation.
 | `f` | Toggle the Future view |
 | `?` | Open keyboard shortcuts |
 | `q` or `Ctrl+c` | Quit |
+| `r` | Review conflicts / rescan Dropbox copies |
 
 Press `n` on a highlighted task to edit its notes. Enter inserts a new line;
 `Esc` closes the editor and automatically saves your changes. If saving fails,

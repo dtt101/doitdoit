@@ -23,11 +23,13 @@ func (m *Model) trackFileState() {
 	}
 	m.dataModTime, m.dataSize = snapshot.ModTime, snapshot.Size
 	m.dataHash, m.dataExists = snapshot.Revision.Hash, snapshot.Revision.Exists
+	m.baseline = taskstore.Clone(snapshot.Data)
 }
 
 // Keep the revision returned by the operation, not an unrelated later read.
 // Only use a follow-up observation for the legacy reload metadata.
 func (m *Model) recordRevision(revision taskstore.Revision) {
+	m.baseline = taskstore.Clone(taskstore.Data(m.Data))
 	m.dataHash, m.dataExists = revision.Hash, revision.Exists
 	m.dataModTime, m.dataSize = time.Time{}, 0
 	if snapshot, err := m.dataStore().Load(); err == nil && snapshot.Revision == revision {
@@ -46,6 +48,15 @@ func (m *Model) persist() {
 	}
 	m.Err = err
 	m.saveErr = err
+	if err != nil {
+		m.retainDraft()
+	} else if m.pending != nil {
+		if clearErr := taskstore.ClearRecovery(m.FilePath); clearErr != nil {
+			m.conflictNotice = "Saved, but recovery cleanup failed: " + clearErr.Error()
+		}
+		m.pending = nil
+		m.recoveryErr = nil
+	}
 }
 
 // Retry one conservative three-way merge. Competing edits in the same bucket
