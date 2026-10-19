@@ -1,13 +1,55 @@
 # Cloudflare task service, MCP, and Go TUI
 
-Status: accepted architecture; implementation planned.
+Status: accepted architecture; local vertical slice verified; preparing initial
+production deployment. Milestone 1 remains open for hosted client interoperability,
+ordering representation, and consistent board/change-feed design.
+
+Progress: Rust owns the HTTP API, MCP, OAuth, validation and D1 operations.
+The user successfully ran `make smoke` against the local Worker with real GitHub
+login: token exchange, task creation, explicit date update, identical retry,
+stale-write conflict, MCP initialization/read-back, completion and revocation
+all passed. Browser consent headers were corrected and verified in isolated
+Chromium. Latest service checks passed 8 native Rust and 29 Worker integration
+tests; Go tests, vet and race checks passed after adding the smoke client.
+No cloud deployment, task import, or TUI backend switch has occurred.
+
 Decision date: 2026-10-19.
+
+## Current handoff and immediate next steps
+
+- Work is on `feat/cloudflare-task-service`. This branch contains the initial
+  Rust service implementation checkpoint; the original architecture plan is on
+  main. Use the branch's Git log and working-tree status when resuming work.
+- The user explicitly chose direct production deployment with one Worker and
+  one initially empty D1 database. Do not create a separate staging environment.
+  Local development remains available. This decision supersedes earlier staging
+  requirements; it does not authorize importing the user's existing JSON tasks.
+- User action now: sign into Cloudflare with `npm exec -- wrangler login` from
+  `service/`, then check the selected account with `npm exec -- wrangler whoami`.
+- Prepare the production Wrangler configuration, resource names/bindings,
+  HTTPS service origin and migration/deploy commands; record the exact account,
+  Worker URL and database ID after creation. Resolve the documented public-auth
+  review, abuse-control and expired-state cleanup gaps before public exposure.
+- Once the production URL is known, configure a production GitHub OAuth app
+  with that origin's `/callback`, and store credentials as Worker secrets.
+  Keep credentials out of Git and chat. The existing OAuth app serves localhost.
+- Deploy with an empty database, then verify health, discovery, real owner login
+  and ChatGPT/Claude MCP operations on the production URL using disposable tasks.
+- Continue ordering/change-feed design, remaining service operations, TUI
+  integration, and explicit import/export/recovery work before real-data cutover.
+
+This section is the restart point for a new chat. Read the implementation and
+current Git diff alongside it; local test success does not establish hosted
+assistant compatibility or production deployment success.
 
 ## Direction
 
 Build our own task manager in this repository. Keep the Go Bubble Tea TUI and
-CLI, introduce a TypeScript Cloudflare Worker, and make Cloudflare D1 the
-authoritative database. The Worker exposes an HTTP task API and an authenticated
+CLI, introduce a Rust Cloudflare Worker, and make Cloudflare D1 the
+authoritative database. Following the language decision on 2026-10-19, Rust owns
+task validation, HTTP, MCP, OAuth endpoints, and D1 operations. There is no
+TypeScript application layer or runtime npm dependency. Node remains Cloudflare
+development/test tooling only. The Worker exposes an HTTP task API and an authenticated
 remote MCP endpoint backed by the same task operations.
 
 This plan supersedes the future architecture in
@@ -16,9 +58,10 @@ describe the safety requirements of the existing JSON implementation until the
 explicit cutover. This is a new storage decision, not a revival of the abandoned
 immutable-record backend or the per-task JSON proposal.
 
-Writing this plan does not authorize provisioning, deployment, import of real
-tasks, or a release. Implement and verify locally first; make any later deployment
-or migration concrete and reviewable.
+The user's subsequent instruction authorizes the initial service deployment
+directly to production. Keep the account, resources and configuration concrete
+and reviewable. Import of real tasks, TUI cutover, releases and release tags remain
+separate actions; they are not implied by deploying the service.
 
 ## Goals and boundaries
 
@@ -45,15 +88,16 @@ Local Go TUI / CLI ---- HTTPS task API ---+
 Assistant MCP clients -- HTTPS /mcp -----+
 ```
 
-Both adapters call the same application operations. Transport handlers contain
+Both Rust transports call the same Rust task operations. Transport handlers contain
 authentication, schema decoding, and response mapping, not separate task rules.
 Only the Worker accesses D1; clients receive no Cloudflare management credentials
 or database access tokens.
 
 Suggested repository layout:
 
-- service/: TypeScript Worker, HTTP and MCP adapters, task operations, SQL
-  migrations, Wrangler configuration, package lockfile, and backend tests.
+- service/: Rust Worker crate and Cargo lockfile, SQL migrations, Rust OAuth/MCP
+  endpoints, Wrangler configuration, development-tool npm lockfile,
+  native Rust contract tests and local WASM/D1 integration tests.
 - api/: versioned schemas, documented errors, and shared contract fixtures.
 - taskclient/: Go HTTP client, task/revision types, and contract tests.
 - model/: existing Bubble Tea UI adapted to task operations and server reads.
@@ -164,8 +208,15 @@ No assistant has to run on the server.
 ## Authentication
 
 Authentication is part of the first vertical slice, not a later addition.
-Use established OAuth/OIDC libraries and a supported identity provider instead
-of implementing cryptography. Start with one allowlisted owner identity;
+Use GitHub as the upstream identity provider and maintained Rust cryptographic
+primitives. The local Rust prototype implements a narrow public-client OAuth
+server with S256 PKCE, exact registered redirects, browser-bound consent/state,
+opaque hashed credentials, resource binding, expiry, rotating refresh tokens,
+and revocation in D1. It does not implement a general OAuth/OIDC platform or
+Client ID Metadata Documents; clients use dynamic registration. Protocol and
+security review and production abuse controls remain preparation for public
+deployment. Verify real assistant interoperability on the initial production
+endpoint before real-data cutover. Start with one allowlisted owner identity;
 authentication alone must not permit other accounts to access tasks.
 
 The first spike selects a concrete identity provider and OAuth integration,
@@ -274,7 +325,7 @@ repeated/interrupted import creates no duplicates; the source remains intact.
 
 ### 5. Deployment and operational handoff
 
-Prepare isolated development/staging/production configurations, least-privilege
+Prepare separate local-development and production configurations, least-privilege
 deployment credentials, schema migration instructions, health checks, bounded
 request logs without task contents/tokens, rate/body limits, and cost visibility.
 Prefer stateless MCP handlers; persistent session state cannot live only in a
@@ -285,10 +336,12 @@ restore into a separate database and export comparison. Separate backups from
 same-database task history. Use additive schema changes and compatible Worker
 rollouts; rolling back code must not assume SQL migrations can be reversed.
 
-Gate: demonstrate staging authentication, real client interoperability,
-concurrency, retry recovery, export/restore, and deploy rollback. Then obtain
-authorization for production deployment and real-data cutover. No release tags
-or pushes are implied by this plan.
+The initial empty production deployment is brought forward to milestone 1 for
+hosted assistant testing, per the user's direct-production decision.
+Gate for real-data cutover: demonstrate production authentication, real client
+interoperability, concurrency, retry recovery, export/restore and deploy rollback.
+Obtain explicit authorization for real-data cutover. No release tags or pushes
+are implied by this plan.
 
 ## Verification and repository updates
 
@@ -297,13 +350,17 @@ developer's database. Include concurrent writers, stale dates, duplicate retries
 failure injection between mutation steps, deletes versus edits, reorder races,
 authentication, history, and consistent change-feed pagination.
 
+Rust checks are cargo fmt --check, cargo clippy --locked --target
+wasm32-unknown-unknown -- -D warnings, and cargo test --locked in service/.
+Build the pinned worker-build WASM artifact before local integration tests.
+
 Go checks remain go test -count=1 ./..., go vet ./..., and go test -race ./...
 for persistence/reload changes. Preserve isolated HOME/config and Omarchy tests,
-Linux/macOS coverage, and supported release architectures. Add service lint,
-typecheck, migrations, and tests to CI without replacing existing gates.
+Linux/macOS coverage, and supported release architectures. Add Rust formatting/lints,
+migrations, and local Worker tests to CI without replacing existing gates.
 
 Maintain shared contract fixtures for date/null semantics, Unicode/notes,
-ordering, revisions, and error decoding across TypeScript and Go. Test that
+ordering, revisions, and error decoding across Rust and Go. Test that
 opening the UI and crossing midnight generate no task writes and that incomplete
 overdue tasks survive retention.
 

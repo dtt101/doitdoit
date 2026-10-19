@@ -362,3 +362,14 @@ On Omarchy, `omarchy update` also updates globally configured mise tools. Merely
 This software is licensed under the [MIT License](./LICENSE). Third-party attributions and licence terms are in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
 
 Uninstalling intentionally leaves your task JSON file and `~/.doitdoit_config.json` in place; back them up and remove them manually only if you no longer want the data.
+
+
+### Cloudflare service development
+
+The next architecture is being developed separately from the released JSON
+backend: a Rust/WASM Cloudflare Worker exposes HTTP and authenticated MCP
+endpoints, with D1 storage and the Go TUI as a future client. The current local prototype
+does not change your task storage or migrate data.
+
+See the [implementation plan](plans/cloudflare-task-service.md),
+[service development guide](service/README.md), and [API contract](api/README.md).
