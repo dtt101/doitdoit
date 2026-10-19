@@ -45,9 +45,12 @@ These instructions apply to the whole repository.
 
 ## Change guidelines
 
-- Follow `plans/major-version-storage.md`: keep the JSON file authoritative and
-  retain the storage abstraction. Focus on visible conflicts and recovery; the
-  immutable backend and automatic migration roadmap are superseded.
+- Follow `plans/cloudflare-task-service.md` for the accepted future architecture:
+  a Cloudflare Worker task API/MCP service, D1, and the existing Go TUI as a client.
+  Implementation and migration are staged and explicit. Until cutover, preserve
+  the current JSON path and its safety guarantees described in
+  `plans/major-version-storage.md`. The abandoned immutable backend and automatic
+  migration roadmap remain superseded.
 
 - Add or update tests beside the package or JavaScript module being changed.
   Prefer behavior-focused tests and temporary directories.
