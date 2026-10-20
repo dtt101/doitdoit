@@ -1,7 +1,8 @@
 # Cloudflare task service, MCP, and Go TUI
 
-Status: accepted architecture; initial production deployment live; hosted login and
-assistant interoperability remain to be verified. Milestone 1 remains open for hosted client interoperability,
+Status: accepted architecture; production deployment, GitHub login and task
+listing through Codex MCP verified by the user. Milestone 1 remains open for
+remaining hosted client interoperability,
 ordering representation, and consistent board/change-feed design.
 
 Progress: Rust owns the HTTP API, MCP, OAuth, validation and D1 operations.
@@ -13,7 +14,9 @@ Chromium. Latest service checks passed 8 native Rust and 31 Worker integration
 tests; Go tests, vet and race checks passed after adding the smoke client.
 Production deployed on 2026-10-20 with migrations 0001–0003 applied. Live health,
 OAuth discovery, unauthenticated API/MCP rejection and cross-origin rejection
-passed. No task import or TUI backend switch has occurred.
+passed. The user subsequently confirmed successful production GitHub authentication
+and task listing through Codex MCP. Hosted writes, refresh/revocation, and other
+assistant clients remain unverified. No task import or TUI backend switch has occurred.
 
 Decision date: 2026-10-19.
 
@@ -49,12 +52,18 @@ Decision date: 2026-10-19.
   anonymous task/MCP requests return 401; foreign Origin returns 403.
   Initial cf D1 query authorization failed, but a later retry applied all three
   migrations successfully; deployment used cf.
-- Next: verify real owner login and ChatGPT/Claude MCP operations using
-  disposable tasks at `https://doitdoit-service.davidt-91d.workers.dev/mcp`.
+- Production owner login and task listing through Codex MCP now work, as
+  confirmed by the user after correcting the production GitHub app callback.
+- Next: verify MCP create/update, date preservation, conflicts and completion
+  through Codex using disposable tasks, then refresh/revocation and ChatGPT/Claude
+  interoperability. Continue connecting directly to the MCP server at
+  `https://doitdoit-service.davidt-91d.workers.dev/mcp`.
   The existing `make smoke` command still targets localhost only.
   Keep credentials out of Git and chat; the existing OAuth app serves localhost.
 - Continue ordering/change-feed design, remaining service operations, TUI
   integration, and explicit import/export/recovery work before real-data cutover.
+- Plugin packaging is accepted as later work. Continue the direct MCP route now;
+  do not make packaging or plugin publication a prerequisite for service work.
 
 This section is the restart point for a new chat. Read the implementation and
 current Git diff alongside it; local test success does not establish hosted
@@ -222,6 +231,21 @@ IDs for writes. Avoid toggle operations: retries must not reverse their own
 effects. Return structured results and structured conflict details, not just
 prose. MCP tools and HTTP routes share validation and authorization tests.
 No assistant has to run on the server.
+
+## Later plugin packaging
+
+Package the existing remote MCP connection as a doitdoit plugin after the direct
+MCP workflows are established. Include discoverable metadata, connection and
+login instructions, and optional skills explaining explicit dates, task IDs,
+expected revisions, retry operation IDs and conflict resolution.
+
+Keep the Rust Worker, D1 and OAuth service as the shared backend. Direct MCP
+connections remain supported, and the Go TUI continues to use the HTTP API.
+Check each target client's current packaging requirements when implementing;
+do not assume one package works unchanged in Codex, ChatGPT and Claude.
+
+This is deferred distribution work, not the current implementation milestone.
+No plugin installation or publication is part of the current scope.
 
 ## Authentication
 
