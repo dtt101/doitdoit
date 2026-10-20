@@ -111,7 +111,7 @@ futures-util 0.3.34 (MIT or Apache-2.0). worker-build 0.8.7 (Apache-2.0) is buil
 
 There are no runtime npm dependencies. Cloudflare development tools are
 `@cloudflare/vitest-plugin` 1.4.5 (MIT), `vitest` 5.0.5 (MIT), and
-`wrangler` 4.151.2 (MIT or Apache-2.0), pinned in service/package-lock.json.
+`cf` 1.0.0-beta.18 and `wrangler` 4.151.2 (MIT or Apache-2.0), pinned in service/package-lock.json.
 They are not linked into the Go desktop archives. Installed packages retain
 their licence files. No service bundle is included in a desktop release.
 Before distributing a service bundle, include its complete transitive licence

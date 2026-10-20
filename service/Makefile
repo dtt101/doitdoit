@@ -1,4 +1,4 @@
-.PHONY: setup check check-rust build test dev migrate-local bundle smoke
+.PHONY: setup check check-rust build test dev migrate-local bundle smoke bundle-production migrate-production deploy
 WORKER_BUILD_VERSION := 0.8.7
 
 setup:
@@ -20,10 +20,18 @@ check: check-rust test
 test: build
 	npm exec -- vitest run
 bundle:
-	npm exec -- wrangler deploy --dry-run --outdir /tmp/doitdoit-worker-build
+	npm exec -- cf deploy --mode development --dry-run
 dev:
-	npm exec -- wrangler dev --local --ip 127.0.0.1
+	npm exec -- cf dev --mode development
 migrate-local:
+	# cf beta rejects the existing nil local database ID. Preserve local data.
 	npm exec -- wrangler d1 migrations apply DB --local
 smoke:
 	go run ../devtools/service-smoke
+
+bundle-production:
+	npm exec -- cf deploy --mode production --dry-run
+migrate-production:
+	npm exec -- cf d1 migrations apply 43659423-7b12-42ac-8f1e-fc97f3ed0fea --mode production --dir migrations
+deploy:
+	npm exec -- cf deploy --mode production --secrets-file .env.production

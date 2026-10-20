@@ -45,3 +45,5 @@ service/coverage/
 service/target/
 service/build/
 service/.tools/
+
+service/.cloudflare/

@@ -10,6 +10,15 @@ use serde_json::{Value, json};
 use tasks::Tasks;
 use worker::{Context, Env, Method, Request, Response, Result, event};
 
+#[event(scheduled)]
+pub async fn scheduled(_event: worker::ScheduledEvent, env: Env, context: worker::ScheduleContext) {
+    context.wait_until(async move {
+        if auth::cleanup(&env).await.is_err() {
+            worker::console_error!("OAuth cleanup failed");
+        }
+    });
+}
+
 #[event(fetch)]
 pub async fn fetch(mut request: Request, env: Env, _context: Context) -> Result<Response> {
     let origin = auth::var(&env, "SERVICE_ORIGIN").unwrap_or_default();
@@ -97,6 +106,9 @@ async fn handle(request: &mut Request, env: &Env, origin: &str) -> ApiResult<Res
         ));
     }
     let path = request.path();
+    if path.starts_with("/oauth/") || matches!(path.as_str(), "/authorize" | "/callback") {
+        auth::rate_limit(request, env).await?;
+    }
     if path != "/mcp" && !path.starts_with("/v1/") {
         return auth::route(request, env).await;
     }

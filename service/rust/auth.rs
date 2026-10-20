@@ -42,6 +42,52 @@ pub fn var(env: &Env, key: &str) -> ApiResult<String> {
 fn db(env: &Env) -> ApiResult<D1Database> {
     env.d1("DB").map_err(|_| ServiceError::internal())
 }
+
+pub async fn rate_limit(request: &Request, env: &Env) -> ApiResult<()> {
+    let binding = if request.path() == "/oauth/register" {
+        "REGISTER_LIMIT"
+    } else {
+        "AUTH_LIMIT"
+    };
+    // Cloudflare supplies this header at ingress. Never trust X-Forwarded-For.
+    let ip = request
+        .headers()
+        .get("CF-Connecting-IP")
+        .map_err(|_| ServiceError::internal())?
+        .unwrap_or_else(|| "local".into());
+    let allowed = env
+        .rate_limiter(binding)
+        .map_err(|_| ServiceError::internal())?
+        .limit(digest(&ip))
+        .await
+        .map_err(|_| ServiceError::internal())?;
+    if !allowed.success {
+        return Err(ServiceError::new(
+            429,
+            "rate_limited",
+            "Too many sign-in requests. Try again in a minute.",
+        ));
+    }
+    Ok(())
+}
+
+pub async fn cleanup(env: &Env) -> ApiResult<()> {
+    let db = db(env)?;
+    let now = now();
+    // Keep spent credentials while a grant is live, so replay still revokes
+    // its successors. Task history and operation receipts are never cleaned here.
+    let statements = [
+        "DELETE FROM oauth_pending WHERE digest IN (SELECT digest FROM oauth_pending WHERE expires<=? LIMIT 1000)",
+        "DELETE FROM oauth_clients WHERE id IN (SELECT id FROM oauth_clients WHERE expires<=? LIMIT 1000)",
+        "DELETE FROM oauth_credentials WHERE grant_id IN (SELECT g.id FROM oauth_grants g WHERE NOT EXISTS (SELECT 1 FROM oauth_credentials c WHERE c.grant_id=g.id AND c.kind IN ('code','access','refresh') AND c.expires>?) LIMIT 1000)",
+        "DELETE FROM oauth_grants WHERE id IN (SELECT g.id FROM oauth_grants g WHERE NOT EXISTS (SELECT 1 FROM oauth_credentials c WHERE c.grant_id=g.id) AND ? IS NOT NULL LIMIT 1000)",
+    ].into_iter().map(|sql| db.prepare(sql).bind(&[now.into()]))
+        .collect::<worker::Result<Vec<_>>>().map_err(|_| ServiceError::internal())?;
+    db.batch(statements)
+        .await
+        .map_err(|_| ServiceError::internal())?;
+    Ok(())
+}
 fn invalid() -> ServiceError {
     ServiceError::new(
         400,

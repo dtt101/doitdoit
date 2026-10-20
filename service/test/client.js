@@ -8,6 +8,9 @@ import {
 } from "cloudflare:test";
 export async function request(path, init) {
   const ctx = createExecutionContext();
+  const headers = new Headers(init?.headers);
+  if (!headers.has("CF-Connecting-IP")) headers.set("CF-Connecting-IP", crypto.randomUUID());
+  init = { ...init, headers };
   const response = await workerFetch(
     new Request("http://localhost:8787" + path, init),
     env,

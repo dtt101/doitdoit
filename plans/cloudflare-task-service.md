@@ -1,7 +1,7 @@
 # Cloudflare task service, MCP, and Go TUI
 
-Status: accepted architecture; local vertical slice verified; preparing initial
-production deployment. Milestone 1 remains open for hosted client interoperability,
+Status: accepted architecture; initial production deployment live; hosted login and
+assistant interoperability remain to be verified. Milestone 1 remains open for hosted client interoperability,
 ordering representation, and consistent board/change-feed design.
 
 Progress: Rust owns the HTTP API, MCP, OAuth, validation and D1 operations.
@@ -9,9 +9,11 @@ The user successfully ran `make smoke` against the local Worker with real GitHub
 login: token exchange, task creation, explicit date update, identical retry,
 stale-write conflict, MCP initialization/read-back, completion and revocation
 all passed. Browser consent headers were corrected and verified in isolated
-Chromium. Latest service checks passed 8 native Rust and 29 Worker integration
+Chromium. Latest service checks passed 8 native Rust and 31 Worker integration
 tests; Go tests, vet and race checks passed after adding the smoke client.
-No cloud deployment, task import, or TUI backend switch has occurred.
+Production deployed on 2026-10-20 with migrations 0001–0003 applied. Live health,
+OAuth discovery, unauthenticated API/MCP rejection and cross-origin rejection
+passed. No task import or TUI backend switch has occurred.
 
 Decision date: 2026-10-19.
 
@@ -24,17 +26,33 @@ Decision date: 2026-10-19.
   one initially empty D1 database. Do not create a separate staging environment.
   Local development remains available. This decision supersedes earlier staging
   requirements; it does not authorize importing the user's existing JSON tasks.
-- User action now: sign into Cloudflare with `npm exec -- wrangler login` from
-  `service/`, then check the selected account with `npm exec -- wrangler whoami`.
-- Prepare the production Wrangler configuration, resource names/bindings,
-  HTTPS service origin and migration/deploy commands; record the exact account,
-  Worker URL and database ID after creation. Resolve the documented public-auth
-  review, abuse-control and expired-state cleanup gaps before public exposure.
-- Once the production URL is known, configure a production GitHub OAuth app
-  with that origin's `/callback`, and store credentials as Worker secrets.
-  Keep credentials out of Git and chat. The existing OAuth app serves localhost.
-- Deploy with an empty database, then verify health, discovery, real owner login
-  and ChatGPT/Claude MCP operations on the production URL using disposable tasks.
+- Cloudflare MCP and `cf` CLI are installed and authenticated. The user prefers
+  `cf`; service Make targets now use it with Wrangler underneath for Rust builds.
+- Production D1 `doitdoit-prod` was created in account
+  `91d8cf0b8c805dac586f9ab55d6d6212`, ID
+  `43659423-7b12-42ac-8f1e-fc97f3ed0fea`, WEUR, replicas disabled.
+  Intended Worker URL: `https://doitdoit-service.davidt-91d.workers.dev`.
+- User confirmed Workers Free and supplied production OAuth credentials in
+  ignored `service/.env.production` (0600). Secrets were deployed from that file.
+  No paid plan was enabled.
+- Initial auth review rechecked owner allowlisting, PKCE, browser-bound consent,
+  token rotation/replay and atomic writes against existing regression tests.
+  Added edge auth/registration limits and hourly expired-state cleanup, retaining
+  replay evidence while grants are live. This is not an independent security audit.
+- Production configuration is in `service/cloudflare.config.ts`; local mode is
+  the default and production requires `--mode production`. Both bundle dry-runs,
+  8 Rust tests, 31 Worker tests and release notice checks passed.
+  Local migrations still use Wrangler to preserve the nil-ID local database
+  (cf beta rejects that ID).
+- Production version: `abac552d-9673-4eba-bdc3-2d8fdad78c21`.
+  Hourly auth cleanup is scheduled at minute 17. Health and discovery return 200;
+  anonymous task/MCP requests return 401; foreign Origin returns 403.
+  Initial cf D1 query authorization failed, but a later retry applied all three
+  migrations successfully; deployment used cf.
+- Next: verify real owner login and ChatGPT/Claude MCP operations using
+  disposable tasks at `https://doitdoit-service.davidt-91d.workers.dev/mcp`.
+  The existing `make smoke` command still targets localhost only.
+  Keep credentials out of Git and chat; the existing OAuth app serves localhost.
 - Continue ordering/change-feed design, remaining service operations, TUI
   integration, and explicit import/export/recovery work before real-data cutover.
 
