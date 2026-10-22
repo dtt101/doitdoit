@@ -1,6 +1,5 @@
 // Package taskclient provides the experimental HTTP client for the Cloudflare
-// task service. The JSON-backed application does not use it until explicit
-// backend selection is implemented.
+// task service, used by the TUI and CLI after explicit backend selection.
 package taskclient
 
 import (

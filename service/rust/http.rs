@@ -47,11 +47,16 @@ pub async fn bytes(request: &mut Request) -> ApiResult<Vec<u8>> {
     let mut stream = request.stream().map_err(|_| ServiceError::invalid())?;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|_| ServiceError::invalid())?;
-        if data.len() + chunk.len() > 65_536 {
+        let limit = if request.path().starts_with("/v1/imports/") {
+            262_144
+        } else {
+            65_536
+        };
+        if data.len() + chunk.len() > limit {
             return Err(ServiceError::new(
                 413,
                 "request_too_large",
-                "Request exceeds 64 KiB.",
+                "Request exceeds the endpoint body limit.",
             ));
         }
         data.extend_from_slice(&chunk);

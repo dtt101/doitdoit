@@ -336,7 +336,7 @@ it("responds to MCP protocol errors and notifications without mutating tasks", a
   });
   expect((await initialized.json()).result.protocolVersion).toBe("2025-03-26");
   const tools = await rpc(signed.token, "tools/list");
-  expect((await tools.json()).result.tools).toHaveLength(4);
+  expect((await tools.json()).result.tools).toHaveLength(11);
   expect(
     (await send({ jsonrpc: "2.0", method: "notifications/initialized" }))
       .status,

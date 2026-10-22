@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -40,12 +41,21 @@ type smokeClient struct {
 }
 
 func main() {
+	origin := flag.String("url", localOrigin, "Service origin; production requires an explicit HTTPS URL")
+	extended := flag.Bool("extended", false, "Test desktop refresh, new operations and export using disposable tasks")
+	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	fmt.Println("Testing http://localhost:8787. This creates one labelled test task and marks it completed.")
-	if err := run(ctx, localOrigin, os.Stdout, openBrowser); err != nil {
+	fmt.Println("Testing", *origin, "using clearly labelled disposable tasks.")
+	var err error
+	if *extended {
+		err = runExtended(ctx, *origin, os.Stdout, openBrowser)
+	} else {
+		err = run(ctx, *origin, os.Stdout, openBrowser)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "Smoke test failed:", err)
 		os.Exit(1)
 	}

@@ -38,6 +38,13 @@ func brandAnimationTick(id uint64, frame int) tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.cloud != nil {
+		return m.updateService(msg)
+	}
+	return m.updateShared(msg)
+}
+
+func (m Model) updateShared(msg tea.Msg) (tea.Model, tea.Cmd) {
 	beforeKey, beforeRow := "", m.RowIdx
 	before := Task{}
 	validSelection := m.ShowFuture || (m.ColIdx >= 0 && m.ColIdx < len(m.dateKeys))
@@ -160,9 +167,9 @@ func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
 	if m.State == EditingNotes || m.review != nil || m.pending != nil {
 		return m, dateTick()
 	}
-	todayKey := time.Now().Format(dateLayout)
+	todayKey := m.serviceNow().Format(dateLayout)
 	dayChanged := m.todayKey != "" && m.todayKey != todayKey
-	if m.todayKey == "" && (len(m.dateKeys) == 0 || m.firstVisibleDate().Before(startOfDay(time.Now()))) {
+	if m.todayKey == "" && (len(m.dateKeys) == 0 || m.firstVisibleDate().Before(startOfDay(m.serviceNow()))) {
 		dayChanged = true
 	}
 	if dayChanged {
@@ -176,8 +183,8 @@ func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
 		m.Data.pruneOldTasks(m.RetentionDays)
 		m.clearMoveUndo()
 		firstDay := m.firstVisibleDate()
-		if m.FocusToday || firstDay.Before(startOfDay(time.Now())) {
-			firstDay = startOfDay(time.Now())
+		if m.FocusToday || firstDay.Before(startOfDay(m.serviceNow())) {
+			firstDay = startOfDay(m.serviceNow())
 		}
 		m.updateDateKeysFrom(firstDay)
 		m.todayKey = todayKey
@@ -320,7 +327,7 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "right", "l":
-		if !m.ShowFuture && !m.FocusToday {
+		if !m.ShowFuture && !m.ShowOverdue && !m.ShowDeleted && !m.FocusToday {
 			if m.ColIdx < len(m.dateKeys)-1 {
 				m.ColIdx++
 			} else {
@@ -329,7 +336,7 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.clampRow()
 		}
 	case "left", "h":
-		if !m.ShowFuture && !m.FocusToday {
+		if !m.ShowFuture && !m.ShowOverdue && !m.ShowDeleted && !m.FocusToday {
 			if m.ColIdx > 0 {
 				m.ColIdx--
 			} else {
@@ -354,6 +361,9 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.FocusToday = !m.FocusToday
 		m.returnToToday()
 	case "a":
+		if m.cloud != nil && m.ShowOverdue {
+			m.returnToToday()
+		}
 		m.State = Adding
 		m.configureTextInput("New task...")
 		return m, nil
@@ -417,7 +427,7 @@ func (m Model) handleChoosingMoveDestinationKey(msg tea.KeyPressMsg) (tea.Model,
 	case "esc":
 		m.State = Browsing
 	case "t":
-		moved := m.scheduleTask(moveTarget{Date: time.Now().Format(dateLayout)})
+		moved := m.scheduleTask(moveTarget{Date: m.serviceNow().Format(dateLayout)})
 		m.State = Browsing
 		if moved {
 			m.persistMoveWithFeedback()
@@ -447,7 +457,11 @@ func (m Model) handleChoosingMoveDestinationKey(msg tea.KeyPressMsg) (tea.Model,
 func (m Model) handleSettingMoveDateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.Code {
 	case tea.KeyEnter:
-		normalizedDate, err := normalizeDueDateInput(m.TextInput.Value())
+		input := strings.TrimSpace(m.TextInput.Value())
+		if m.cloud != nil && len(strings.Split(input, "-")) == 2 {
+			input = fmt.Sprintf("%d-%s", m.serviceNow().Year(), input)
+		}
+		normalizedDate, err := normalizeDueDateInput(input)
 		if err != nil {
 			m.Err = err
 			return m, nil
@@ -488,9 +502,9 @@ func (m *Model) persistMoveWithFeedback() {
 	switch {
 	case m.lastMoveTarget.Future:
 		destination = "Future"
-	case destination == time.Now().Format(dateLayout):
+	case destination == m.serviceNow().Format(dateLayout):
 		destination = "Today"
-	case destination == time.Now().AddDate(0, 0, 1).Format(dateLayout):
+	case destination == m.serviceNow().AddDate(0, 0, 1).Format(dateLayout):
 		destination = "tomorrow"
 	}
 	m.persistWithFeedback("Moved to " + destination)

@@ -1,4 +1,4 @@
-.PHONY: setup check check-rust build test dev migrate-local bundle smoke bundle-production migrate-production deploy
+.PHONY: setup check check-rust build test dev migrate-local bundle smoke bundle-production migrate-production deploy backup-production
 WORKER_BUILD_VERSION := 0.8.7
 
 setup:
@@ -35,3 +35,5 @@ migrate-production:
 	npm exec -- cf d1 migrations apply 43659423-7b12-42ac-8f1e-fc97f3ed0fea --mode production --dir migrations
 deploy:
 	npm exec -- cf deploy --mode production --secrets-file .env.production
+backup-production:
+	sh scripts/backup-production.sh

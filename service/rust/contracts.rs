@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Task {
     pub id: String,
@@ -67,6 +67,25 @@ pub struct Update {
     pub operation_id: String,
     pub expected_revision: u64,
     pub changes: Changes,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Mutation {
+    pub operation_id: String,
+    pub expected_revision: u64,
+}
+impl Mutation {
+    pub fn parse(value: Value) -> Result<Self, ServiceError> {
+        let command: Self = serde_json::from_value(value).map_err(|_| ServiceError::invalid())?;
+        if !valid_id(&command.operation_id)
+            || command.expected_revision == 0
+            || command.expected_revision > 9_007_199_254_740_991
+        {
+            return Err(ServiceError::invalid());
+        }
+        Ok(command)
+    }
 }
 
 // Use an explicit map to distinguish an omitted date from JSON null without
@@ -228,5 +247,124 @@ mod tests {
             canonical("create", &a).unwrap(),
             canonical("create", &b).unwrap()
         );
+    }
+}
+
+fn page_limit() -> u32 {
+    50
+}
+#[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskQuery {
+    pub status: Option<String>,
+    pub scheduled_date: Option<String>,
+    #[serde(default)]
+    pub undated: bool,
+    #[serde(default)]
+    pub search: String,
+    #[serde(default)]
+    pub after: String,
+    #[serde(default = "page_limit")]
+    pub limit: u32,
+    #[serde(default)]
+    pub include_deleted: bool,
+}
+impl TaskQuery {
+    pub fn parse(value: Value) -> Result<Self, ServiceError> {
+        let query: Self = serde_json::from_value(value).map_err(|_| ServiceError::invalid())?;
+        if !(1..=100).contains(&query.limit)
+            || (!query.after.is_empty() && !valid_id(&query.after))
+            || query
+                .status
+                .as_ref()
+                .is_some_and(|s| !matches!(s.as_str(), "open" | "completed"))
+            || query
+                .scheduled_date
+                .as_ref()
+                .is_some_and(|s| !valid_date(s))
+            || (query.undated && query.scheduled_date.is_some())
+            || string_len(&query.search) > 200
+        {
+            return Err(ServiceError::invalid());
+        }
+        Ok(query)
+    }
+}
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SnapshotQuery {
+    pub snapshot_cursor: Option<u64>,
+    #[serde(default)]
+    pub after: String,
+    #[serde(default = "page_limit")]
+    pub limit: u32,
+}
+impl SnapshotQuery {
+    pub fn parse(value: Value) -> Result<Self, ServiceError> {
+        let q: Self = serde_json::from_value(value).map_err(|_| ServiceError::invalid())?;
+        if !(1..=100).contains(&q.limit)
+            || (!q.after.is_empty() && !valid_id(&q.after))
+            || q.snapshot_cursor.is_some_and(|c| c > 9_007_199_254_740_991)
+        {
+            return Err(ServiceError::invalid());
+        }
+        Ok(q)
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Reorder {
+    pub operation_id: String,
+    pub expected_revision: u64,
+    pub after_id: Option<String>,
+    pub before_id: Option<String>,
+}
+impl Reorder {
+    pub fn parse(value: Value) -> Result<Self, ServiceError> {
+        let c: Self = serde_json::from_value(value).map_err(|_| ServiceError::invalid())?;
+        Mutation::parse(
+            json!({"operation_id":c.operation_id,"expected_revision":c.expected_revision}),
+        )?;
+        if c.after_id.as_ref().is_some_and(|id| !valid_id(id))
+            || c.before_id.as_ref().is_some_and(|id| !valid_id(id))
+        {
+            return Err(ServiceError::invalid());
+        }
+        Ok(c)
+    }
+}
+
+impl Task {
+    pub fn validate_import(&self) -> Result<(), ServiceError> {
+        if !valid_id(&self.id)
+            || self.title.trim().is_empty()
+            || string_len(&self.title) > 500
+            || string_len(&self.notes) > 32000
+            || !matches!(self.status.as_str(), "open" | "completed")
+            || self.revision == 0
+            || self.revision > 9_007_199_254_740_991
+            || self.scheduled_date.as_ref().is_some_and(|s| !valid_date(s))
+            || self.position.is_empty()
+            || self.position.len() > 256
+            || !self
+                .position
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            || chrono::DateTime::parse_from_rfc3339(&self.created_at).is_err()
+            || chrono::DateTime::parse_from_rfc3339(&self.updated_at).is_err()
+            || self
+                .completed_at
+                .as_ref()
+                .is_some_and(|s| chrono::DateTime::parse_from_rfc3339(s).is_err())
+            || self
+                .deleted_at
+                .as_ref()
+                .is_some_and(|s| chrono::DateTime::parse_from_rfc3339(s).is_err())
+            || (self.status == "open" && self.completed_at.is_some())
+        {
+            return Err(ServiceError::invalid());
+        }
+        Ok(())
     }
 }

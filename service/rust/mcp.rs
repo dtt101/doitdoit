@@ -27,18 +27,39 @@ fn tools() -> Value {
         &[],
     );
     update["changes"]["minProperties"] = json!(1);
+    let page = json!({"type":"integer","minimum":1,"maximum":100});
+    let cursor = json!({"type":"integer","minimum":0,"maximum":9007199254740991_u64});
+    let query = schema(
+        json!({"status":{"type":"string","enum":["open","completed"]},"scheduled_date":{"type":"string"},"undated":{"type":"boolean"},"search":{"type":"string","maxLength":200},"after":id,"limit":page,"include_deleted":{"type":"boolean"}}),
+        &[],
+    );
+    let snapshot = schema(
+        json!({"snapshot_cursor":cursor,"after":id,"limit":page}),
+        &[],
+    );
+    let mutation = schema(
+        json!({"id":id,"operation_id":id,"expected_revision":{"type":"integer","minimum":1,"maximum":9007199254740991_u64}}),
+        &["id", "operation_id", "expected_revision"],
+    );
     json!([
-        {"name":"list_tasks","description":"List tasks without changing scheduled dates, including overdue tasks.","inputSchema":schema(json!({}),&[]),"annotations":{"readOnlyHint":true}},
+        {"name":"list_tasks","description":"List tasks without changing scheduled dates, including overdue tasks.","inputSchema":query,"annotations":{"readOnlyHint":true}},
         {"name":"get_task","description":"Read a task and its current revision before editing.","inputSchema":schema(json!({"id":id}),&["id"]),"annotations":{"readOnlyHint":true}},
         {"name":"create_task","description":"Create an open task. Use a new UUID operation_id; reuse it only for identical retries.","inputSchema":schema(json!({"operation_id":id,"title":title,"notes":notes,"scheduled_date":date}),&["operation_id","title"]),"annotations":{"idempotentHint":true}},
-        {"name":"update_task","description":"Edit only supplied fields at expected_revision. Date null clears scheduling. Review conflicts; never guess a winner. Identical retries reuse operation_id.","inputSchema":schema(update,&["id","operation_id","expected_revision","changes"]),"annotations":{"idempotentHint":true}}
+        {"name":"update_task","description":"Edit only supplied fields at expected_revision. Date null clears scheduling. Review conflicts; never guess a winner. Identical retries reuse operation_id.","inputSchema":schema(update,&["id","operation_id","expected_revision","changes"]),"annotations":{"idempotentHint":true}},
+        {"name":"delete_task","description":"Soft delete a task at its reviewed revision. The task remains recoverable; scheduling and notes are preserved.","inputSchema":mutation,"annotations":{"idempotentHint":true,"destructiveHint":true}},
+        {"name":"restore_task","description":"Restore a deleted task at its reviewed revision, preserving dates, status and notes.","inputSchema":mutation,"annotations":{"idempotentHint":true}},
+        {"name":"task_history","description":"Read paged task history including deleted tasks. Use next_cursor as after.","inputSchema":schema(json!({"id":id,"after":{"type":"integer","minimum":0,"maximum":9007199254740991_u64},"limit":{"type":"integer","minimum":1,"maximum":100}}),&["id"]),"annotations":{"readOnlyHint":true}},
+        {"name":"task_board","description":"Read a consistent paged board. Reuse snapshot_cursor and next_cursor as after for all pages, then read changes from snapshot_cursor. Tasks are returned in ID order; group and sort by position for presentation.","inputSchema":snapshot,"annotations":{"readOnlyHint":true}},
+        {"name":"task_changes","description":"Read accepted changes after a board cursor. Apply events by task revision; continue with returned cursor.","inputSchema":schema(json!({"after":cursor,"limit":page}),&[]),"annotations":{"readOnlyHint":true}},
+        {"name":"export_tasks","description":"Read portable paged owner data, including recoverable deleted tasks. Keep snapshot_cursor fixed across pages.","inputSchema":snapshot,"annotations":{"readOnlyHint":true}},
+        {"name":"reorder_task","description":"Move within the same date and completion group. after_id is the preceding neighbor; before_id the following neighbor. Null means a group edge. Review adjacency conflicts before retrying.","inputSchema":schema(json!({"id":id,"operation_id":id,"expected_revision":{"type":"integer","minimum":1,"maximum":9007199254740991_u64},"after_id":{"type":["string","null"],"format":"uuid"},"before_id":{"type":["string","null"],"format":"uuid"}}),&["id","operation_id","expected_revision"]),"annotations":{"idempotentHint":true}}
     ])
 }
 pub fn mutates(value: &Value) -> bool {
     value["method"] == "tools/call"
         && matches!(
             value["params"]["name"].as_str(),
-            Some("create_task" | "update_task")
+            Some("create_task" | "update_task" | "delete_task" | "restore_task" | "reorder_task")
         )
 }
 pub async fn handle(request: &Request, input: Option<Value>, tasks: &Tasks) -> ApiResult<Response> {
@@ -130,7 +151,17 @@ pub async fn handle(request: &Request, input: Option<Value>, tasks: &Tasks) -> A
             }
             if !matches!(
                 name,
-                "list_tasks" | "get_task" | "create_task" | "update_task"
+                "list_tasks"
+                    | "get_task"
+                    | "create_task"
+                    | "update_task"
+                    | "delete_task"
+                    | "restore_task"
+                    | "task_history"
+                    | "task_board"
+                    | "task_changes"
+                    | "export_tasks"
+                    | "reorder_task"
             ) {
                 return rpc_error(&id, -32602, "Unknown tool");
             }
@@ -148,13 +179,34 @@ pub async fn handle(request: &Request, input: Option<Value>, tasks: &Tasks) -> A
 async fn call(name: &str, mut args: Value, tasks: &Tasks) -> ApiResult<Value> {
     match name {
         "list_tasks" => {
-            if args.as_object().is_none_or(|o| !o.is_empty()) {
+            if args.as_object().is_some_and(|o| o.is_empty()) {
+                Ok(json!({"tasks":tasks.list().await?}))
+            } else {
+                tasks.scan(args).await
+            }
+        }
+        "task_board" | "export_tasks" => tasks.snapshot(args, name == "export_tasks").await,
+        "task_changes" => {
+            #[derive(serde::Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Page {
+                #[serde(default)]
+                after: u64,
+                #[serde(default = "default_limit")]
+                limit: u32,
+            }
+            fn default_limit() -> u32 {
+                50
+            }
+            let p: Page = serde_json::from_value(args).map_err(|_| ServiceError::invalid())?;
+            if p.after > 9_007_199_254_740_991 || !(1..=100).contains(&p.limit) {
                 return Err(ServiceError::invalid());
             }
-            Ok(json!({"tasks":tasks.list().await?}))
+            tasks.changes(p.after, p.limit).await
         }
         "create_task" => Ok(json!({"task":tasks.create(args).await?})),
-        "get_task" | "update_task" => {
+        "get_task" | "update_task" | "delete_task" | "restore_task" | "task_history"
+        | "reorder_task" => {
             let id = args
                 .as_object_mut()
                 .and_then(|o| o.remove("id"))
@@ -166,8 +218,30 @@ async fn call(name: &str, mut args: Value, tasks: &Tasks) -> ApiResult<Value> {
                     return Err(ServiceError::invalid());
                 }
                 Ok(json!({"task":tasks.get(&id).await?}))
-            } else {
+            } else if name == "task_history" {
+                #[derive(serde::Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Page {
+                    #[serde(default)]
+                    after: u64,
+                    #[serde(default = "default_limit")]
+                    limit: u32,
+                }
+                fn default_limit() -> u32 {
+                    50
+                }
+                let page: Page =
+                    serde_json::from_value(args).map_err(|_| ServiceError::invalid())?;
+                if page.after > 9_007_199_254_740_991 || !(1..=100).contains(&page.limit) {
+                    return Err(ServiceError::invalid());
+                }
+                tasks.history(&id, page.after, page.limit).await
+            } else if name == "reorder_task" {
+                Ok(json!({"task":tasks.reorder(&id,args).await?}))
+            } else if name == "update_task" {
                 Ok(json!({"task":tasks.update(&id,args).await?}))
+            } else {
+                Ok(json!({"task":tasks.lifecycle(&id,args,name=="restore_task").await?}))
             }
         }
         _ => Err(ServiceError::invalid()),
@@ -179,7 +253,7 @@ mod tests {
     #[test]
     fn tools_expose_revision_and_nullable_date() {
         let tools = tools();
-        assert_eq!(tools.as_array().unwrap().len(), 4);
+        assert_eq!(tools.as_array().unwrap().len(), 11);
         assert_eq!(
             tools[3]["inputSchema"]["properties"]["changes"]["properties"]["scheduled_date"]["type"],
             json!(["string", "null"])

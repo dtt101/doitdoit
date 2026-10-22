@@ -6,20 +6,21 @@ TypeScript layer or runtime npm dependency. Cloudflare's Rust SDK generates the
 JavaScript/WASM entrypoint. Node is used for the official `cf` CLI, its Wrangler bundler, and the local workerd test
 harness, which invokes the compiled Rust service.
 
-This is the first part of milestone 1 in the [accepted plan](../plans/cloudflare-task-service.md).
-The real local GitHub login and `make smoke` flow have passed. The initial deployment
-is directly to production with an empty D1 database, per the user's decision;
-there is no separate staging environment. The existing Go TUI still uses JSON.
+Implementation follows the [accepted plan](../plans/cloudflare-task-service.md).
+The real local GitHub login and `make smoke` flow have passed. Deployment is
+directly to production, per the user's decision; there is no staging environment.
+The Go TUI defaults to JSON and offers explicit service backend selection.
 The Worker is deployed as of 2026-10-20. Health, discovery and unauthenticated
 access checks pass. Production owner login, Codex MCP reads/writes, and a
 separate refresh/revocation test have passed. ChatGPT/Claude interoperability
 and automatic client refresh remain to be checked.
 
-Implemented: create/get/list/update, explicit scheduling/status, per-task
-revisions, atomic history and idempotent acknowledgements, shared HTTP/MCP
-operations, GitHub owner login, and a separate Go HTTP client proof of concept.
-Pending: real assistant interoperability, ordering/reorder, board/change-feed consistency, remaining task
-operations, TUI integration, migration, and deployment/restore validation.
+Implemented locally: create/get/list/update, soft delete/restore, history,
+filter/search, neighbor-based reorder with compaction, immutable paged boards,
+change feeds, portable export and staged atomic import. HTTP and MCP share task
+operations, per-task revisions and atomic history/receipts. The Go TUI/CLI include
+desktop OAuth, private rotating credentials, retained retry commands and explicit
+backend selection. Hosted validation and recovery evidence are tracked in the plan.
 
 ## Local development
 
@@ -98,7 +99,8 @@ GITHUB_OWNER_ID=...
 
 Never commit credentials, OAuth secrets, or local databases. OWNER_TIMEZONE is
 explicit in cloudflare.config.ts. There is no authentication bypass. The Go prototype
-client accepts a token source; persistent desktop login is a later step.
+client uses browser PKCE login and private credentials. See the root README for
+`service login`, session selection, export and reviewed import commands.
 
 With `.dev.vars` configured, migrations applied, and `make dev` running, open a
 second terminal in `service/` and run:
@@ -132,7 +134,9 @@ initial production endpoint with disposable tasks before real-data cutover.
 
 Rust serves stateless Streamable HTTP in JSON response mode at `/mcp`, targeting
 MCP 2025-11-25 with compatible 2025-03-26/2025-06-18 request headers. It exposes
-initialize, ping, tools/list, and tools/call for list/get/create/update. It does
+initialize, ping, tools/list, and 11 tools for list/get/create/update,
+delete/restore/history, board/changes/export and reorder. Import stays HTTP-only.
+It does
 not offer SSE subscriptions, resumability, sessions, sampling, or notifications
 from the server. Notifications receive HTTP 202 without performing mutations.
 Both transports invoke the same Rust Tasks methods and enforce identical scopes.
@@ -148,7 +152,9 @@ order and defaults before hashing. Tests race writes/retries, inject a failure
 at receipt storage, and check exact event/receipt counts.
 
 Dates never change during reads or midnight. History and receipts are retained
-indefinitely. Delete, restore, history reads, ordering and export are pending.
+indefinitely. Migration 0004 preserves existing task/history/receipt rows while
+adding group ordering, recoverable deletion and staged imports. An integration
+test applies it to a populated 0001–0003 database and checks exact preservation.
 See the [API contract](../api/README.md) for input/result bounds and errors.
 
 ## Production deployment
@@ -174,14 +180,25 @@ Keep `.dev.vars` for the separate localhost OAuth app. Never paste secrets in ch
 ```sh
 make check
 make bundle-production # builds and previews; uploads nothing
-make migrate-production # applies additive SQL to the named production D1
+make migrate-production # applies migrations to the named production D1
 make deploy             # uploads Rust Worker and production secrets
 ```
 
 `make deploy` intentionally requires the private secrets file. Deploy does not
 import tasks or switch the TUI. Validate health, discovery, owner login and actual
 ChatGPT/Claude MCP operations after deploy. D1 recovery, independent export and a
-restore drill remain required before real-data cutover.
+restore drill remain required before real-data cutover. See [recovery procedures](OPERATIONS.md).
+
+For the extended hosted smoke (creates and completes two labelled test tasks,
+rotates a temporary desktop login and revokes it):
+
+```sh
+go run ../devtools/service-smoke --url https://doitdoit-service.davidt-91d.workers.dev --extended
+```
+
+This needs one browser approval and tests reorder, delete/restore, history,
+changes, all 11 MCP tools being discoverable, portable export and revoked access.
+It never imports source data or selects the TUI backend.
 
 The user confirmed Workers Free; no subscription upgrade is automated.
 Free daily quotas can interrupt service until reset. If the account already has

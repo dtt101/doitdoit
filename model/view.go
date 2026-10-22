@@ -14,7 +14,9 @@ import (
 
 func (m Model) View() tea.View {
 	content := ""
-	if m.review != nil {
+	if m.cloud != nil && (m.cloud.conflict != nil || m.cloud.discardReview) {
+		content = m.serviceConflictView()
+	} else if m.review != nil {
 		content = m.conflictOverlay()
 	} else if m.State == EditingNotes {
 		content = m.notesOverlay()
@@ -43,10 +45,10 @@ func (m Model) renderColumns(keys []string) []string {
 	columns := make([]string, 0, len(keys))
 	for i, key := range keys {
 		dayIdx := m.visibleColumnStart() + i
-		if m.ShowFuture {
+		if m.ShowFuture || m.ShowOverdue || m.ShowDeleted {
 			dayIdx = m.ColIdx
 		}
-		focused := m.ShowFuture || m.ColIdx == dayIdx
+		focused := m.ShowFuture || m.ShowOverdue || m.ShowDeleted || m.ColIdx == dayIdx
 		doc := m.dayContent(key, dayIdx, geometry.contentWidth)
 		rows := doc.viewportRows(geometry.contentHeight)
 		offset := doc.visibleOffset(m.scrollOffsets[key], rows, focused)
@@ -81,12 +83,16 @@ func (m Model) renderDaySection(dateStr string, dayIdx, colWidth int) string {
 }
 
 func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
-	focused := m.ShowFuture || m.ColIdx == dayIdx
+	focused := m.ShowFuture || m.ShowOverdue || m.ShowDeleted || m.ColIdx == dayIdx
 	header := "Future"
-	if !m.ShowFuture {
+	if m.ShowDeleted {
+		header = "Deleted — recoverable"
+	} else if m.ShowOverdue {
+		header = "Overdue"
+	} else if !m.ShowFuture {
 		displayDate, _ := time.Parse(dateLayout, dateStr)
 		header = displayDate.Format("Mon, Jan 02")
-		if dateStr == time.Now().Format(dateLayout) {
+		if dateStr == m.serviceNow().Format(dateLayout) {
 			header = "Today"
 			if m.FocusToday {
 				header += " (focus)"
@@ -159,6 +165,9 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 			if selected && m.State == Editing {
 				appendInput()
 			} else {
+				if dateStr == "Overdue" {
+					task.Title = task.DueDate + " · " + task.Title
+				}
 				appendBlock(m.taskView(task, selected && m.State != Adding, colWidth))
 				if selected && m.State != Adding {
 					doc.focusStart, doc.focusEnd = start, len(doc.lines)
@@ -176,14 +185,24 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 		message := "Nothing planned yet.\nSelect this day to add a task."
 		if focused {
 			switch {
+			case m.ShowOverdue:
+				message = "No open overdue tasks."
+			case m.ShowDeleted:
+				message = "No deleted tasks."
 			case m.ShowFuture:
 				message = "Capture an idea for later."
-			case dateStr == time.Now().Format(dateLayout):
+			case dateStr == m.serviceNow().Format(dateLayout):
 				message = "What needs doing today?"
 			default:
 				message = "Plan something for this day."
 			}
-			message += "\nPress a to add a task."
+			if m.ShowDeleted {
+				message += "\nPress x to return."
+			} else if m.ShowOverdue {
+				message += "\nPress a to add a task to Today."
+			} else {
+				message += "\nPress a to add a task."
+			}
 		}
 		appendBlock(lipgloss.NewStyle().Foreground(styles.Subtle).Render(message))
 	}
@@ -301,6 +320,15 @@ func (m Model) feedbackView() string {
 
 func (m Model) footerView() string {
 	footer := m.helpView()
+	if m.cloud != nil {
+		lines := []string{m.serviceStatusView()}
+		if errView := m.errorView(); errView != "" {
+			lines = append(lines, errView)
+		} else if feedback := m.feedbackView(); feedback != "" {
+			lines = append(lines, feedback)
+		}
+		return strings.Join(append(lines, footer), "\n")
+	}
 	if errView := m.errorView(); errView != "" {
 		footer = errView + "\n" + footer
 	} else {
@@ -348,6 +376,9 @@ func wrapFooterItems(prefix string, items []string, width int) string {
 func (m Model) footerHelpItems() []helpItem {
 	switch m.State {
 	case Browsing:
+		if m.cloud != nil && m.ShowDeleted {
+			return []helpItem{{"enter", "restore"}, {"x", "return"}, {"r", "refresh"}, {"?", "help"}}
+		}
 		viewToggle := "future"
 		moveLabel := "move"
 		if m.ShowFuture {
@@ -355,6 +386,9 @@ func (m Model) footerHelpItems() []helpItem {
 			moveLabel = "move/date"
 		}
 		items := []helpItem{{"a", "add"}, {"space", "complete"}, {"n", "notes"}, {"m", moveLabel}, {"f", viewToggle}, {"?", "help"}}
+		if m.cloud != nil && m.ShowOverdue {
+			items[0].description = "add to Today"
+		}
 		if (m.height == 0 || m.height >= 16) && (m.width == 0 || m.width >= 36) {
 			focusToggle := "focus today"
 			if m.FocusToday {
@@ -413,13 +447,20 @@ func (m Model) brandBounds() (x, y, width int, ok bool) {
 		return 0, 0, 0, false
 	}
 
-	columns := lipgloss.JoinHorizontal(lipgloss.Top, m.renderColumns(m.visibleKeys())...)
-
-	x = m.appStyle().GetMarginLeft() + m.footerStyle().GetMarginLeft()
-	y = m.appStyle().GetMarginTop() + lipgloss.Height(columns) + 1 + m.footerStyle().GetMarginTop()
-	if errView := m.errorView(); errView != "" {
-		y += lipgloss.Height(errView) - 1
+	if m.ShowHelp || (m.cloud != nil && (m.cloud.conflict != nil || m.cloud.discardReview)) {
+		return 0, 0, 0, false
 	}
+	columns := lipgloss.JoinHorizontal(lipgloss.Top, m.renderColumns(m.visibleKeys())...)
+	lines := strings.Split(ansi.Strip(m.appStyle().Render(columns+"\n"+m.footerView())), "\n")
+	brand := ansi.Strip(m.brandView())
+	y = -1
+	for i := len(lines) - 1; i >= 0; i-- {
+		if index := strings.Index(lines[i], brand); index >= 0 {
+			x, y = lipgloss.Width(lines[i][:index]), i
+			break
+		}
+	}
+
 	if x < 0 || x+brandWidth > m.width || y < 0 || y >= m.height {
 		return 0, 0, 0, false
 	}
@@ -446,6 +487,9 @@ func (m Model) moveDestinationHelpItems() []helpItem {
 }
 
 func (m Model) helpItems() []helpItem {
+	if m.cloud != nil && m.ShowDeleted {
+		return []helpItem{{"↑/↓ / k/j", "navigate"}, {"enter", "restore task"}, {"c", "show/hide completed"}, {"r", "refresh"}, {"x", "return to active tasks"}, {"q / ctrl+c", "quit"}}
+	}
 	navigation := "arrows / hjkl"
 	viewToggle := "Future view"
 	if m.ShowFuture {
@@ -455,7 +499,7 @@ func (m Model) helpItems() []helpItem {
 	if m.FocusToday && !m.ShowFuture {
 		navigation = "↑/↓ / k/j"
 	}
-	return []helpItem{
+	items := []helpItem{
 		{navigation, "navigate"},
 		{"a", "add task"},
 		{"e", "edit task"},
@@ -476,6 +520,21 @@ func (m Model) helpItems() []helpItem {
 		{"pgup / pgdown", "scroll list"},
 		{"q / ctrl+c", "quit"},
 	}
+	if m.cloud != nil {
+		for i := range items {
+			if items[i].key == "r" {
+				items[i].description = "refresh / retry retained command"
+			}
+			if items[i].key == "a" && m.ShowOverdue {
+				items[i].description = "add task to Today"
+			}
+		}
+		items = append(items, helpItem{"o", "open overdue tasks"}, helpItem{"x", "deleted tasks; Enter restores"})
+		if m.ShowOverdue || m.ShowDeleted {
+			items[0].key = "↑/↓ / k/j"
+		}
+	}
+	return items
 }
 
 func (m Model) helpModalView() string {
@@ -550,7 +609,9 @@ func (m Model) renderHelpModal(offset int) (string, int) {
 
 	heading := styles.TitleStyle.Width(innerWidth).Render("Keyboard shortcuts")
 	explanation := "Unfinished tasks from earlier days carry forward to Today automatically."
-	if m.carriedForward > 0 {
+	if m.cloud != nil {
+		explanation = "Open tasks from earlier days appear in Overdue with their original dates. Reads and midnight never reschedule tasks."
+	} else if m.carriedForward > 0 {
 		explanation = m.rolloverNotice() + " " + explanation
 	}
 	shortcuts += "\n\n" + lipgloss.NewStyle().Foreground(styles.Subtle).Width(innerWidth).Render(explanation)
@@ -599,6 +660,9 @@ func (m Model) errorView() string {
 	message := fmt.Sprintf("Error: %v", m.Err)
 	if m.saveErr != nil {
 		message = "Changes not saved — draft kept only in this session."
+		if m.cloud != nil {
+			message = "Changes not saved — private recovery command retained."
+		}
 		detail := m.Err
 		if detail == nil {
 			detail = m.saveErr

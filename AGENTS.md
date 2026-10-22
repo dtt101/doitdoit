@@ -3,7 +3,8 @@
 ## Overview
 
 `doitdoit` is a Go 1.27 terminal task manager built with Bubble Tea. It stores
-tasks in a user-owned JSON file. The repository also contains an experimental,
+tasks in a user-owned JSON file by default, with an explicitly selected
+experimental Cloudflare service backend. The repository also contains an experimental,
 fully static Dropbox web companion in `web/`.
 
 Supported desktop platforms are macOS and Linux only (`amd64` and `arm64`).
@@ -49,8 +50,10 @@ These instructions apply to the whole repository.
 - `service/`: experimental Rust/WASM Cloudflare task service and D1 migrations,
   including Rust OAuth/MCP endpoints and local integration tests.
 - `api/`: experimental service contract and shared Go/Rust fixtures.
-- `taskclient/`: standalone Go client proof of concept, not wired into the TUI.
-- `devtools/service-smoke/`: local browser-login and HTTP/MCP smoke test client
+- `taskclient/`: HTTP task operations, desktop OAuth, private credentials and retained commands.
+- `tasktransfer/`: strict explicit legacy/portable import planning and field verification.
+- `service_tui.go`: service backend startup; `model/service.go` owns task-command orchestration.
+- `devtools/service-smoke/`: browser-login and HTTP/MCP smoke test client
   for the Rust service; invoked by `make smoke` in `service/`.
 - `releasecheck/`: release licence and third-party inventory checks.
 - `.github/workflows/`: the authoritative CI and release gates.

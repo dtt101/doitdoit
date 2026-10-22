@@ -2,7 +2,9 @@ mod auth;
 mod contracts;
 mod http;
 mod mcp;
+mod ordering;
 mod tasks;
+mod transfer;
 
 use contracts::ServiceError;
 use http::ApiResult;
@@ -149,10 +151,64 @@ async fn handle(request: &mut Request, env: &Env, origin: &str) -> ApiResult<Res
     http::json(&value, status)
 }
 async fn task_route(request: &mut Request, tasks: &Tasks) -> ApiResult<(Value, u16)> {
+    if request.path() == "/v1/imports" || request.path().starts_with("/v1/imports/") {
+        return Ok((transfer::handle(request, tasks).await?, 200));
+    }
     let path = request.path();
     let method = request.method();
     if path == "/v1/tasks" && method == Method::Get {
-        return Ok((json!({"tasks":tasks.list().await?}), 200));
+        if request
+            .url()
+            .map_err(|_| ServiceError::invalid())?
+            .query()
+            .is_none()
+        {
+            return Ok((json!({"tasks":tasks.list().await?}), 200));
+        }
+        return Ok((tasks.scan(query_value(request)?).await?, 200));
+    }
+    if method == Method::Get {
+        match path.as_str() {
+            "/v1/board" | "/v1/export" => {
+                return Ok((
+                    tasks
+                        .snapshot(query_value(request)?, path == "/v1/export")
+                        .await?,
+                    200,
+                ));
+            }
+            "/v1/changes" => {
+                let (after, limit) = page_query(request)?;
+                return Ok((tasks.changes(after, limit).await?, 200));
+            }
+            _ => (),
+        }
+    }
+    if let Some(tail) = path.strip_prefix("/v1/tasks/")
+        && let Some((id, action)) = tail.split_once('/')
+    {
+        if uuid::Uuid::parse_str(id).is_err() {
+            return Err(ServiceError::invalid());
+        }
+        match (action, method.clone()) {
+            ("reorder", Method::Post) => {
+                return Ok((
+                    json!({"task":tasks.reorder(id,http::body(request).await?).await?}),
+                    200,
+                ));
+            }
+            ("restore", Method::Post) => {
+                return Ok((
+                    json!({"task":tasks.lifecycle(id,http::body(request).await?,true).await?}),
+                    200,
+                ));
+            }
+            ("history", Method::Get) => {
+                let (after, limit) = page_query(request)?;
+                return Ok((tasks.history(id, after, limit).await?, 200));
+            }
+            _ => return Err(ServiceError::new(404, "not_found", "Endpoint not found.")),
+        }
     }
     let id = path
         .strip_prefix("/v1/tasks/")
@@ -166,6 +222,10 @@ async fn task_route(request: &mut Request, tasks: &Tasks) -> ApiResult<(Value, u
             ))
         }
         (_, Some(id), Method::Get) => Ok((json!({"task":tasks.get(id).await?}), 200)),
+        (_, Some(id), Method::Delete) => Ok((
+            json!({"task":tasks.lifecycle(id,http::body(request).await?,false).await?}),
+            200,
+        )),
         (_, Some(id), Method::Patch) => {
             tasks.require("tasks:write")?;
             Ok((
@@ -180,4 +240,51 @@ async fn task_route(request: &mut Request, tasks: &Tasks) -> ApiResult<(Value, u
         )),
         _ => Err(ServiceError::new(404, "not_found", "Endpoint not found.")),
     }
+}
+
+fn page_query(request: &Request) -> ApiResult<(u64, u32)> {
+    let url = request.url().map_err(|_| ServiceError::invalid())?;
+    let mut after = None;
+    let mut limit = None;
+    for (key, value) in url.query_pairs() {
+        match key.as_ref() {
+            "after" if after.is_none() => {
+                after = Some(value.parse::<u64>().map_err(|_| ServiceError::invalid())?)
+            }
+            "limit" if limit.is_none() => {
+                limit = Some(value.parse::<u32>().map_err(|_| ServiceError::invalid())?)
+            }
+            _ => return Err(ServiceError::invalid()),
+        }
+    }
+    let after = after.unwrap_or(0);
+    let limit = limit.unwrap_or(50);
+    if after > 9_007_199_254_740_991 || !(1..=100).contains(&limit) {
+        return Err(ServiceError::invalid());
+    }
+    Ok((after, limit))
+}
+
+fn query_value(request: &Request) -> ApiResult<Value> {
+    let mut object = serde_json::Map::new();
+    for (key, value) in request
+        .url()
+        .map_err(|_| ServiceError::invalid())?
+        .query_pairs()
+    {
+        if object.contains_key(key.as_ref()) {
+            return Err(ServiceError::invalid());
+        }
+        let value = match key.as_ref() {
+            "limit" | "snapshot_cursor" => {
+                json!(value.parse::<u64>().map_err(|_| ServiceError::invalid())?)
+            }
+            "undated" | "include_deleted" => {
+                json!(value.parse::<bool>().map_err(|_| ServiceError::invalid())?)
+            }
+            _ => json!(value),
+        };
+        object.insert(key.into_owned(), value);
+    }
+    Ok(Value::Object(object))
 }

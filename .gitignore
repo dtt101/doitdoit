@@ -47,3 +47,4 @@ service/build/
 service/.tools/
 
 service/.cloudflare/
+service/.backups/

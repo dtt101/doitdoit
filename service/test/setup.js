@@ -7,6 +7,8 @@ beforeEach(async () => {
   await env.DB.prepare("DROP TRIGGER IF EXISTS fail_receipt").run();
   await env.DB.batch([
     ...[
+      "import_items",
+      "import_runs",
       "oauth_credentials",
       "oauth_grants",
       "oauth_pending",

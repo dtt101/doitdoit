@@ -1,98 +1,139 @@
 # Cloudflare task service, MCP, and Go TUI
 
-Status: accepted architecture; production login, reads and writes through Codex
-MCP verified. Milestone 1 remains open for remaining hosted client interoperability,
-ordering representation, and consistent board/change-feed design.
+Status as of 2026-10-22: the expanded Rust service and migration 0004 are deployed.
+The Go TUI/CLI service mode and explicit import/recovery tooling are implemented
+in the working tree. Local checks and the independent D1 restore drill pass.
+The extended production smoke passes, including desktop refresh and revocation.
+Hands-on TUI and other assistant-client checks remain open; real-data import and
+cutover have not occurred.
 
-Progress: Rust owns the HTTP API, MCP, OAuth, validation and D1 operations.
-The user successfully ran `make smoke` against the local Worker with real GitHub
-login: token exchange, task creation, explicit date update, identical retry,
-stale-write conflict, MCP initialization/read-back, completion and revocation
-all passed. Browser consent headers were corrected and verified in isolated
-Chromium. Latest service checks passed 8 native Rust and 32 Worker integration
-tests; Go tests, vet and race checks passed after adding the smoke client.
-Production deployed on 2026-10-20 with migrations 0001–0003 applied. Live health,
-OAuth discovery, unauthenticated API/MCP rejection and cross-origin rejection
-passed. The user subsequently confirmed successful production GitHub authentication
-and task listing through Codex MCP. Direct production MCP tests on 2026-10-20
-also passed creation, date update, identical retry, stale-write rejection and
-completion with final read-back. A separate production OAuth test on 2026-10-22
-passed refresh rotation, audience rejection, scope preservation, renewed MCP
-access, and revocation of both access-token generations and the latest refresh
-token. Other assistant clients remain unverified. No task import or TUI backend
-switch has occurred.
+Architecture accepted: 2026-10-19. Work branch: `feat/cloudflare-task-service`.
+Implementation checkpoint: expanded service operations, Go TUI/CLI integration,
+explicit import/recovery tooling and service-mode review fixes. The earlier
+consent callback fix is recorded in `5ed3f22`.
 
-Decision date: 2026-10-19.
+## Stage overview
 
-## Current handoff and immediate next steps
+| Stage | Status | Remaining acceptance gate |
+| --- | --- | --- |
+| 1. Contract and infrastructure spike | Contracts settled; Codex verified | ChatGPT/Claude and natural client refresh checks |
+| 2. Complete service operations | Implemented, locally tested and deployed; hosted smoke passed | Further client acceptance tracked below |
+| 3. Go client and TUI integration | Implemented; hosted desktop login/refresh verified | Hands-on TUI/macOS verification |
+| 4. Import, recovery and web transition | Tooling and fixture tests implemented | Explicit reviewed real-data import stays separate |
+| 5. Operational handoff and cutover readiness | Backup, restore and code rollback verified | Off-machine backup operation and remaining client checks |
+| Later: plugin packaging | Deferred | Direct MCP remains the current route |
 
-- Work is on `feat/cloudflare-task-service`. This branch contains the initial
-  Rust service implementation checkpoint; the original architecture plan is on
-  main. Use the branch's Git log and working-tree status when resuming work.
-- The user explicitly chose direct production deployment with one Worker and
-  one initially empty D1 database. Do not create a separate staging environment.
-  Local development remains available. This decision supersedes earlier staging
-  requirements; it does not authorize importing the user's existing JSON tasks.
-- Cloudflare MCP and `cf` CLI are installed and authenticated. The user prefers
-  `cf`; service Make targets now use it with Wrangler underneath for Rust builds.
-- Production D1 `doitdoit-prod` was created in account
-  `91d8cf0b8c805dac586f9ab55d6d6212`, ID
-  `43659423-7b12-42ac-8f1e-fc97f3ed0fea`, WEUR, replicas disabled.
-  Intended Worker URL: `https://doitdoit-service.davidt-91d.workers.dev`.
-- User confirmed Workers Free and supplied production OAuth credentials in
-  ignored `service/.env.production` (0600). Secrets were deployed from that file.
-  No paid plan was enabled.
-- Initial auth review rechecked owner allowlisting, PKCE, browser-bound consent,
-  token rotation/replay and atomic writes against existing regression tests.
-  Added edge auth/registration limits and hourly expired-state cleanup, retaining
-  replay evidence while grants are live. This is not an independent security audit.
-- Production configuration is in `service/cloudflare.config.ts`; local mode is
-  the default and production requires `--mode production`. Both bundle dry-runs,
-  8 Rust tests, 32 Worker tests and release notice checks passed.
-  Local migrations still use Wrangler to preserve the nil-ID local database
-  (cf beta rejects that ID).
-- Initial production version: `abac552d-9673-4eba-bdc3-2d8fdad78c21`
-  (superseded by the consent callback fix below). Current production version:
-  `26470207-c46f-4293-a5f0-64fbcf5230a3`, serving 100% of traffic.
-  Hourly auth cleanup is scheduled at minute 17. Health and discovery return 200;
-  anonymous task/MCP requests return 401; foreign Origin returns 403.
-  Initial cf D1 query authorization failed, but a later retry applied all three
-  migrations successfully; deployment used cf.
-- Production owner login and task listing through Codex MCP now work, as
-  confirmed by the user after correcting the production GitHub app callback.
-- Production MCP verification passed on 2026-10-20 using labelled disposable
-  task `cd65eb40-27d4-419c-a2a7-dc4540d6bf02`: created with past date
-  `2020-02-29` at revision 1; updated to `2030-01-02` at revision 2; identical
-  retry returned the same revision and timestamp; a new operation with stale
-  revision 1 returned `revision_conflict` without overwriting the date.
-  Completion advanced to revision 3 and preserved the date; get_task confirmed
-  the final state. The test task remains completed in production.
-- Fixed the browser consent CSP to allow the exact selected registered callback
-  origin as well as GitHub. With an existing GitHub session, Chromium applied
-  form-action across the whole redirect chain and blocked the final client hop.
-  An isolated three-origin browser reproduction failed before this allowance
-  and reached the callback with it. The fix is deployed; local checks passed
-  8 Rust tests, 32 Worker integration tests and the production bundle dry-run.
-- Production refresh/revocation test passed on 2026-10-22 using a separate
-  read-only grant: real owner login, initial MCP tools access, wrong-resource
-  refresh rejection, access/refresh rotation, unchanged scopes and renewed MCP
-  access. Explicit revocation rejected both access generations (401) and the
-  latest refresh token (invalid_grant). Credentials stayed in memory, the test
-  grant was revoked, and no tasks were changed. This verifies server behavior;
-  automatic refresh by Codex itself and waiting for natural expiry remain untested.
-- Next: verify ChatGPT/Claude interoperability and client-managed refresh.
-  Continue connecting directly to the MCP server at
-  `https://doitdoit-service.davidt-91d.workers.dev/mcp`.
-  The existing `make smoke` command still targets localhost only.
-  Keep credentials out of Git and chat; the existing OAuth app serves localhost.
-- Continue ordering/change-feed design, remaining service operations, TUI
-  integration, and explicit import/export/recovery work before real-data cutover.
-- Plugin packaging is accepted as later work. Continue the direct MCP route now;
-  do not make packaging or plugin publication a prerequisite for service work.
+Stages retain the detailed acceptance gates below. Initial production deployment
+was deliberately brought forward from stage 5 for hosted testing. Deployment
+does not mean the remaining stages are complete.
 
-This section is the restart point for a new chat. Read the implementation and
-current Git diff alongside it; local test success does not establish hosted
-assistant compatibility or production deployment success.
+## Completed and verified
+
+- [x] Rust/WASM Worker with D1, HTTP task API and authenticated stateless MCP.
+  Application behavior, OAuth and MCP are all Rust; Node is development/test tooling.
+- [x] Create/get/list/update, title/notes, explicit date set/clear and explicit
+  completion status; no rollover writes in the service.
+- [x] Per-task revisions, visible stale-write conflicts, identical retry receipts
+  and atomic task/history/receipt writes. Local tests cover races and rollback.
+- [x] GitHub owner allowlist, public-client registration, S256 PKCE,
+  browser-bound consent, resource binding, rotating refresh credentials and revocation.
+- [x] Public auth rate limits and hourly expired-state cleanup; spent credentials
+  remain available for replay detection while their grant is live.
+- [x] Local GitHub smoke workflow using the standalone Go HTTP client.
+- [x] Production Worker, D1 migrations 0001–0003, private OAuth secrets and
+  direct Codex MCP connection on the user-confirmed Workers Free plan.
+- [x] Live health/discovery, anonymous API/MCP rejection and foreign-Origin rejection.
+- [x] Production MCP creation, date update, identical retry, stale-date conflict,
+  completion and final read-back. The newer date survived both conflict and completion.
+- [x] Production OAuth refresh rotation, wrong-resource rejection, unchanged scopes,
+  renewed MCP access and revocation of both access generations and the latest refresh.
+- [x] Consent callback redirect fix, reproduced in an isolated browser, regression
+  tested and deployed. The policy permits GitHub and the selected registered
+  callback origin so an existing GitHub session can return directly to the client.
+- [x] Expanded service: delete/restore/history, paged filter/search, neighbor reorder,
+  compaction, fixed-cursor board/export, changes and HTTP-only atomic staged import.
+- [x] Migration 0004 upgrade test preserves exact old tasks, events and receipts;
+  rollback tests and competing-gap reorder tests pass.
+- [x] Go desktop PKCE login, private rotating credentials with cross-process refresh
+  locking, explicit backend selection, HTTP task operations and service TUI mode.
+- [x] Overdue presentation preserves dates; revision-guarded undo, retained uncertain
+  commands, invalid-draft protection, conflict review and deleted-task restoration.
+- [x] Strict frozen-source import planning, stable ID mappings, preserved recovery
+  artifacts, resumable staging/publication and field-level export verification.
+- [x] Full production SQL backup restored into a separate unbound D1 database;
+  every row in all 10 tables matched. Temporary database deleted after verification.
+- [x] Production code rollback to `26470207-c46f-4293-a5f0-64fbcf5230a3`
+  against migration 0004: health and existing authenticated MCP read passed with
+  the canonical task unchanged. Latest Worker restored at 100% afterward.
+- [x] `make backup-production` creates unique private SQL/log files and keeps
+  signed export URLs out of terminal output. Post-migration backup command verified.
+- [x] Latest local verification: 10 Rust tests, 44 Worker integration tests,
+  production dry-run, full Go tests/vet/race and 48 static web tests passed.
+- [x] Desktop cross-builds pass for macOS amd64/arm64 and Linux arm64;
+  Linux amd64 tests/builds run locally. Cross-builds do not replace hands-on UI checks.
+- [x] Extended production smoke passed on 2026-10-22: GitHub desktop login,
+  credential refresh/rotation/private persistence, reorder, soft delete/restore,
+  history, change feed, discovery of all 11 MCP tools, MCP history read-back,
+  completion with dates preserved, portable export field equivalence and revoked
+  access rejection. Both disposable test tasks were completed; the temporary
+  login was revoked and no smoke credentials were retained.
+
+The earlier refresh/revocation check tested the server through a separate read-only
+OAuth client. Automatic refresh by Codex itself and natural token expiry in a
+hosted client have not yet been verified. ChatGPT and Claude remain unverified.
+
+## Next work, in order
+
+1. Exercise hands-on service TUI workflows on supported desktop platforms and
+   intended ChatGPT/Claude clients, including natural access-token expiry.
+2. Operate the documented independent/off-machine backup retention policy.
+3. Review the dry-run of the actual source only when separately requested, then
+   obtain explicit authorization for real-data publication and backend cutover.
+
+Plugin packaging remains deferred. These outstanding gates are not implicit
+permission to import real tasks, change the selected backend, release or push.
+
+## Production reference and handoff
+
+- Account: `91d8cf0b8c805dac586f9ab55d6d6212`.
+- Worker: `doitdoit-service`; origin:
+  `https://doitdoit-service.davidt-91d.workers.dev`.
+- MCP: `https://doitdoit-service.davidt-91d.workers.dev/mcp`.
+- Current recorded production version: `344b0f95-3840-4252-836b-5b80796b47de`,
+  serving 100% of traffic. Initial deployment was on 2026-10-20.
+- D1: `doitdoit-prod` / `43659423-7b12-42ac-8f1e-fc97f3ed0fea`, Western Europe,
+  read replication disabled. Auth cleanup runs hourly at minute 17.
+- User chose one production environment and local development; do not add staging.
+  Workers Free was confirmed by the user; no paid subscription was enabled.
+- `service/cloudflare.config.ts` owns development/production configuration.
+  Make targets use the preferred `cf` CLI, with Wrangler underneath for Rust
+  builds. Local migrations retain Wrangler because cf rejects the existing
+  nil local database ID; this preserves the local database.
+- Production credentials are in ignored `service/.env.production` with `0600`
+  permissions and deployed as Worker secrets. The separate localhost OAuth app
+  uses ignored `.dev.vars`. Never put credentials in Git or chat.
+- `make smoke` defaults to localhost. `go run ./devtools/service-smoke --url ORIGIN
+  --extended` checks the expanded hosted operation set with a temporary private
+  desktop login, which it revokes and removes.
+- Production migrations 0001–0004 are applied. Pre-0004 full SQL backup is in
+  ignored private `service/.backups/pre-0004.sql`. Restore verification compared
+  all 10 tables with a local SQLite restore. Temporary recovery DB
+  `a08642d9-6158-41fe-a11c-ffb6daa25770` was deleted after verification.
+- Previous Worker `26470207-c46f-4293-a5f0-64fbcf5230a3` is the rollback target.
+  [Operational procedures](../service/OPERATIONS.md) distinguish task export,
+  full D1 backup, code rollback and real-data cutover.
+- Disposable production MCP test task `cd65eb40-27d4-419c-a2a7-dc4540d6bf02`
+  remains completed: created with `2020-02-29` at revision 1, rescheduled to
+  `2030-01-02` at revision 2, identical retry unchanged, stale revision rejected,
+  completed at revision 3 with the date preserved.
+- The active backend remains JSON. Service mode is opt-in; no real-task import
+  or backend switch has occurred.
+  Import, cutover, releases, tags, pushes and plugin publication remain separate
+  actions requiring the relevant explicit instruction.
+
+This is the restart point for a new chat. Read the branch's Git log, working-tree
+diff and implementation alongside this plan. Preserve existing JSON safety until
+an explicitly authorized cutover; distinguish verified behavior from open gates.
 
 ## Direction
 
@@ -148,7 +189,7 @@ or database access tokens.
 Suggested repository layout:
 
 - service/: Rust Worker crate and Cargo lockfile, SQL migrations, Rust OAuth/MCP
-  endpoints, Wrangler configuration, development-tool npm lockfile,
+  endpoints, cf configuration and Wrangler build settings, development-tool npm lockfile,
   native Rust contract tests and local WASM/D1 integration tests.
 - api/: versioned schemas, documented errors, and shared contract fixtures.
 - taskclient/: Go HTTP client, task/revision types, and contract tests.
@@ -179,8 +220,8 @@ Scheduling accepts explicit valid past dates as well as today/future dates;
 remove the existing clamp to today in the new path.
 
 Completion grouping and date grouping are read/view concerns. Reordering changes
-an explicit ordering key, with a stable task-ID tie-breaker. Establish the exact
-ordering scope (scheduled date plus completion section) in the contract. A
+an explicit ordering key, with a stable task-ID tie-breaker. The ordering scope is scheduled date plus completion status, as documented in
+the API contract. A
 reorder uses before/after neighbour IDs; the server calculates positions. Cover
 concurrent reorder and position compaction without renumbering the whole board
 for ordinary edits. Do not use floating-point positions without precision tests.
@@ -265,7 +306,7 @@ login instructions, and optional skills explaining explicit dates, task IDs,
 expected revisions, retry operation IDs and conflict resolution.
 
 Keep the Rust Worker, D1 and OAuth service as the shared backend. Direct MCP
-connections remain supported, and the Go TUI continues to use the HTTP API.
+connections remain supported, and the planned Go TUI integration uses the HTTP API.
 Check each target client's current packaging requirements when implementing;
 do not assume one package works unchanged in Codex, ChatGPT and Claude.
 
@@ -276,14 +317,14 @@ No plugin installation or publication is part of the current scope.
 
 Authentication is part of the first vertical slice, not a later addition.
 Use GitHub as the upstream identity provider and maintained Rust cryptographic
-primitives. The local Rust prototype implements a narrow public-client OAuth
+primitives. The deployed Rust service implements a narrow public-client OAuth
 server with S256 PKCE, exact registered redirects, browser-bound consent/state,
 opaque hashed credentials, resource binding, expiry, rotating refresh tokens,
 and revocation in D1. It does not implement a general OAuth/OIDC platform or
-Client ID Metadata Documents; clients use dynamic registration. Protocol and
-security review and production abuse controls remain preparation for public
-deployment. Verify real assistant interoperability on the initial production
-endpoint before real-data cutover. Start with one allowlisted owner identity;
+Client ID Metadata Documents; clients use dynamic registration. Initial auth
+regression review, production rate limits and expired-state cleanup are in place.
+This does not constitute an independent security audit. Complete remaining hosted
+client and refresh checks before real-data cutover. Start with one allowlisted owner identity;
 authentication alone must not permit other accounts to access tasks.
 
 The first spike selects a concrete identity provider and OAuth integration,
@@ -359,56 +400,118 @@ A later static web client can call the same task API; no D1 secret enters it.
 
 ## Delivery milestones and acceptance gates
 
-### 1. Contract and infrastructure spike
+### 1. Contract and infrastructure spike — mostly complete
 
-Add the service skeleton, local Wrangler/D1 environment, initial SQL migrations,
-API schemas, and a Go client proof of concept. Prove authenticated MCP access
-and the D1 atomic revision/history/receipt pattern. Document selected auth
-provider, credential flow, ordering representation, and cursor consistency.
-Use fixtures only. Gate: two writers cannot silently overwrite the same revision;
-an acknowledged mutation always has matching history and retry receipt.
+Completed: Rust Worker/D1 skeleton and migrations, initial API contract and
+fixtures, standalone Go HTTP client, authenticated Codex MCP access, real local
+and production GitHub login, and the D1 atomic revision/history/receipt pattern.
+Two writers cannot silently overwrite the same revision; tested acknowledged
+mutations have matching history and retry receipts. Production checks cover
+explicit dates, identical retries, stale conflicts, completion, refresh and revocation.
 
-### 2. Complete service operations
+Contract decisions and remaining client gates:
 
-Implement task operations, history, deletion/restore, ordering, filtering,
-change feeds, and export. Add owner isolation, limits, useful errors, and
-idempotency. Gate: API and MCP contract tests exercise the same successful,
-stale, unauthorized, and retried actions.
+- [x] Establish ordering scope, representation, neighbor conflicts and compaction rules.
+- [x] Specify consistent board snapshot/change-feed cursors and stale-cursor recovery.
+- [ ] Verify intended ChatGPT/Claude client interoperability.
+- [ ] Verify client-managed refresh across natural expiry and revoked-login behavior.
 
-### 3. Go client and TUI integration
+Gate: the selected contracts are documented and the intended client flows are
+verified. Local tests use fixtures; authorized hosted tests use disposable tasks.
 
-Add explicit backend selection and service login/configuration. Adapt ordinary
-actions, notes, undo, reload, and save feedback. Add the Overdue view and remove
-rollover writes from the service path. Gate: complete create/edit/reschedule/
-complete/delete/restore/undo workflows, including delayed responses, network
-loss, and retained drafts, work on supported desktop platforms.
+### 2. Complete service operations — implemented and deployed
 
-### 4. Import, recovery, and web transition documentation
+Completed foundation: create/get/list/update with explicit completion/scheduling,
+owner checks, bounded input/output, revisions, history writes and idempotency.
+User-facing history, soft delete/restore and the remaining operation set are
+implemented in the shared Rust layer and deployed.
 
-Implement dry-run, resumable import, verification/export, and explicit cutover.
-Document the old web companion boundary and rollback procedure.
+Implemented slices (local integration coverage plus the extended production smoke):
+
+- [x] Revision-guarded soft delete/restore and owner-scoped task history reads.
+- [x] Filtering/search with bounded pagination.
+- [x] Reorder and position compaction using the stage 1 contract.
+- [x] Consistent board reads, paged change feed and stale-cursor recovery.
+- [x] Portable owner export including the metadata needed for recovery.
+- [x] HTTP/MCP parity and stale, unauthorized, retried and concurrent behavior tests
+  for each new operation.
+
+Gate: the complete operation set shares one task layer and its success, conflict,
+retry, isolation and rollback behavior is covered by contract/integration tests.
+
+### 3. Go client and TUI integration — implemented locally
+
+The Go HTTP client, desktop login and service TUI mode are implemented. JSON
+remains the default. The TUI applies paged change events every 15 seconds while
+idle and separately after canonical task acknowledgements. Writes release the
+saving state before reconciliation; routine writes/polls do not fetch the full
+board. Event revisions prevent replayed events from replacing newer task
+acknowledgements, and compaction events update affected tasks. Startup, manual
+refresh, view changes and invalid-cursor recovery use consistent board/export
+snapshots. Background reconciliation cannot replace an active editor.
+
+Service-mode review fixes cover single-column Overdue/Deleted geometry, fixed
+day navigation, Today-based relative moves from Overdue, selection reset on
+return to Today, and Add from Overdue visibly switching to Today before entry.
+Help, empty states, status/feedback and wordmark click bounds match service mode.
+Stuck drafts can be reviewed and archived privately without sending a mutation;
+archiving an uncertain command does not cancel any possible server write.
+Conflict application is offered only for updates to active tasks.
+
+CLI capture writes its private draft before any network request. Explicit dates
+and undated capture skip timezone reads. Relative dates use a one-task board
+metadata page and the original capture instant in the owner timezone; the
+resolved absolute date is persisted before creation and retained across retries.
+Import dry-runs check rank characters/length, safe revisions and completion
+consistency with the Rust validator before attempting staging.
+
+- [x] Persistent login/refresh, private credential storage and explicit backend selection.
+- [x] Task commands and canonical acknowledgements through Bubble Tea commands.
+- [x] Overdue view with no rollover writes or date changes during reads/midnight.
+- [x] Notes, reorder, completion, delete/restore, revision-guarded undo and refresh.
+- [x] Disconnected/saving/saved/failed feedback, stale-response protection,
+  private retained drafts and safe retries after an uncertain write outcome.
+
+Gate: complete workflows work on macOS/Linux, including delayed responses,
+network loss, conflicts and retained drafts. Keep the legacy JSON backend safe.
+
+### 4. Import, recovery and web transition — tooling implemented
+
+- [x] Explicit frozen source snapshot and strict dry-run with mapping/conflict report.
+- [x] Resumable import with preserved fields, dates, ordering and stable ID mapping.
+- [x] Field/count/order/export verification and retained recovery material.
+- [x] Document the Dropbox companion boundary and rollback after service edits.
+
 Gate: representative legacy fixtures migrate without lost notes or dates;
-repeated/interrupted import creates no duplicates; the source remains intact.
+repeated/interrupted import creates no duplicates and preserves the source.
+Executing an import of real tasks remains separately authorized.
 
-### 5. Deployment and operational handoff
+### 5. Operational handoff and cutover readiness — partly complete
 
-Prepare separate local-development and production configurations, least-privilege
-deployment credentials, schema migration instructions, health checks, bounded
-request logs without task contents/tokens, rate/body limits, and cost visibility.
-Prefer stateless MCP handlers; persistent session state cannot live only in a
-Worker instance.
+Completed: local/production configurations, production Worker and D1, private
+secrets, migration/deployment commands, health/discovery, query-redacted sampled
+traces, auth/body limits and hourly auth cleanup. Initial deployment was brought
+forward for stage 1 hosted testing; production contains disposable test data.
 
-Configure D1 recovery and independent exports with documented retention. Test a
-restore into a separate database and export comparison. Separate backups from
-same-database task history. Use additive schema changes and compatible Worker
-rollouts; rolling back code must not assume SQL migrations can be reversed.
+- [x] Document deployment credentials and operational recovery procedures.
+- [x] Confirm D1 Free Time Travel (7 days), document independent export retention
+  and dashboard usage/cost visibility. Off-machine backup scheduling remains operational work.
+- [x] Restore into a separate recovery database and compare exported data.
+- [x] Verify production code rollback against migration 0004 and restore the latest
+  Worker. Code rollback did not rewind database contents or migrations.
+- [ ] Complete remaining real-client, concurrency and retry-recovery acceptance checks.
+- [ ] Obtain explicit authorization for real-data import and client cutover.
 
-The initial empty production deployment is brought forward to milestone 1 for
-hosted assistant testing, per the user's direct-production decision.
-Gate for real-data cutover: demonstrate production authentication, real client
-interoperability, concurrency, retry recovery, export/restore and deploy rollback.
-Obtain explicit authorization for real-data cutover. No release tags or pushes
-are implied by this plan.
+Gate for real-data cutover: authentication and intended client interoperability,
+complete service/TUI workflows, export/restore and rollback are demonstrated.
+No release tags or pushes are implied by this plan.
+
+### Later: plugin packaging — deferred
+
+After direct MCP workflows are established, prepare client-specific metadata,
+connection/login instructions and optional task-management skills. The same Rust
+service and OAuth backend remain authoritative. No plugin implementation or
+publication is scheduled ahead of the current MCP work.
 
 ## Verification and repository updates
 
@@ -423,8 +526,9 @@ Build the pinned worker-build WASM artifact before local integration tests.
 
 Go checks remain go test -count=1 ./..., go vet ./..., and go test -race ./...
 for persistence/reload changes. Preserve isolated HOME/config and Omarchy tests,
-Linux/macOS coverage, and supported release architectures. Add Rust formatting/lints,
-migrations, and local Worker tests to CI without replacing existing gates.
+Linux/macOS coverage, and supported release architectures. Existing CI already
+runs Rust formatting/lints, migrations and local Worker tests, including the
+0004 upgrade/ordering/import suites, without replacing the Go and web gates.
 
 Maintain shared contract fixtures for date/null semantics, Unicode/notes,
 ordering, revisions, and error decoding across Rust and Go. Test that

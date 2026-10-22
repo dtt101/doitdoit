@@ -42,6 +42,14 @@ func runShow(out io.Writer) int {
 		fmt.Fprintf(out, "Error loading config: %v\n", err)
 		return 1
 	}
+	backend := cfg.Backend
+	if backend == "" {
+		backend = "json"
+	}
+	fmt.Fprintf(out, "Backend: %s\n", backend)
+	if cfg.ServiceOrigin != "" {
+		fmt.Fprintf(out, "Service: %s\n", cfg.ServiceOrigin)
+	}
 	fmt.Fprintf(out, "Storage Path: %s\n", cfg.StoragePath)
 	fmt.Fprintf(out, "Theme: %s\n", themeDescription(cfg))
 	fmt.Fprintf(out, "Retention: %s\n", retentionDescription(cfg))
