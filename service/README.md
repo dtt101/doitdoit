@@ -11,8 +11,9 @@ The real local GitHub login and `make smoke` flow have passed. The initial deplo
 is directly to production with an empty D1 database, per the user's decision;
 there is no separate staging environment. The existing Go TUI still uses JSON.
 The Worker is deployed as of 2026-10-20. Health, discovery and unauthenticated
-access checks pass; real hosted owner login and assistant interoperability remain
-to be checked.
+access checks pass. Production owner login, Codex MCP reads/writes, and a
+separate refresh/revocation test have passed. ChatGPT/Claude interoperability
+and automatic client refresh remain to be checked.
 
 Implemented: create/get/list/update, explicit scheduling/status, per-task
 revisions, atomic history and idempotent acknowledgements, shared HTTP/MCP
@@ -67,6 +68,9 @@ The browser must approve the displayed client name, exact redirect, and scopes.
 Client names are escaped and explicitly unverified. Consent and upstream state
 are short-lived, single-use and bound to an HttpOnly, SameSite browser cookie.
 Only S256 PKCE and exactly registered HTTPS/loopback redirects are supported.
+The consent form policy allows GitHub and the selected callback origin, so an
+existing GitHub session can redirect straight back to the client. It does not
+allow arbitrary callback origins or wildcards.
 GitHub's access token is used to fetch identity and is never stored or forwarded.
 
 Clients use dynamic registration at `/oauth/register`, authorization at

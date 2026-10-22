@@ -41,6 +41,14 @@ pub async fn fetch(mut request: Request, env: Env, _context: Context) -> Result<
             response
         }
     };
+    let consent_page = request.method() == Method::Get
+        && request.path() == "/authorize"
+        && response.status_code() == 200;
+    let consent_policy = if consent_page {
+        response.headers().get("Content-Security-Policy")?
+    } else {
+        None
+    };
     for (key, value) in [
         ("Cache-Control", "no-store"),
         ("X-Content-Type-Options", "nosniff"),
@@ -53,20 +61,19 @@ pub async fn fetch(mut request: Request, env: Env, _context: Context) -> Result<
     ] {
         response.headers_mut().set(key, value)?;
     }
-    if request.method() == Method::Get
-        && request.path() == "/authorize"
-        && response.status_code() == 200
-    {
+    if consent_page {
         // no-referrer makes native form POSTs send Origin: null in browsers.
         // Keep the consent POST same-origin while hiding referrers from GitHub.
         response
             .headers_mut()
             .set("Referrer-Policy", "same-origin")?;
-        // Browsers also enforce form-action on the POST's redirect to GitHub.
-        response.headers_mut().set(
-            "Content-Security-Policy",
-            "default-src 'none'; form-action 'self' https://github.com; frame-ancestors 'none'; base-uri 'none'",
-        )?;
+        // Preserve the policy built from the validated registered callback.
+        // Browsers enforce form-action across the complete OAuth redirect chain.
+        if let Some(policy) = consent_policy {
+            response
+                .headers_mut()
+                .set("Content-Security-Policy", &policy)?;
+        }
     }
     Ok(response)
 }

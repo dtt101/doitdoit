@@ -449,6 +449,20 @@ async fn authorize(request: &Request, env: &Env) -> ApiResult<Response> {
         handle
     );
     let mut response = Response::from_html(html).map_err(|_| ServiceError::internal())?;
+    // With an existing GitHub session, the form submission can redirect all
+    // the way to the client without loading another document. Authorize only
+    // this request's exactly matched registered callback origin, never a wildcard.
+    let callback_origin = Url::parse(redirect)
+        .map_err(|_| invalid())?
+        .origin()
+        .ascii_serialization();
+    http::header(
+        &mut response,
+        "Content-Security-Policy",
+        &format!(
+            "default-src 'none'; form-action 'self' https://github.com {callback_origin}; frame-ancestors 'none'; base-uri 'none'"
+        ),
+    )?;
     cookie(&mut response, env, &browser)?;
     Ok(response)
 }

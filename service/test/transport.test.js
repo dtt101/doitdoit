@@ -450,11 +450,11 @@ it("binds upstream callbacks to the consenting browser and consumes state once",
   expect((await request("/authorize", init)).status).toBe(400);
 });
 
-it("keeps browser consent same-origin and permits its GitHub redirect", async () => {
+it("keeps browser consent same-origin and permits the full registered callback redirect chain", async () => {
   const login = await startLogin();
   expect(login.consent.headers.get("Referrer-Policy")).toBe("same-origin");
-  expect(login.consent.headers.get("Content-Security-Policy")).toContain(
-    "form-action 'self' https://github.com;",
+  expect(login.consent.headers.get("Content-Security-Policy")).toBe(
+    "default-src 'none'; form-action 'self' https://github.com http://localhost:4242; frame-ancestors 'none'; base-uri 'none'",
   );
   const consent = (requestOrigin) => request("/authorize", {
     method: "POST",
@@ -477,4 +477,23 @@ it("keeps browser consent same-origin and permits its GitHub redirect", async ()
   expect(new URL(approved.headers.get("Location")).origin).toBe("https://github.com");
   expect(approved.headers.get("Referrer-Policy")).toBe("no-referrer");
   expect((await consent(origin)).status).toBe(400);
+});
+
+
+it("restricts consent form redirects to the selected registered callback origin", async () => {
+  for (const redirect of [
+    "http://127.0.0.1:38295/callback/test",
+    "https://client.example/callback?next=https://untrusted.example",
+  ]) {
+    const login = await startLogin(undefined, "Callback policy test", redirect);
+    const policy = login.consent.headers.get("Content-Security-Policy");
+    expect(policy).toBe(`default-src 'none'; form-action 'self' https://github.com ${new URL(redirect).origin}; frame-ancestors 'none'; base-uri 'none'`);
+    const altered = new URLSearchParams(login.params);
+    altered.set("redirect_uri", "https://unregistered.example/callback");
+    const rejected = await request("/authorize?" + altered);
+    expect(rejected.status).toBe(400);
+    expect(rejected.headers.get("Content-Security-Policy")).toBe(
+      "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+    );
+  }
 });

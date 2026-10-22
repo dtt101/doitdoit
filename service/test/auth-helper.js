@@ -28,6 +28,7 @@ function cookies(response) {
 export async function startLogin(
   scopes = "tasks:read tasks:write offline_access",
   name = "Test client",
+  redirectURI = "http://localhost:4242/callback",
 ) {
   const verifier = crypto.randomUUID() + crypto.randomUUID();
   const registration = await request("/oauth/register", {
@@ -35,7 +36,7 @@ export async function startLogin(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       client_name: name,
-      redirect_uris: ["http://localhost:4242/callback"],
+      redirect_uris: [redirectURI],
       token_endpoint_auth_method: "none",
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
@@ -46,7 +47,7 @@ export async function startLogin(
   const params = new URLSearchParams({
     response_type: "code",
     client_id: client.client_id,
-    redirect_uri: "http://localhost:4242/callback",
+    redirect_uri: redirectURI,
     scope: scopes,
     state: "client-state",
     code_challenge: await challenge(verifier),
@@ -114,7 +115,7 @@ export async function signIn(scopes, githubID = 12345) {
       grant_type: "authorization_code",
       code: target.searchParams.get("code"),
       client_id: login.client.client_id,
-      redirect_uri: "http://localhost:4242/callback",
+      redirect_uri: login.params.get("redirect_uri"),
       code_verifier: login.verifier,
       resource: origin,
     }),

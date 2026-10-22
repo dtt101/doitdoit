@@ -1,8 +1,7 @@
 # Cloudflare task service, MCP, and Go TUI
 
-Status: accepted architecture; production deployment, GitHub login and task
-listing through Codex MCP verified by the user. Milestone 1 remains open for
-remaining hosted client interoperability,
+Status: accepted architecture; production login, reads and writes through Codex
+MCP verified. Milestone 1 remains open for remaining hosted client interoperability,
 ordering representation, and consistent board/change-feed design.
 
 Progress: Rust owns the HTTP API, MCP, OAuth, validation and D1 operations.
@@ -10,13 +9,18 @@ The user successfully ran `make smoke` against the local Worker with real GitHub
 login: token exchange, task creation, explicit date update, identical retry,
 stale-write conflict, MCP initialization/read-back, completion and revocation
 all passed. Browser consent headers were corrected and verified in isolated
-Chromium. Latest service checks passed 8 native Rust and 31 Worker integration
+Chromium. Latest service checks passed 8 native Rust and 32 Worker integration
 tests; Go tests, vet and race checks passed after adding the smoke client.
 Production deployed on 2026-10-20 with migrations 0001–0003 applied. Live health,
 OAuth discovery, unauthenticated API/MCP rejection and cross-origin rejection
 passed. The user subsequently confirmed successful production GitHub authentication
-and task listing through Codex MCP. Hosted writes, refresh/revocation, and other
-assistant clients remain unverified. No task import or TUI backend switch has occurred.
+and task listing through Codex MCP. Direct production MCP tests on 2026-10-20
+also passed creation, date update, identical retry, stale-write rejection and
+completion with final read-back. A separate production OAuth test on 2026-10-22
+passed refresh rotation, audience rejection, scope preservation, renewed MCP
+access, and revocation of both access-token generations and the latest refresh
+token. Other assistant clients remain unverified. No task import or TUI backend
+switch has occurred.
 
 Decision date: 2026-10-19.
 
@@ -44,19 +48,40 @@ Decision date: 2026-10-19.
   replay evidence while grants are live. This is not an independent security audit.
 - Production configuration is in `service/cloudflare.config.ts`; local mode is
   the default and production requires `--mode production`. Both bundle dry-runs,
-  8 Rust tests, 31 Worker tests and release notice checks passed.
+  8 Rust tests, 32 Worker tests and release notice checks passed.
   Local migrations still use Wrangler to preserve the nil-ID local database
   (cf beta rejects that ID).
-- Production version: `abac552d-9673-4eba-bdc3-2d8fdad78c21`.
+- Initial production version: `abac552d-9673-4eba-bdc3-2d8fdad78c21`
+  (superseded by the consent callback fix below). Current production version:
+  `26470207-c46f-4293-a5f0-64fbcf5230a3`, serving 100% of traffic.
   Hourly auth cleanup is scheduled at minute 17. Health and discovery return 200;
   anonymous task/MCP requests return 401; foreign Origin returns 403.
   Initial cf D1 query authorization failed, but a later retry applied all three
   migrations successfully; deployment used cf.
 - Production owner login and task listing through Codex MCP now work, as
   confirmed by the user after correcting the production GitHub app callback.
-- Next: verify MCP create/update, date preservation, conflicts and completion
-  through Codex using disposable tasks, then refresh/revocation and ChatGPT/Claude
-  interoperability. Continue connecting directly to the MCP server at
+- Production MCP verification passed on 2026-10-20 using labelled disposable
+  task `cd65eb40-27d4-419c-a2a7-dc4540d6bf02`: created with past date
+  `2020-02-29` at revision 1; updated to `2030-01-02` at revision 2; identical
+  retry returned the same revision and timestamp; a new operation with stale
+  revision 1 returned `revision_conflict` without overwriting the date.
+  Completion advanced to revision 3 and preserved the date; get_task confirmed
+  the final state. The test task remains completed in production.
+- Fixed the browser consent CSP to allow the exact selected registered callback
+  origin as well as GitHub. With an existing GitHub session, Chromium applied
+  form-action across the whole redirect chain and blocked the final client hop.
+  An isolated three-origin browser reproduction failed before this allowance
+  and reached the callback with it. The fix is deployed; local checks passed
+  8 Rust tests, 32 Worker integration tests and the production bundle dry-run.
+- Production refresh/revocation test passed on 2026-10-22 using a separate
+  read-only grant: real owner login, initial MCP tools access, wrong-resource
+  refresh rejection, access/refresh rotation, unchanged scopes and renewed MCP
+  access. Explicit revocation rejected both access generations (401) and the
+  latest refresh token (invalid_grant). Credentials stayed in memory, the test
+  grant was revoked, and no tasks were changed. This verifies server behavior;
+  automatic refresh by Codex itself and waiting for natural expiry remain untested.
+- Next: verify ChatGPT/Claude interoperability and client-managed refresh.
+  Continue connecting directly to the MCP server at
   `https://doitdoit-service.davidt-91d.workers.dev/mcp`.
   The existing `make smoke` command still targets localhost only.
   Keep credentials out of Git and chat; the existing OAuth app serves localhost.
