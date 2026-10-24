@@ -18,6 +18,21 @@ async function challenge(verifier) {
 }
 
 export const origin = "http://localhost:8787";
+
+// Follow the HTML navigation as a browser would, after committing the consent
+// response document. Workerd's fetch does not process meta refresh elements.
+export async function continuationTarget(response) {
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Content-Type")).toContain("text/html");
+  expect(response.headers.has("Location")).toBe(false);
+  const html = await response.text();
+  const refresh = /<meta http-equiv="refresh" content="0;url=([^"]+)">/.exec(html);
+  const link = /<a href="([^"]+)" rel="noreferrer">/.exec(html);
+  expect(refresh).not.toBeNull();
+  expect(link).not.toBeNull();
+  expect(refresh[1]).toBe(link[1]);
+  return new URL(refresh[1].replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))));
+}
 function cookies(response) {
   return response.headers
     .getSetCookie()
@@ -80,8 +95,7 @@ export async function signIn(scopes, githubID = 12345) {
     },
     body: new URLSearchParams({ handle: login.handle, decision: "approve" }),
   });
-  expect(redirect.status).toBe(302);
-  const location = new URL(redirect.headers.get("Location"));
+  const location = await continuationTarget(redirect);
   const state = location.searchParams.get("state");
   const spy = vi
     .spyOn(globalThis, "fetch")

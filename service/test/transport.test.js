@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { request, signIn, startLogin, origin } from "./auth-helper.js";
+import { request, signIn, startLogin, origin, continuationTarget } from "./auth-helper.js";
 
 const auth = (token) => ({
   Authorization: "Bearer " + token,
@@ -433,7 +433,7 @@ it("binds upstream callbacks to the consenting browser and consumes state once",
     body: new URLSearchParams({ handle: login.handle, decision: "approve" }),
   };
   const approved = await request("/authorize", init);
-  const state = new URL(approved.headers.get("Location")).searchParams.get(
+  const state = (await continuationTarget(approved)).searchParams.get(
     "state",
   );
   const callback =
@@ -450,11 +450,11 @@ it("binds upstream callbacks to the consenting browser and consumes state once",
   expect((await request("/authorize", init)).status).toBe(400);
 });
 
-it("keeps browser consent same-origin and permits the full registered callback redirect chain", async () => {
+it("keeps consent same-origin and ends its POST before navigating to GitHub", async () => {
   const login = await startLogin();
   expect(login.consent.headers.get("Referrer-Policy")).toBe("same-origin");
   expect(login.consent.headers.get("Content-Security-Policy")).toBe(
-    "default-src 'none'; form-action 'self' https://github.com http://localhost:4242; frame-ancestors 'none'; base-uri 'none'",
+    "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
   );
   const consent = (requestOrigin) => request("/authorize", {
     method: "POST",
@@ -473,21 +473,27 @@ it("keeps browser consent same-origin and permits the full registered callback r
     }
   }
   const approved = await consent(origin);
-  expect(approved.status).toBe(302);
-  expect(new URL(approved.headers.get("Location")).origin).toBe("https://github.com");
+  const target = await continuationTarget(approved);
+  expect(target.origin).toBe("https://github.com");
+  expect(target.pathname).toBe("/login/oauth/authorize");
+  expect(target.searchParams.get("redirect_uri")).toBe(origin + "/callback");
+  expect(target.searchParams.get("code_challenge_method")).toBe("S256");
+  expect(target.searchParams.get("state")).toBeTruthy();
+  expect(approved.headers.get("Content-Security-Policy")).toContain("form-action 'self';");
   expect(approved.headers.get("Referrer-Policy")).toBe("no-referrer");
   expect((await consent(origin)).status).toBe(400);
 });
 
 
-it("restricts consent form redirects to the selected registered callback origin", async () => {
+it("keeps form submissions same-origin for all registered callbacks", async () => {
   for (const redirect of [
     "http://127.0.0.1:38295/callback/test",
     "https://client.example/callback?next=https://untrusted.example",
+    "https://oauth-redirect.googleusercontent.com/r/test-doitdoit",
   ]) {
     const login = await startLogin(undefined, "Callback policy test", redirect);
     const policy = login.consent.headers.get("Content-Security-Policy");
-    expect(policy).toBe(`default-src 'none'; form-action 'self' https://github.com ${new URL(redirect).origin}; frame-ancestors 'none'; base-uri 'none'`);
+    expect(policy).toBe("default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
     const altered = new URLSearchParams(login.params);
     altered.set("redirect_uri", "https://unregistered.example/callback");
     const rejected = await request("/authorize?" + altered);
@@ -496,4 +502,32 @@ it("restricts consent form redirects to the selected registered callback origin"
       "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
     );
   }
+});
+
+
+it("returns denied consent through an escaped continuation without creating an upstream login", async () => {
+  const redirect = 'https://oauth-redirect.googleusercontent.com/r/test?label="<example>"&next=https://client.example';
+  const login = await startLogin(undefined, "Google callback test", redirect);
+  const init = {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Origin: origin,
+      Cookie: login.cookie,
+    },
+    body: new URLSearchParams({ handle: login.handle, decision: "deny" }),
+  };
+  const denied = await request("/authorize", init);
+  const html = await denied.clone().text();
+  expect(html).not.toContain("<example>");
+  const target = await continuationTarget(denied);
+  expect(target.origin).toBe(new URL(redirect).origin);
+  expect(target.pathname).toBe(new URL(redirect).pathname);
+  expect(target.searchParams.get("label")).toBe('"<example>"');
+  expect(target.searchParams.get("error")).toBe("access_denied");
+  expect(target.searchParams.get("state")).toBe("client-state");
+  expect(denied.headers.get("Referrer-Policy")).toBe("no-referrer");
+  expect(denied.headers.get("Cache-Control")).toBe("no-store");
+  expect(await env.DB.prepare("SELECT count(*) AS n FROM oauth_pending WHERE kind='upstream'").first("n")).toBe(0);
+  expect((await request("/authorize", init)).status).toBe(400);
 });

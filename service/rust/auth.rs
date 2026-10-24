@@ -449,29 +449,28 @@ async fn authorize(request: &Request, env: &Env) -> ApiResult<Response> {
         handle
     );
     let mut response = Response::from_html(html).map_err(|_| ServiceError::internal())?;
-    // With an existing GitHub session, the form submission can redirect all
-    // the way to the client without loading another document. Authorize only
-    // this request's exactly matched registered callback origin, never a wildcard.
-    let callback_origin = Url::parse(redirect)
-        .map_err(|_| invalid())?
-        .origin()
-        .ascii_serialization();
-    http::header(
-        &mut response,
-        "Content-Security-Policy",
-        &format!(
-            "default-src 'none'; form-action 'self' https://github.com {callback_origin}; frame-ancestors 'none'; base-uri 'none'"
-        ),
-    )?;
     cookie(&mut response, env, &browser)?;
     Ok(response)
 }
+
+// End the consent POST with a document, not a redirect chain. Otherwise the
+// consent form's CSP applies through GitHub and every subsequent client redirect
+// (Google's registered callback can itself redirect to another origin).
+// Only use server-built GitHub URLs or an already validated registered callback.
+fn continue_navigation(location: &str) -> ApiResult<Response> {
+    let target = escape(location);
+    Response::from_html(format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"0;url={target}\"><title>Continue connecting doitdoit</title></head><body><p>Continuing sign-in…</p><p><a href=\"{target}\" rel=\"noreferrer\">Continue</a> if you are not redirected automatically.</p></body></html>"
+    ))
+    .map_err(|_| ServiceError::internal())
+}
+
 async fn consent(request: &mut Request, env: &Env) -> ApiResult<Response> {
     let p = form(request).await?;
     let browser = browser(request)?;
     let login = consume_pending(env, "consent", required(&p, "handle")?, &browser).await?;
     if p.get("decision").map(String::as_str) != Some("approve") {
-        return http::redirect(&callback_url(&login, "error", "access_denied")?);
+        return continue_navigation(&callback_url(&login, "error", "access_denied")?);
     }
     let state = store_pending(env, "upstream", &browser, &login).await?;
     let mut url = Url::parse("https://github.com/login/oauth/authorize")
@@ -485,7 +484,7 @@ async fn consent(request: &mut Request, env: &Env) -> ApiResult<Response> {
         .append_pair("state", &state)
         .append_pair("code_challenge", &challenge(&login.verifier))
         .append_pair("code_challenge_method", "S256");
-    let mut response = http::redirect(url.as_str())?;
+    let mut response = continue_navigation(url.as_str())?;
     cookie(&mut response, env, &browser)?;
     Ok(response)
 }

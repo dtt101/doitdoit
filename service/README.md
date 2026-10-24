@@ -12,8 +12,13 @@ directly to production, per the user's decision; there is no staging environment
 The Go TUI defaults to JSON and offers explicit service backend selection.
 The Worker is deployed as of 2026-10-20. Health, discovery and unauthenticated
 access checks pass. Production owner login, Codex MCP reads/writes, and a
-separate refresh/revocation test have passed. ChatGPT/Claude interoperability
-and automatic client refresh remain to be checked.
+separate refresh/revocation test have passed. User-observed ChatGPT reads,
+creation, completion and edits in both directions with the TUI passed on
+2026-10-24, followed by a successful idle-session read. Fresh ChatGPT login and
+revocation remain to be checked. Gemini sign-in, listing and creation visible in
+the TUI passed by user report after the consent fix. Completion in the TUI was
+read back correctly by Gemini with date and note preserved. Gemini completion
+writes, idle refresh and Claude remain unverified.
 
 Implemented locally: create/get/list/update, soft delete/restore, history,
 filter/search, neighbor-based reorder with compaction, immutable paged boards,
@@ -69,9 +74,12 @@ The browser must approve the displayed client name, exact redirect, and scopes.
 Client names are escaped and explicitly unverified. Consent and upstream state
 are short-lived, single-use and bound to an HttpOnly, SameSite browser cookie.
 Only S256 PKCE and exactly registered HTTPS/loopback redirects are supported.
-The consent form policy allows GitHub and the selected callback origin, so an
-existing GitHub session can redirect straight back to the client. It does not
-allow arbitrary callback origins or wildcards.
+The consent form submits only to this service. Approval returns an HTML
+continuation page before navigating to GitHub, so the form's security policy
+does not constrain GitHub's or the client's later redirects. A Continue link
+is available if automatic navigation is blocked. Denial uses the same document
+boundary to return to the exactly registered callback. Neither path permits
+arbitrary callback addresses or requires scripts or wildcard form permissions.
 GitHub's access token is used to fetch identity and is never stored or forwarded.
 
 Clients use dynamic registration at `/oauth/register`, authorization at
@@ -126,9 +134,8 @@ The public auth routes enforce per-IP edge limits: 10 registrations/minute and
 not globally precise quotas. Hourly cleanup removes expired login state and
 credentials for dead grants; spent credentials remain while successors are live
 so replay detection continues working. Task history/receipts are untouched.
-Actual ChatGPT/
-Claude discovery, login, tools, refresh and revocation will be verified on the
-initial production endpoint with disposable tasks before real-data cutover.
+Track actual assistant discovery, login, tools, refresh and revocation checks
+in the plan. Use disposable tasks before real-data cutover.
 
 ## MCP
 
@@ -140,6 +147,85 @@ It does
 not offer SSE subscriptions, resumability, sessions, sampling, or notifications
 from the server. Notifications receive HTTP 202 without performing mutations.
 Both transports invoke the same Rust Tasks methods and enforce identical scopes.
+
+### Connect an assistant to doitdoit
+
+Use the hosted server URL, including `/mcp`:
+
+```text
+https://doitdoit-service.davidt-91d.workers.dev/mcp
+```
+
+Name the connection `doitdoit`. The service uses OAuth with automatic client
+registration and GitHub owner login; no manually supplied client secret or
+Cloudflare credential is needed. Complete sign-in when prompted. A client may
+already have authorization, so absence of a new sign-in prompt alone does not
+prove anonymous access. Anonymous MCP requests return HTTP 401.
+
+These clients access D1 service tasks. Connecting an assistant does not import
+the Dropbox JSON file or select the service as the TUI's default backend.
+
+#### ChatGPT
+
+1. Open Plugins and choose **+ → Add custom MCP server** (labels can vary by UI).
+2. Enter `doitdoit` and the URL above. The interface tested here asked only for
+   name and URL; a description or OAuth selector is not required in that form.
+3. Finish adding the server and complete authentication if prompted.
+4. Start a conversation, select `doitdoit` through the **@** menu, and ask:
+   “Use doitdoit to list my tasks. Do not create or change anything.”
+
+User-observed reads, creation, completion and TUI interoperability passed on
+2026-10-24. A later idle-session read also succeeded; the underlying refresh
+exchange was not independently traced. The initial connection showed no login
+prompt, so fresh-login behavior remains a separate check.
+See [OpenAI's connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt).
+
+#### Gemini web app
+
+1. Open Gemini on the web, then **Settings → Connected Apps**.
+2. Under **Custom apps**, choose the field or action to add a custom app.
+3. Paste the MCP URL above, select **Next**, and follow the sign-in instructions.
+   Automatic client registration is supported; manual credentials should not
+   be needed.
+4. Select the app with **@** and request a read-only task list first.
+
+As checked on 2026-10-24, Google's guide limits this feature to adults in the US
+using personal Google accounts, in English, with Keep Activity enabled. If
+Custom apps is absent, account or regional availability may prevent this route.
+User confirmed successful Gemini connection, task listing and creation on
+2026-10-24 after the consent fix. The created task's date and note were confirmed
+in the TUI. User then completed it in the TUI; Gemini fetched it as completed
+with the original date and note preserved. Gemini completion writes and idle
+refresh remain to be checked.
+If a previous attempt stopped on the consent button with a `form-action` console
+error, restart the connection from Gemini. The continuation-page fix was deployed
+on 2026-10-24; an old consent page still has the previous policy and a used handle
+cannot be submitted again.
+See [Google's custom apps guide](https://support.google.com/gemini/answer/17209137).
+Gemini CLI is a separate client with
+[remote MCP support](https://geminicli.com/docs/tools/mcp-server/); a CLI test
+would not establish compatibility with the regular Gemini app.
+
+#### Verify shared tasks with the TUI
+
+From the repository root:
+
+```sh
+go run . service login
+go run . --service https://doitdoit-service.davidt-91d.workers.dev
+```
+
+Create a clearly labelled test task through the assistant with an explicit date
+and note. Find it on that date in the TUI. Complete it through the assistant,
+read it back, then press `r` in the TUI and confirm completion. Reopen it in the
+TUI and ask the assistant to fetch its current status. Check that date and note
+survive both changes. Finally, leave the assistant connection idle for at least
+16 minutes and fetch again without reconnecting, to exercise session continuity
+beyond the 15-minute access-token lifetime. Record observed results separately
+from any independently traced token refresh.
+
+Claude testing is deferred. Remaining client and cutover gates are tracked in
+the [plan](../plans/cloudflare-task-service.md).
 
 ## Atomic task writes
 

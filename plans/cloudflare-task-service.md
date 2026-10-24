@@ -1,10 +1,12 @@
 # Cloudflare task service, MCP, and Go TUI
 
-Status as of 2026-10-22: the expanded Rust service and migration 0004 are deployed.
+Status as of 2026-10-24: the expanded Rust service and migration 0004 are deployed.
 The Go TUI/CLI service mode and explicit import/recovery tooling are implemented
 in the working tree. Local checks and the independent D1 restore drill pass.
 The extended production smoke passes, including desktop refresh and revocation.
-Hands-on TUI and other assistant-client checks remain open; real-data import and
+ChatGPT and TUI edits pass in both directions by user report. A Gemini consent
+navigation fix is deployed; user confirmed Gemini sign-in and task listing.
+Broader TUI/platform and assistant checks remain open; real-data import and
 cutover have not occurred.
 
 Architecture accepted: 2026-10-19. Work branch: `feat/cloudflare-task-service`.
@@ -79,10 +81,66 @@ does not mean the remaining stages are complete.
   login was revoked and no smoke credentials were retained.
 
 The earlier refresh/revocation check tested the server through a separate read-only
-OAuth client. Automatic refresh by Codex itself and natural token expiry in a
-hosted client have not yet been verified. ChatGPT and Claude remain unverified.
+OAuth client. Automatic refresh by Codex itself has not yet been verified.
+ChatGPT's later idle-session check is recorded below; Claude remains unverified.
 
 ## Next work, in order
+
+### ChatGPT acceptance progress — 2026-10-24
+
+- User added the hosted MCP URL as a custom server in ChatGPT and reported
+  successful listing of the three completed service test tasks.
+- User reported creation and read-back of `[ChatGPT test] shared task`, open,
+  scheduled `2026-11-01`, with note `Created through ChatGPT.` Independent MCP
+  read-back confirmed those fields at revision 1 (task
+  `c7ae9078-6997-4fb9-9e9e-37bbbe66331b`).
+- No sign-in prompt appeared. A fresh anonymous production `tools/list` request
+  returned HTTP 401 with the OAuth discovery challenge. Source requires a valid,
+  unexpired, unrevoked owner access token. Existing authorization reuse is
+  possible, but the origin of ChatGPT's authorization has not been established.
+- User confirmed the service TUI displayed the same test task. ChatGPT then
+  completed it and reported read-back with the original date and note preserved;
+  user confirmed completion appeared in the TUI after manual refresh (`r`).
+  This verifies the ChatGPT-to-TUI direction through user-observed behavior.
+- User reopened the test task in the TUI, then ChatGPT fetched it and reported
+  status `open`. User-observed edits now pass in both directions.
+- User reported a successful ChatGPT read at 10:55 and confirmed the idle-session
+  check complete after being asked to wait at least 16 minutes without reconnecting.
+  Session continuity passes by user report; the refresh exchange was not traced.
+- User deferred Claude and selected Gemini next. Setup instructions now live in
+  `service/README.md`. Gemini sign-in/listing subsequently passed; Google's current
+  web-app instructions restrict custom apps to eligible US personal accounts.
+  Real-data import and default-backend cutover have not occurred.
+
+### Gemini consent fix — 2026-10-24
+
+- User reached the Google consent page but approval stalled in both the Gemini
+  webview and a normal browser. Browser Console confirmed a `form-action` CSP
+  violation. The policy included GitHub and Google's registered callback origin;
+  the specific later redirect causing rejection was not captured.
+- Consent POST now ends with HTTP 200 HTML, immediate meta navigation and a
+  matching fallback link. This separates subsequent navigation from the form's
+  redirect chain. Both approve and deny use this boundary; the form policy is
+  now strictly `form-action 'self'`. Exact callback registration, cookie binding,
+  one-time consent, PKCE and owner checks remain enforced.
+- Rust formatting/Clippy and 10 unit tests passed; WASM build, all 45 Worker
+  integration tests and production deployment dry-run passed. Integration tests
+  inspect HTTP/HTML behavior, not browser navigation. Live disposable registration
+  checks verified both continuation responses, single-use rejection, health and
+  anonymous MCP rejection; an existing authenticated MCP read also passed.
+- Wrangler backup failed with Cloudflare authentication error 10000. The connected
+  Cloudflare API exported the full SQL successfully to private ignored
+  `service/.backups/20261024T100919Z-pre-gemini-consent.sql` (62,219 bytes) before
+  deployment. Repair Wrangler backup authentication before relying on that command.
+- Deployed version `55534ca4-2d1d-4b50-8c18-83a4de53207c`. User confirmed a fresh
+  Gemini connection succeeded and listed tasks after deployment. This verifies
+  sign-in and reads by user report.
+- Gemini created and read back `[Gemini test] shared task`, open, scheduled
+  `2026-11-02`, with note `Created through Gemini.` User confirmed it appeared
+  correctly in the service TUI. User then completed the task in the TUI; Gemini
+  fetched it as completed with the same date and note. This verifies edits in
+  both directions by user report. Gemini completion writes and natural
+  expiry/session continuity remain unverified.
 
 1. Exercise hands-on service TUI workflows on supported desktop platforms and
    intended ChatGPT/Claude clients, including natural access-token expiry.
@@ -99,7 +157,7 @@ permission to import real tasks, change the selected backend, release or push.
 - Worker: `doitdoit-service`; origin:
   `https://doitdoit-service.davidt-91d.workers.dev`.
 - MCP: `https://doitdoit-service.davidt-91d.workers.dev/mcp`.
-- Current recorded production version: `344b0f95-3840-4252-836b-5b80796b47de`,
+- Current recorded production version: `55534ca4-2d1d-4b50-8c18-83a4de53207c`,
   serving 100% of traffic. Initial deployment was on 2026-10-20.
 - D1: `doitdoit-prod` / `43659423-7b12-42ac-8f1e-fc97f3ed0fea`, Western Europe,
   read replication disabled. Auth cleanup runs hourly at minute 17.
@@ -119,7 +177,9 @@ permission to import real tasks, change the selected backend, release or push.
   ignored private `service/.backups/pre-0004.sql`. Restore verification compared
   all 10 tables with a local SQLite restore. Temporary recovery DB
   `a08642d9-6158-41fe-a11c-ffb6daa25770` was deleted after verification.
-- Previous Worker `26470207-c46f-4293-a5f0-64fbcf5230a3` is the rollback target.
+- Previous Worker `344b0f95-3840-4252-836b-5b80796b47de` is the immediate rollback
+  target (it has the Gemini consent issue). The earlier restore drill used
+  `26470207-c46f-4293-a5f0-64fbcf5230a3`.
   [Operational procedures](../service/OPERATIONS.md) distinguish task export,
   full D1 backup, code rollback and real-data cutover.
 - Disposable production MCP test task `cd65eb40-27d4-419c-a2a7-dc4540d6bf02`
