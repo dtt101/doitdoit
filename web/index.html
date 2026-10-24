@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#1a1b26" />
   <meta name="description" content="doitdoit — terminal-native task manager, mobile companion" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; manifest-src 'self'; connect-src https://api.dropboxapi.com https://content.dropboxapi.com" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; manifest-src 'self'; connect-src https://doitdoit-service.davidt-91d.workers.dev" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="doitdoit" />
@@ -26,7 +26,7 @@
     <span class="brand__mark">doitdoit</span>
   </div>
   <div class="hdr__meta">
-    <span class="meta__path" id="meta-path">/Apps/doitdoit/doitdoit.json</span>
+    <span class="meta__path" id="meta-path">Shared tasks</span>
     <span class="meta__sync" id="sync-indicator" data-state="disconnected" role="status" aria-live="polite">Not connected</span>
     <button class="meta__menu" id="btn-menu" aria-label="menu" hidden>···</button>
   </div>
@@ -39,17 +39,17 @@
       <img class="connect__art" src="icons/icon.svg" width="96" height="96" alt="" />
       <h1 class="connect__title">A little space<br/>to get things done.</h1>
       <p class="connect__lead">
-        Your terminal tasks, wherever you are. Connect the Dropbox file you
-        already use to capture an idea or tick something off.
+        Your tasks, shared with your terminal and assistants. Sign in to
+        capture an idea or tick something off.
       </p>
-      <button id="btn-connect" class="btn btn--prime" type="button">Connect Dropbox <span aria-hidden="true">↗</span></button>
+      <button id="btn-connect" class="btn btn--prime" type="button">Sign in with GitHub <span aria-hidden="true">↗</span></button>
 
       <details class="connect__details">
         <summary>How does connecting work?</summary>
         <div class="details__body">
-          <p>Sign in to Dropbox and allow doitdoit to access your task file.</p>
-          <p>Your tasks stay in Dropbox. This browser saves its connection credentials on this device and uses them to sync with Dropbox.</p>
-          <p>Changes appear in your terminal app and here on the next sync. If edits clash, we tell you and offer a recovery copy.</p>
+          <p>Sign in with your GitHub account to connect to your task service.</p>
+          <p>Tasks are saved in the service and shared with your other devices. Only the configured owner can sign in.</p>
+          <p>This browser keeps its sign-in credentials on this device. An internet connection is required to edit. Unfinished tasks keep their original dates in Overdue.</p>
         </div>
       </details>
     </div>
@@ -103,11 +103,14 @@
 <div class="sr-only" id="drag-status" aria-live="assertive"></div>
 
 <dialog id="menu-dialog" class="menu" aria-labelledby="menu-title">
-  <div class="menu__hdr" id="menu-title">Dropbox &amp; recovery</div>
-  <button class="menu__item" data-act="reload">⟳ force reload</button>
+  <div class="menu__hdr" id="menu-title">Service &amp; recovery</div>
+  <button class="menu__item" data-act="reload">⟳ refresh tasks</button>
+  <button class="menu__item" data-act="retry">⟳ retry retained save</button>
+  <button class="menu__item" data-act="review">Review latest after rejected save</button>
   <button class="menu__item" data-act="recovery">⇩ download recovery copy</button>
-  <button class="menu__item" data-act="copy-path">⎘ copy file path</button>
-  <button class="menu__item menu__item--danger" data-act="logout">⏻ disconnect dropbox</button>
+  <button class="menu__item" data-act="history">Show/hide earlier completed tasks</button>
+  <button class="menu__item" data-act="signin">Sign in again</button>
+  <button class="menu__item menu__item--danger" data-act="logout">⏻ disconnect this browser</button>
   <button class="menu__close" data-act="close">Close</button>
 </dialog>
 
@@ -157,6 +160,7 @@
 <script src="config.js"></script>
 <script src="domain.js"></script>
 <script src="sync.js"></script>
+<script src="auth.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

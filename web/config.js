@@ -1,31 +1,5 @@
-/* doitdoit web config — public values, safe to commit.
- *
- * Set `dropboxAppKey` to the App key of a Dropbox app you registered at
- *   https://www.dropbox.com/developers/apps
- *
- * Recommended app settings:
- *   - Type:        "Scoped access"
- *   - Access:      "App folder"  (creates /Apps/<your-app-name>/ automatically)
- *   - Permissions: files.content.read, files.content.write
- *   - Redirect URIs: add the deployed URL of this page (e.g. https://you.github.io/doitdoit/)
- *
- * Then move your existing JSON file into the app folder and update the CLI's
- * ~/.doitdoit_config.json `storage_path` to match.
- */
+// Public browser configuration. No secrets or Cloudflare credentials.
 window.DOITDOIT_CONFIG = {
-  // Public app key (a.k.a. client ID). PKCE flow — no secret needed.
-  dropboxAppKey: "siaohdrrxv0yejd",
-
-  // Path inside the chosen Dropbox scope.
-  // For an App-folder app, this is relative to /Apps/<your-app>/.
-  // The leading "/" is required by the Dropbox API.
-  dropboxFilePath: "/config.json",
-
-  // Minimum upcoming days rendered (today + next N-1).
-  // Occupied later dates are also shown; this does not affect task storage.
+  serviceOrigin: "https://doitdoit-service.davidt-91d.workers.dev",
   visibleDays: 5,
-
-  // Zero means keep completed history forever. Set a positive number only
-  // after making the same explicit retention choice in the CLI.
-  retentionDays: 0,
 };

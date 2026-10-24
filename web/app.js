@@ -1,23 +1,15 @@
-/* doitdoit web companion — vanilla JS app.
- *
- * Talks to Dropbox HTTP API directly from the browser via OAuth 2.0 PKCE.
- * Reads/writes a single JSON file. Ports the rollover + prune logic from
- * model/task.go so the web app and CLI agree on the data lifecycle.
- *
- * No bundler, no framework. Loaded as a regular script (not a module) so
- * that config.js can expose `window.DOITDOIT_CONFIG` synchronously.
- */
 (() => {
   "use strict";
 
   // ── Config ─────────────────────────────────────────────────────────
   const CFG = window.DOITDOIT_CONFIG || {};
-  const APP_KEY = CFG.dropboxAppKey || "";
-  const FILE_PATH = CFG.dropboxFilePath || "/doitdoit.json";
+  const SERVICE_ORIGIN = CFG.serviceOrigin || "https://doitdoit-service.davidt-91d.workers.dev";
   const VISIBLE_DAYS = Math.max(1, CFG.visibleDays || 5);
-  const RETENTION_DAYS = Number.isInteger(CFG.retentionDays) && CFG.retentionDays > 0
-    ? CFG.retentionDays : 0;
   const REDIRECT_URI = window.location.origin + window.location.pathname;
+  const auth = window.DoitdoitAuth.createAuth({ origin: SERVICE_ORIGIN, redirect: REDIRECT_URI,
+    storage: localStorage, session: sessionStorage, fetchImpl: fetch, locks: navigator.locks, cryptoImpl: crypto });
+  const taskStore = window.DoitdoitSync.createServiceStore({ origin: SERVICE_ORIGIN,
+    request: auth.request, storage: localStorage, locks: navigator.locks });
 
   // ── DOM refs ───────────────────────────────────────────────────────
   const $ = (id) => document.getElementById(id);
@@ -43,15 +35,15 @@
   const editDateLabel = $("edit-date-label");
   const dragStatus = $("drag-status");
 
-  metaPath.textContent = "/Apps/…" + FILE_PATH;
+  metaPath.textContent = "Shared tasks";
 
   // ── State ──────────────────────────────────────────────────────────
   const state = {
     data: null,         // TodoData = { "YYYY-MM-DD" | "Future": Task[] }
-    rev: null,          // dropbox file revision (for conflict detection)
-    accessToken: null,
-    refreshToken: null,
-    tokenExp: 0,
+    accessToken: auth.connected(),
+    timezone: "Europe/London",
+    showHistory: false,
+    online: false,
     dirty: false,
     saving: false,
     rendered: false,
@@ -88,181 +80,57 @@
   // ── localStorage helpers ───────────────────────────────────────────
   const LS = {
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
-    set(k, v) { localStorage.setItem(k, JSON.stringify(v)); },
-    del(k) { localStorage.removeItem(k); },
   };
 
-  // ── PKCE + OAuth ──────────────────────────────────────────────────
-  // https://www.dropbox.com/developers/reference/oauth-guide
-  function b64url(bytes) {
-    let s = "";
-    for (const b of bytes) s += String.fromCharCode(b);
-    return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  }
-  async function pkceChallenge() {
-    const verifier = b64url(crypto.getRandomValues(new Uint8Array(64)));
-    const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-    return { verifier, challenge: b64url(new Uint8Array(hash)) };
-  }
-
   async function startOAuth() {
-    if (!APP_KEY) {
-      toast("no dropbox app key set — edit web/config.js", "err");
-      return;
-    }
-    const { verifier, challenge } = await pkceChallenge();
-    LS.set("doitdoit:pkce_verifier", verifier);
-    const url = new URL("https://www.dropbox.com/oauth2/authorize");
-    url.searchParams.set("client_id", APP_KEY);
-    url.searchParams.set("response_type", "code");
-    url.searchParams.set("code_challenge", challenge);
-    url.searchParams.set("code_challenge_method", "S256");
-    url.searchParams.set("redirect_uri", REDIRECT_URI);
-    url.searchParams.set("token_access_type", "offline");
-    window.location.assign(url.toString());
+    try { window.location.assign(await auth.start()); }
+    catch (err) { toast(err.message, "err"); }
   }
-
-  async function exchangeCode(code) {
-    const verifier = LS.get("doitdoit:pkce_verifier");
-    if (!verifier) throw new Error("missing PKCE verifier (did you reload mid-flow?)");
-    const body = new URLSearchParams({
-      code,
-      grant_type: "authorization_code",
-      client_id: APP_KEY,
-      code_verifier: verifier,
-      redirect_uri: REDIRECT_URI,
-    });
-    const r = await fetch("https://api.dropboxapi.com/oauth2/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-    });
-    if (!r.ok) throw new Error("token exchange failed (" + r.status + ")");
-    LS.del("doitdoit:pkce_verifier");
-    saveTokens(await r.json());
-  }
-
-  async function refreshAccessToken() {
-    const session = sessionGeneration;
-    if (!state.refreshToken) throw new Error("no refresh token; please reconnect");
-    const body = new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: state.refreshToken,
-      client_id: APP_KEY,
-    });
-    const r = await fetch("https://api.dropboxapi.com/oauth2/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-    });
-    if (!r.ok) {
-      throw new Error("refresh failed; disconnect and reconnect required (local edits retained)");
-    }
-    const tokens = await r.json();
-    if (session !== sessionGeneration) throw new Error("session disconnected");
-    saveTokens(tokens);
-  }
-
-  function saveTokens(tok) {
-    state.accessToken = tok.access_token;
-    if (tok.refresh_token) state.refreshToken = tok.refresh_token;
-    state.tokenExp = Date.now() + (tok.expires_in || 14400) * 1000 - 60_000;
-    LS.set("doitdoit:tokens", {
-      access_token: state.accessToken,
-      refresh_token: state.refreshToken,
-      exp: state.tokenExp,
-    });
-  }
-
-  function loadTokens() {
-    const tok = LS.get("doitdoit:tokens");
-    if (!tok || !tok.access_token) return false;
-    state.accessToken = tok.access_token;
-    state.refreshToken = tok.refresh_token || null;
-    state.tokenExp = tok.exp || 0;
-    return true;
-  }
-
   async function logout() {
-    // Finish provisional drag state before capturing unsaved work.
-    finishPointerDrag(true);
-    finishKeyboardDrag(true);
+    if (state.saving || state.interactionActive) { toast("Finish the current action first.", "err"); return; }
     try {
-      if (state.dirty) preserveRecovery();
-      LS.del("doitdoit:tokens");
-    } catch (err) {
-      toast("disconnect blocked: " + err.message, "err");
-      setSync("error");
-      return;
-    }
-    const token = state.accessToken;
-    sessionGeneration++;
-    reloadGeneration++;
-    if (saveTimer) clearTimeout(saveTimer);
-    state.accessToken = null;
-    state.refreshToken = null;
-    state.data = null;
-    state.rev = null;
-    state.dirty = false;
-    state.conflict = false;
-    showConnect();
-    try {
-      if (token) {
-        await fetch("https://api.dropboxapi.com/2/auth/token/revoke", {
-          method: "POST",
-          headers: { Authorization: "Bearer " + token },
-        });
-      }
-    } catch (err) {
-      console.warn("Dropbox token revocation failed; cleared this device", err);
-    }
+      await auth.logout();
+      sessionGeneration++;
+      reloadGeneration++;
+      state.accessToken = false;
+      state.data = null;
+      showConnect();
+    } catch (err) { toast("Disconnect failed: " + err.message, "err"); }
   }
 
-  async function ensureToken() {
-    if (!state.accessToken) throw new Error("not authenticated");
-    if (Date.now() > state.tokenExp - 5000 && state.refreshToken) {
-      await refreshAccessToken();
-    }
-  }
-
-  // ── Task storage boundary ─────────────────────────────────────────
-  const Sync = window.DoitdoitSync;
-  const taskStore = Sync.createJSONStore({
-    path: FILE_PATH, fetchImpl: fetch, ensureToken, refreshAccessToken,
-    getToken: () => state.accessToken,
-  });
-
-  // ── Shared domain logic (also exercised by web/domain.test.js) ─────
   const Domain = window.DoitdoitDomain;
-  const { todayStr, parseDay, addDays, rollOverIncompleteTasks,
-    migrateDatedFutureTasks } = Domain;
-  const storageTarget = (target) => Domain.storageTarget(target);
-  const targetForTask = (dayKey, task) => Domain.targetForTask(dayKey, task);
-  const pruneOldTasks = (data) => Domain.pruneOldTasks(data, RETENTION_DAYS);
-  const parseAddInput = (raw, target) => Domain.parseAddInput(raw, target);
+  const { todayStr, parseDay, addDays } = Domain;
+  function ownerToday() {
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: state.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+    const part = type => parts.find(p => p.type === type).value;
+    return parseDay(`${part("year")}-${part("month")}-${part("day")}`);
+  }
+  const storageTarget = target => Domain.storageTarget(target, ownerToday());
+  const targetForTask = (dayKey, task) => Domain.targetForTask(dayKey, task, ownerToday());
+  const parseAddInput = (raw, target) => Domain.parseAddInput(raw, target, ownerToday());
 
   // ── View model + render ───────────────────────────────────────────
   const weekdayFormat = new Intl.DateTimeFormat(undefined, { weekday: "long" });
   const dayDateFormat = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
 
   function buildView(data) {
-    const today = new Date();
+    const today = ownerToday();
     const todayKey = todayStr(today);
     const days = [];
 
     const keys = new Set(Array.from({ length: VISIBLE_DAYS }, (_, i) => todayStr(addDays(today, i))));
     // Keep distant scheduled tasks reachable without filling every intervening day.
     for (const key of Object.keys(data)) {
-      if (parseDay(key) && key >= todayKey && data[key].length) keys.add(key);
+      if (parseDay(key) && data[key].some(t => key >= todayKey || !t.completed || state.showHistory)) keys.add(key);
     }
     for (const key of [...keys].sort()) {
       const d = parseDay(key);
-      const tasks = (data[key] || []).map(toTaskView.bind(null, key));
-      const label = key === todayKey ? "Today" : key === todayStr(addDays(today, 1)) ? "Tomorrow" : weekdayFormat.format(d);
+      const tasks = (data[key] || []).filter(t => key >= todayKey || !t.completed || state.showHistory).map(toTaskView.bind(null, key));
+      const label = key < todayKey ? (tasks.some(t => !t.completed) ? "Overdue" : "Earlier") : key === todayKey ? "Today" : key === todayStr(addDays(today, 1)) ? "Tomorrow" : weekdayFormat.format(d);
       days.push({
         key,
         label,
-        date: dayDateFormat.format(d),
+        date: key < todayKey ? new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" }).format(d) : dayDateFormat.format(d),
         tasks,
         hasTasks: tasks.length > 0,
         count: tasks.length || "",
@@ -423,165 +291,111 @@
   }
 
   // ── Mutations ─────────────────────────────────────────────────────
-  function genId() {
-    return Date.now() + "-" + Math.floor(Math.random() * 1e7);
-  }
-
-  function addTask(rawInput, selectedTarget) {
-    const parsed = parseAddInput(rawInput, selectedTarget);
-    if (parsed.error) { toast(parsed.error, "err"); return false; }
-    const t = {
-      id: genId(),
-      title: parsed.title,
-      completed: false,
-      created_at: new Date().toISOString(),
-    };
-    if (parsed.due) t.due_date = parsed.due;
-    Domain.insertTask(state.data, parsed.key, t);
-    render({ preserveScroll: true });
-    queueSave();
-    return true;
-  }
-
-  function findTask(dayKey, id) { return Domain.findTask(state.data, dayKey, id); }
-
-  function toggleTask(dayKey, id) {
-    if (!Domain.toggleTask(state.data, dayKey, id)) return;
-    render({ preserveScroll: true });
-    queueSave();
-  }
-
-  function deleteTask(dayKey, id) {
-    if (!Domain.deleteTask(state.data, dayKey, id)) return;
-    const row = Array.from(board.querySelectorAll(".task")).find(
-      (el) => el.dataset.key === dayKey && el.dataset.id === String(id)
-    );
-    row?.remove();
-    updateDayChrome(dayKey);
-    queueSave();
-  }
-
-  function moveTask(dayKey, id, destinationKey, destinationIndex) {
-    return Domain.moveTask(state.data, dayKey, id, destinationKey, destinationIndex);
-  }
-
-  // ── Save (debounced + conflict-aware) ─────────────────────────────
-  let saveTimer = null;
-  let mutationGeneration = 0;
   let reloadGeneration = 0;
   let sessionGeneration = 0;
+  let lastMove = null;
 
-  function preserveRecovery() {
-    const bytes = JSON.stringify(taskStore.recovery(state.data));
-    localStorage.setItem("doitdoit:recovery", bytes);
-    if (localStorage.getItem("doitdoit:recovery") !== bytes) {
-      throw new Error("recovery copy could not be verified");
+  function canEdit() {
+    if (!state.accessToken || !state.data || !state.online) {
+      toast("Refresh the service connection before editing.", "err");
+      return false;
     }
+    if (state.saving || taskStore.pending()) {
+      toast("Finish or retry the retained save from the menu before editing.", "err");
+      return false;
+    }
+    if (navigator.onLine === false) { toast("Connect to the internet before editing.", "err"); return false; }
+    return true;
   }
-
-  function scheduleSave(delay = 600) {
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(doSave, delay);
+  function pendingStatus() {
+    const pending = taskStore.pending();
+    state.dirty = !!pending;
+    state.conflict = !!pending?.rejected;
+    setSync(pending ? "error" : "idle", pending ? (pending.rejected ? "Save rejected · menu to review" : "Save retained · menu to retry") : undefined);
   }
-
-  function queueSave() {
-    mutationGeneration++;
-    state.dirty = true;
-    setSync(state.conflict ? "error" : "dirty");
-    scheduleSave();
-  }
-
-  async function doSave() {
-    saveTimer = null;
-    if (!state.dirty || !state.data || !state.accessToken || state.conflict) return;
-    if (state.interactionActive || state.saving) { scheduleSave(400); return; }
-    const generation = mutationGeneration;
-    const session = sessionGeneration;
-    const snapshot = JSON.parse(JSON.stringify(state.data));
-    reloadGeneration++; // Any earlier download has an obsolete revision context.
+  async function saveCommand(method, path, body) {
+    if (!canEdit()) return false;
     state.saving = true;
-    setSync("syncing");
+    state.online = false;
+    reloadGeneration++;
+    setSync("syncing", "Saving…");
     try {
-      const newRev = await taskStore.save(snapshot, state.rev);
-      if (session !== sessionGeneration) return;
-      state.rev = newRev;
-      state.dirty = generation !== mutationGeneration;
-      setSync(state.dirty ? "dirty" : "idle");
-      if (state.dirty) scheduleSave();
-    } catch (err) {
-      if (session !== sessionGeneration) return;
-      state.dirty = true;
-      if (saveTimer) clearTimeout(saveTimer);
-      saveTimer = null;
-      if (err.conflict) {
-        state.conflict = true;
-        try {
-          preserveRecovery();
-          toast("remote changed — recovery copy kept; use menu to recover or reload", "err");
-        } catch (recoveryError) {
-          toast("local edits retained; recovery failed: " + recoveryError.message, "err");
-        }
-      } else {
-        console.error(err);
-        toast("save failed: " + err.message, "err");
-      }
-      setSync("error");
-    } finally {
-      state.saving = false;
+      await taskStore.mutate(method, path, body);
+      return true;
+    } catch (err) { toast(err.message + " — open the menu to resolve the save.", "err"); return false; }
+    finally { state.saving = false; pendingStatus(); await reload({ silent: true }); }
+  }
+  async function addTask(rawInput, selectedTarget) {
+    const parsed = parseAddInput(rawInput, selectedTarget);
+    if (parsed.error) { toast(parsed.error, "err"); return false; }
+    return saveCommand("POST", "/v1/tasks", { title: parsed.title, scheduled_date: parsed.key === "Future" ? null : parsed.key });
+  }
+  function findTask(dayKey, id) { return Domain.findTask(state.data, dayKey, id); }
+  function toggleTask(dayKey, id) {
+    const found = findTask(dayKey, id);
+    if (found) return saveCommand("PATCH", "/v1/tasks/" + id, { expected_revision: found.task.revision, changes: { status: found.task.completed ? "open" : "completed" } });
+  }
+  function deleteTask(dayKey, id) {
+    const found = findTask(dayKey, id);
+    if (found) return saveCommand("DELETE", "/v1/tasks/" + id, { expected_revision: found.task.revision });
+  }
+  // Dragging is a preview. Only the final reviewed task and neighbors are sent.
+  function moveTask(dayKey, id, destinationKey, destinationIndex) {
+    if (!findTask(dayKey, id)) return false;
+    lastMove = { sourceKey: lastMove?.sourceKey || dayKey, id, destinationKey };
+    return Domain.moveTask(state.data, dayKey, id, destinationKey, destinationIndex);
+  }
+  async function queueSave() {
+    const move = lastMove;
+    lastMove = null;
+    if (!move) return;
+    const found = findTask(move.destinationKey, move.id);
+    if (!found) return;
+    const task = found.task;
+    if (move.sourceKey !== move.destinationKey) {
+      await saveCommand("PATCH", "/v1/tasks/" + move.id, { expected_revision: task.revision, changes: { scheduled_date: move.destinationKey === "Future" ? null : move.destinationKey } });
+    } else {
+      const group = found.list.filter(t => t.completed === task.completed);
+      const index = group.findIndex(t => t.id === move.id);
+      await saveCommand("POST", "/v1/tasks/" + move.id + "/reorder", { expected_revision: task.revision, after_id: group[index - 1]?.id || null, before_id: group[index + 1]?.id || null });
     }
   }
-
-  async function reload(opts = {}) {
-    if (state.interactionActive || !state.accessToken) return;
-    if (state.saving) {
-      if (!opts.silent) toast("save in progress — reload after it finishes", "err");
-      return;
+  async function retrySave() {
+    if (state.saving || state.interactionActive) return;
+    state.saving = true;
+    state.online = false;
+    reloadGeneration++;
+    setSync("syncing", "Retrying save…");
+    try {
+      const pending = taskStore.pending();
+      await taskStore.retry();
+      if (pending?.method === "POST" && pending.path === "/v1/tasks") {
+        const input = parseAddInput(addInput.value, addTarget);
+        if (input.title === pending.body.title && (input.key === "Future" ? null : input.key) === pending.body.scheduled_date) addInput.value = "";
+      }
     }
-    if (state.dirty && !opts.force) return;
+    catch (err) { toast(err.message, "err"); }
+    finally { state.saving = false; pendingStatus(); await reload({ silent: true }); }
+  }
+  async function reload(opts = {}) {
+    if (state.interactionActive || !state.accessToken || state.saving) return;
     const request = ++reloadGeneration;
-    const generation = mutationGeneration;
     const session = sessionGeneration;
-    const before = JSON.stringify(state.data);
-    const stale = () => request !== reloadGeneration || generation !== mutationGeneration ||
-      session !== sessionGeneration || state.saving || state.interactionActive ||
-      before !== JSON.stringify(state.data);
     setSync("syncing");
     try {
-      const { data, rev } = await taskStore.load();
-      if (stale()) {
-        if (request === reloadGeneration && session === sessionGeneration && !state.saving) {
-          setSync(state.conflict ? "error" : state.dirty ? "dirty" : "idle");
-        }
-        return;
-      }
-      // Check recovery immediately before replacement, with no intervening await.
-      if (state.dirty) preserveRecovery();
-      if (saveTimer) clearTimeout(saveTimer);
-      saveTimer = null;
+      const { data, timezone } = await taskStore.load();
+      if (request !== reloadGeneration || session !== sessionGeneration || state.saving || state.interactionActive) return;
       state.data = data;
-      state.rev = rev;
-      state.dirty = false;
-      state.conflict = false;
-      const migrated = migrateDatedFutureTasks(state.data);
-      const r1 = rollOverIncompleteTasks(state.data);
-      const r2 = pruneOldTasks(state.data);
-      if (before !== JSON.stringify(state.data) || !state.rendered) {
-        render({ animate: !state.rendered, preserveScroll: state.rendered });
-      }
-      if (migrated || r1 || r2) {
-        queueSave();
-        // Maintenance uses the same snapshot acknowledgement and serialization.
-        if (saveTimer) clearTimeout(saveTimer);
-        await doSave();
-      } else {
-        setSync("idle");
-      }
-      if (session === sessionGeneration && opts.confirm) toast("reloaded", "ok");
+      state.online = true;
+      state.timezone = timezone;
+      render({ animate: !state.rendered, preserveScroll: state.rendered });
+      pendingStatus();
+      if (opts.confirm) toast("Refreshed", "ok");
     } catch (err) {
-      if (stale()) return;
-      console.error(err);
-      toast("load failed: " + err.message, "err");
-      setSync("error");
+      if (request !== reloadGeneration || session !== sessionGeneration) return;
+      state.online = false;
+      toast("Load failed: " + err.message, "err");
+      setSync("error", "Disconnected · edits paused");
     }
   }
 
@@ -615,6 +429,7 @@
   }
 
   function openEditor(dayKey, id) {
+    if (!canEdit()) return;
     const found = findTask(dayKey, id);
     if (!found) return;
     state.editing = { dayKey, id };
@@ -645,16 +460,17 @@
   }
 
   function saveEditor() {
-    if (!state.editing) return;
+    if (!state.editing || !canEdit()) return;
     const title = editTitle.value.trim();
     if (!title) { toast("task title cannot be empty", "err"); editTitle.focus(); return; }
     const destination = storageTarget(editTarget);
     if (destination.error) { toast(destination.error, "err"); return; }
     const { dayKey, id } = state.editing;
-    if (!Domain.editTask(state.data, dayKey, id, title, destination)) { closeEditor(); return; }
-    closeEditor({ dayKey: destination.key, id });
-    render({ preserveScroll: true });
-    queueSave();
+    const found = findTask(dayKey, id);
+    if (!found) return;
+    const revision = found.task.revision;
+    closeEditor();
+    void saveCommand("PATCH", "/v1/tasks/" + id, { expected_revision: revision, changes: { title, scheduled_date: destination.key === "Future" ? null : destination.key } });
   }
 
   let pointerDrag = null;
@@ -671,6 +487,8 @@
   }
 
   function beginDrag(handle, clientX, clientY, input) {
+    if (!canEdit()) return;
+    lastMove = null;
     const row = handle.closest(".task");
     if (!row || pointerDrag || keyboardDrag) return;
     const rect = row.getBoundingClientRect();
@@ -813,6 +631,8 @@
   }
 
   function beginKeyboardDrag(row) {
+    if (!canEdit()) return;
+    lastMove = null;
     keyboardDrag = {
       id: row.dataset.id,
       dayKey: row.dataset.key,
@@ -851,12 +671,14 @@
     if (!keyboardDrag) return;
     const drag = keyboardDrag;
     if (cancelled) {
+      lastMove = null;
       state.data = JSON.parse(drag.snapshot);
       render({ preserveScroll: true });
       announceDrag("Move cancelled");
     } else {
+      state.interactionActive = false;
       queueSave();
-      announceDrag("Task position saved");
+      announceDrag("Saving task position");
     }
     keyboardDrag = null;
     state.interactionActive = false;
@@ -881,17 +703,19 @@
     connectEl.hidden = false;
     board.hidden = true;
     promptBar.hidden = true;
-    menuBtn.hidden = !LS.get("doitdoit:recovery");
+    menuBtn.hidden = !LS.get("doitdoit:recovery") && !taskStore.recovery();
     emptyState.hidden = true;
   }
 
   function downloadRecovery() {
-    const recovery = LS.get("doitdoit:recovery");
-    if (!recovery?.data) {
+    const service = taskStore.recovery();
+    const legacy = LS.get("doitdoit:recovery");
+    const recovery = service || legacy ? { service, legacy } : null;
+    if (!recovery) {
       toast("no unsaved recovery copy", "err");
       return;
     }
-    const blob = new Blob([JSON.stringify(recovery.data, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(recovery, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -982,11 +806,11 @@
     }
   });
 
-  addForm.addEventListener("submit", (e) => {
+  addForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const v = addInput.value;
     if (!v.trim()) return;
-    if (addTask(v, addTarget)) addInput.value = "";
+    if (await addTask(v, addTarget) && addInput.value === v) addInput.value = "";
   });
 
   addSchedule.addEventListener("click", (e) => {
@@ -1034,27 +858,31 @@
     if (typeof menuDialog.showModal === "function") menuDialog.showModal();
     else menuDialog.setAttribute("open", "");
   });
-  menuDialog.addEventListener("click", (e) => {
+  menuDialog.addEventListener("click", async (e) => {
     const item = e.target.closest("[data-act]");
     if (!item) return;
     const act = item.dataset.act;
     if (act === "close") menuDialog.close();
     else if (act === "reload") {
       menuDialog.close();
-      if (!state.dirty || confirm("discard unsaved local changes and load Dropbox? a recovery copy will remain available.")) {
-        reload({ confirm: true, force: true });
-      }
+      reload({ confirm: true });
     }
-    else if (act === "recovery") { menuDialog.close(); downloadRecovery(); }
-    else if (act === "copy-path") {
-      navigator.clipboard?.writeText("/Apps/<your-app>" + FILE_PATH).then(
-        () => toast("path copied", "ok"),
-        () => toast("copy failed", "err")
-      );
+    else if (act === "retry") { menuDialog.close(); void retrySave(); }
+    else if (act === "review") {
       menuDialog.close();
+      try {
+        await taskStore.reviewRejected();
+        state.online = false;
+        pendingStatus();
+        void reload({ confirm: true });
+        toast("Rejected save kept in recovery. Review the current task before editing again.");
+      } catch (err) { toast(err.message, "err"); }
     }
+    else if (act === "history") { state.showHistory = !state.showHistory; menuDialog.close(); render(); }
+    else if (act === "recovery") { menuDialog.close(); downloadRecovery(); }
+    else if (act === "signin") { menuDialog.close(); if (!state.saving && !state.interactionActive) void startOAuth(); }
     else if (act === "logout") {
-      if (confirm("disconnect dropbox? unsaved edits will be kept in a local recovery copy.")) {
+      if (confirm("Disconnect this browser? Retained saves and recovery copies stay on this device.")) {
         void logout();
       }
       menuDialog.close();
@@ -1079,7 +907,7 @@
     if (state.accessToken && !state.dirty && document.visibilityState === "visible") {
       reload({ silent: true });
     }
-  }, 60_000);
+  }, 15_000);
 
   // Keyboard shortcut: `/` focuses input (when not already typing)
   document.addEventListener("keydown", (e) => {
@@ -1103,34 +931,20 @@
     const code = params.get("code");
     const oauthErr = params.get("error");
 
-    if (oauthErr) {
+    if (code || oauthErr) {
       window.history.replaceState({}, "", REDIRECT_URI);
-      toast("oauth: " + oauthErr, "err");
-      showConnect();
-      return;
+      try { await auth.callback(params); }
+      catch (err) { toast(err.message, "err"); showConnect(); return; }
     }
-    if (code) {
-      window.history.replaceState({}, "", REDIRECT_URI);
-      try {
-        await exchangeCode(code);
-      } catch (err) {
-        console.error(err);
-        toast("oauth failed: " + err.message, "err");
-        showConnect();
-        return;
-      }
-    }
-
-    if (!loadTokens()) { showConnect(); return; }
+    state.accessToken = auth.connected();
+    if (!state.accessToken) { showConnect(); return; }
     showBoard();
     await reload({ silent: true });
   }
 
   // expose minimal debug surface
-  window.doitdoit = { reload, logout, state, storageTarget, parseAddInput };
+  window.doitdoit = { reload, logout, state, storageTarget, parseAddInput, retrySave };
 
-  addDate.min = todayStr();
-  editDate.min = todayStr();
   paintSchedule(addSchedule, "data-add-schedule", addTarget, addDate, addDateLabel);
   if ("ResizeObserver" in window) new ResizeObserver(syncPromptHeight).observe(promptBar);
   window.addEventListener("resize", syncPromptHeight);

@@ -16,6 +16,7 @@
   ],
   "vars": {
     "SERVICE_ORIGIN": "http://localhost:8787",
+    "BROWSER_ORIGIN": "http://localhost:8000",
     "OWNER_TIMEZONE": "Europe/London",
   },
   "d1_databases": [

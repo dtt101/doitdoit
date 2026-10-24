@@ -34,6 +34,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+
+      - name: Test web companion
+        run: node --test web/*.test.js
+
       - name: Setup Pages
         uses: actions/configure-pages@v6
 

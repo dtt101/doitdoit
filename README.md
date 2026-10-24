@@ -18,7 +18,7 @@ Put that file in Dropbox, iCloud Drive, or Google Drive and your task list can t
 - **Plan quickly from the keyboard.** Add, edit, complete, delete, copy, reorder, schedule, repeat a move, and undo without leaving the terminal.
 - **Capture now, decide later.** Drop ideas into Future, then schedule them for tomorrow, the next seven days, or an exact date when you are ready.
 - **Looks at home on Omarchy.** `doitdoit` follows your active Omarchy theme and includes every stock Omarchy 4 (Quattro) palette.
-- **Take it to your phone.** The optional static [web companion](./web) can read and write the same Dropbox-hosted task file.
+- **Take it to your phone.** The static [web companion](./web) uses the shared service backend.
 
 ## Omarchy
 
@@ -155,7 +155,7 @@ A failed save pauses editing and automatic writes and displays **“Your changes
 
 The draft and its baseline are saved in local recovery storage and reopened on the next launch. **`q`** safely quits when recovery succeeds. If recovery storage fails, normal quit is blocked: use **`x`** to export/retry recovery, or **`D`**, then **`y`**, to explicitly discard the draft. Cancelling review preserves pending edits. Recovery is cleared only after successful resolution or explicit discard.
 
-This review is available in the terminal; the experimental web app retains its download-recovery/reload workflow, and noninteractive CLI commands do not open a resolver. Folder sync still has a narrow race between verification and replacement or cleanup. Review can recover versions it has observed; it cannot guarantee Dropbox has uploaded a local save or recover an unseen offline version. Let Dropbox finish syncing when switching machines.
+This JSON conflict review is available in the terminal; the service-backed web app uses revision-guarded commands, and noninteractive CLI commands do not open a resolver. Folder sync still has a narrow race between verification and replacement or cleanup. Review can recover versions it has observed; it cannot guarantee Dropbox has uploaded a local save or recover an unseen offline version. Let Dropbox finish syncing when switching machines.
 
 Back up both the task JSON file and `~/.doitdoit_config.json` before migrations or major upgrades, and test that the backup can be read. Need to relocate an existing task file later? `doitdoit config move <new_path>` moves it and updates your configuration, but refuses any existing file, directory, or symlink at the destination so it cannot overwrite data.
 
@@ -318,9 +318,11 @@ field as the TUI. The multiline example uses Bash's `$'…'` quoting.
 
 ## Mobile companion
 
-The [`web/`](./web) directory contains an experimental installable web app for adding, editing, scheduling, reordering, and completing tasks from a phone. It connects directly to the same JSON file through Dropbox. It is outside the CLI release and its security/privacy assurance; review the browser security and conflict-handling notes in its README before using it with real data.
+The [`web/`](./web) directory contains an installable static web app for adding,
+editing, scheduling, reordering and completing shared service tasks from a phone.
+Sign in with GitHub; it uses the same backend as the service-mode TUI and MCP.
 
-See [web/README.md](./web/README.md) for Dropbox setup and deployment instructions.
+See [web/README.md](./web/README.md) for setup, recovery and deployment.
 
 ## Development
 
@@ -379,7 +381,7 @@ go run . --service https://doitdoit-service.davidt-91d.workers.dev
 
 Use `service use` to select the signed-in service for future launches, or
 `service use-json` to return to JSON. `--file PATH` selects JSON explicitly.
-The Dropbox web companion remains a separate JSON client. After service edits,
+The web companion uses the service backend. After service edits,
 export current data before returning to an old JSON file.
 
 See the [service guide](service/README.md) for TUI controls, ChatGPT/Gemini setup

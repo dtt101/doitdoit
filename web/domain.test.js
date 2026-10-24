@@ -27,49 +27,10 @@ test("task operations preserve completion ordering and scheduling without UI sta
   assert.equal(Domain.moveTask(data, "Future", "missing", "2026-09-08", 0), false);
 });
 
-test("rollover keeps completed history and moves incomplete tasks", () => {
-  const data = {
-    "2026-08-25": [
-      { id: "open", title: "Open", completed: false },
-      { id: "done", title: "Done", completed: true },
-    ],
-    "2026-08-26": [
-      { id: "today-done", title: "Done today", completed: true },
-    ],
-  };
-  assert.equal(Domain.rollOverIncompleteTasks(data, now), true);
-  assert.equal(data["2026-08-26"][0].id, "open");
-  assert.equal(data["2026-08-26"][1].id, "today-done");
-  assert.equal(data["2026-08-25"][0].id, "done");
-});
-
-test("retention defaults to forever and prunes only after an explicit choice", () => {
-  const forever = { "2026-01-01": [{ id: "done", completed: true }] };
-  assert.equal(Domain.pruneOldTasks(forever, 0, now), false);
-  assert.ok(forever["2026-01-01"]);
-  const pruned = { "2026-08-01": [{ id: "done", completed: true }], Future: [{ id: "f", completed: true }] };
-  assert.equal(Domain.pruneOldTasks(pruned, 5, now), true);
-  assert.equal(pruned["2026-08-01"], undefined);
-  assert.deepEqual(pruned.Future, []);
-});
-
-test("legacy Future migration and add targeting are independent of the visible window", () => {
-  const data = {
-    "2026-08-27": [{ id: "done", completed: true }],
-    Future: [
-      { id: "soon", due_date: "2026-08-27" },
-      { id: "later", due_date: "2026-09-20" },
-    ],
-  };
-  Domain.migrateDatedFutureTasks(data);
-  assert.equal(data["2026-08-27"][0].id, "soon");
-  assert.equal(data["2026-08-27"][1].id, "done");
-  assert.deepEqual(data.Future, []);
-  assert.equal(data["2026-09-20"][0].id, "later");
-  assert.deepEqual(
-    Domain.parseAddInput("!future write postcard", { kind: "today" }, now),
-    { title: "write postcard", key: "Future", due: "" },
-  );
+test("service capture preserves explicit past dates and undated tasks", () => {
+  assert.deepEqual(Domain.storageTarget({ kind: "custom", date: "2026-08-25" }, now), { key: "2026-08-25", due: "2026-08-25" });
+  assert.deepEqual(Domain.parseAddInput("!future write postcard", { kind: "today" }, now), { title: "write postcard", key: "Future", due: "" });
+  assert.deepEqual(Domain.storageTarget({ kind: "tomorrow" }, now), { key: "2026-08-27", due: "2026-08-27" });
 });
 
 test("completion grouping is stable and reports whether it repaired data", () => {
@@ -89,31 +50,11 @@ test("invalid dates and titles are rejected", () => {
   assert.ok(Domain.storageTarget({ kind: "custom", date: "2026-02-30" }, now).error);
 });
 
-test("notes survive web edits, moves, rollover and JSON round trips", () => {
+test("notes and original dates survive drag previews", () => {
   const notes = "Words café\nhttps://example.com";
-  const data = { Future: [{ id: "notes", title: "Original", notes, completed: false }] };
-  Domain.editTask(data, "Future", "notes", "Edited", { key: "2026-08-25", due: "2026-08-25" });
-  Domain.rollOverIncompleteTasks(data, now);
-  Domain.toggleTask(data, "2026-08-26", "notes");
-  Domain.moveTask(data, "2026-08-26", "notes", "Future", 0);
-  assert.equal(JSON.parse(JSON.stringify(data)).Future[0].notes, notes);
-});
-
-
-test("migration preserves fields and ordering before normal lifecycle, and is idempotent", () => {
-  const legacy = { id: "far", due_date: "2099-01-01", notes: "café\nDetails", completed: false, created_at: "2026-01-01T12:00:00Z" };
-  const data = { "2099-01-01": [{ id: "existing" }, { id: "done", completed: true }], Future: [
-    { id: "idea" }, legacy, { id: "bad", due_date: "invalid" },
-    { id: "past-open", due_date: "2026-08-25" },
-    { id: "past-done", due_date: "2026-08-25", completed: true },
-  ] };
-  assert.equal(Domain.migrateDatedFutureTasks(data), true);
-  assert.deepEqual(data["2099-01-01"].map(t => t.id), ["existing", "far", "done"]);
-  assert.deepEqual(data["2099-01-01"][1], legacy);
-  assert.deepEqual(data.Future.map(t => t.id), ["idea", "bad"]);
-  assert.equal(Domain.migrateDatedFutureTasks(data), false);
-  Domain.rollOverIncompleteTasks(data, now);
-  assert.deepEqual(data["2026-08-25"].map(t => t.id), ["past-done"]);
-  assert.equal(data["2026-08-26"][0].due_date, "2026-08-26");
-  assert.deepEqual(Domain.storageTarget({ kind: "custom", date: "2099-01-01" }, now), { key: "2099-01-01", due: "2099-01-01" });
+  const data = { "2026-08-25": [{ id: "notes", title: "Original", notes, completed: false }] };
+  Domain.toggleTask(data, "2026-08-25", "notes");
+  assert.equal(data["2026-08-25"][0].due_date, undefined);
+  Domain.moveTask(data, "2026-08-25", "notes", "Future", 0);
+  assert.equal(data.Future[0].notes, notes);
 });

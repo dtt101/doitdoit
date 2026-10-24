@@ -5,7 +5,7 @@
 `doitdoit` is a Go 1.27 terminal task manager built with Bubble Tea. It stores
 tasks in a user-owned JSON file by default, with an explicitly selected
 experimental Cloudflare service backend. The repository also contains an experimental,
-fully static Dropbox web companion in `web/`.
+fully static service-backed web companion in `web/`.
 
 Supported desktop platforms are macOS and Linux only (`amd64` and `arm64`).
 Omarchy is a first-class Linux platform: preserve automatic theme detection,
@@ -46,7 +46,7 @@ These instructions apply to the whole repository.
   handling, rendering, and compatibility wrappers for the task-data API.
 - `styles/`: embedded themes and Omarchy theme resolution.
 - `web/`: independent static companion; `domain.js` holds task behavior and
-  `sync.js` holds Dropbox revision-aware I/O.
+  `sync.js` holds snapshot reads and retained revision-guarded commands; `auth.js` owns browser OAuth.
 - `service/`: experimental Rust/WASM Cloudflare task service and D1 migrations,
   including Rust OAuth/MCP endpoints and local integration tests.
 - `api/`: experimental service contract and shared Go/Rust fixtures.
@@ -79,16 +79,15 @@ These instructions apply to the whole repository.
 - Data safety is core behavior. Do not weaken atomic replacement, `0600` file
   permissions, `.bak` creation, external-change detection, or the rule that a
   same-bucket concurrent edit remains a visible conflict.
-- Task lifecycle behavior shared by the CLI and web companion—rollover,
-  retention, distribution, and ordering—should stay aligned. Update both
-  implementations and their tests when changing shared semantics, or document
-  an intentional difference.
+- Task lifecycle behavior in the service-mode CLI and web companion must agree:
+  no automatic rollover or pruning, original overdue dates, and service ordering.
+  The legacy JSON CLI intentionally retains its existing lifecycle semantics.
 - Shared Go code may rely on Unix behavior available on both Linux and macOS.
   Keep OS-specific behavior behind build-tagged files; do not add Windows
   compatibility shims. CI and release gates must cover both supported systems.
 - The web companion must remain static and self-contained. Do not add remote
-  scripts/fonts or commit Dropbox secrets. Its app key is a public OAuth client
-  ID; OAuth tokens remain browser-local.
+  scripts/fonts or commit credentials. Browser OAuth uses public-client PKCE;
+  tokens and retained commands remain browser-local.
 - If dependencies, embedded themes, or distributed files change, update
   `THIRD_PARTY_NOTICES.md` as needed and run `go test -count=1 ./releasecheck`.
 

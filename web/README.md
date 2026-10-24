@@ -1,203 +1,72 @@
-# doitdoit · web companion (experimental)
+# Web companion
 
-> This Dropbox companion is experimental, is not included in the
-> doitdoit CLI release, and is outside that release's security and
-> privacy assurance. Review the browser security and conflict-handling notes
-> below before using it with sensitive or irreplaceable task data.
+Static mobile client for the same service used by the TUI and MCP. No build step,
+framework or Dropbox connection.
 
-A small static web app that reads and writes the same Dropbox JSON file the
-CLI uses. Designed for adding and ticking off tasks from a phone, but works
-equally well on desktop. No backend, build step, framework, remotely executed
-script, or remote font is required.
+## Use
 
-## Architecture
+Open https://dtt101.github.io/doitdoit/ and choose **Sign in with GitHub**. Only
+the service's configured owner can sign in. On your phone, use **Add to Home
+screen** in the browser menu (Safari's share menu on iOS).
 
-- **Auth**: Dropbox OAuth 2.0 with [PKCE]. The app key is public and committed
-  to `config.js`; no client secret is required, no server is involved. Tokens
-  live in `localStorage` only.
-- **Data**: a single JSON file at the path you configure (`/config.json` in
-  the app's Dropbox scope by default). Reads via `/2/files/download`, writes
-  via `/2/files/upload` with `mode: { update: <rev> }` so concurrent changes
-  surface as a recoverable conflict instead of being clobbered. Writes use strict
-  conflict checks; a confirmed missing file is created with `mode: "add"` and
-  renaming disabled. Other download errors and invalid revision metadata fail
-  visibly.
-- **Domain logic**: rollover, legacy Future migration, ordering, and explicit retention
-  behavior live in `domain.js` and are tested with the same lifecycle rules as
-  the CLI. Retention defaults to forever; set `retentionDays` to a positive
-  value only after making an equivalent explicit choice in the CLI.
-- **Conflicts**: revision conflicts leave local edits intact and store a
-  recovery snapshot in browser storage. Use the menu to download it before
-  deliberately reloading the Dropbox version. Further edits keep the conflict
-  visible until explicit reload. Reload and disconnect verify a recovery copy
-  before discarding unsaved edits; storage failures block that discard. Recovery
-  download remains accessible from the menu after disconnect.
-- **In-flight edits**: stale reloads cannot replace newer edits. Each successful
-  upload acknowledges only its captured snapshot; newer edits remain dirty and
-  are scheduled for another save. Rollover/retention saves use the same path.
-  Explicit reload waits for you to retry after an active save finishes.
-- **Failures**: network and authentication errors retain dirty data in memory.
-  Authentication failure does not automatically disconnect or erase it. Use the
-  menu to disconnect and reconnect if required; disconnect first preserves a
-  recovery snapshot. Recovery is a single latest snapshot in this browser profile,
-  not a durable outbox: closing/reloading the page before preserving unsaved edits,
-  clearing site data, or losing the profile can still lose them.
-- **Browser security**: the page uses a restrictive Content Security Policy
-  and local assets only. OAuth tokens must remain available to JavaScript
-  because this is a serverless client, so a compromised browser profile or
-  malicious extension could still access them.
+- Add tasks to Today, Tomorrow, Future (undated), or an explicit date.
+- Tap a title to edit its title/date; use the note icon to read notes.
+- Tap a checkbox to complete or reopen without changing the scheduled date.
+- Drag ≡ to reorder within a date/status group. Moving to another date appends
+  to that group. Keyboard: Space/Enter picks up, arrows move, Space/Enter saves,
+  Escape cancels.
+- Overdue tasks appear before Today with their original dates. Nothing rolls
+  forward or expires. The menu can show earlier completed tasks.
+- Delete is recoverable through the TUI's Deleted view (`x`, then Enter).
 
-## One-time setup
+Dates use the service owner's timezone. The visible page refreshes every 15
+seconds and on focus; active editors and drag previews are left intact.
 
-### 1. Register a Dropbox app
+## Failed saves
 
-Go to https://www.dropbox.com/developers/apps → **Create app**:
+Editing requires an internet connection. Each command is retained in browser
+storage before it is sent, with its original operation ID and reviewed revision.
+Further edits pause until it is resolved.
 
-| Field          | Value                                          |
-| -------------- | ---------------------------------------------- |
-| API            | Scoped access                                  |
-| Access type    | **App folder** (recommended) or Full Dropbox   |
-| App name       | anything unique, e.g. `doitdoit-yourname`      |
+- **Save retained:** menu → **retry retained save**. This safely retries the
+  identical command, including after reloading or signing in again.
+- **Save rejected:** download the recovery copy, then choose **Review latest
+  after rejected save**. Review the current task and apply the desired edit again.
+  The rejected command remains in local recovery; it is never silently merged.
+- **Sign-in refresh interrupted:** menu → **Sign in again**, then retry any
+  retained save. A rotating refresh credential is never replayed after an
+  uncertain response.
 
-On the app's settings page:
+Refreshing tasks does not discard retained commands. Disconnect revokes this
+browser's credentials; retained saves/recovery stay on the device. Clearing site
+data removes them. Download recovery first if anything is unresolved. Existing
+Dropbox recovery copies remain downloadable, but are never imported automatically.
+The old Dropbox JSON is no longer updated by this app.
 
-- **Permissions** tab → enable `files.content.read` and `files.content.write`,
-  then **Submit**.
-- **Settings** tab → **OAuth 2 / Redirect URIs** → add the URL where this page
-  will be served (e.g. `https://you.github.io/doitdoit/`). Add
-  `http://localhost:8000/` too if you want to test locally.
-- Copy the **App key** (a public client ID, not the secret) and paste it into
-  [`config.js`](./config.js) as `dropboxAppKey`.
+## Development and deployment
 
-### 2. Move (or create) the data file
-
-If you chose **App folder** access, your file must live under
-`/Apps/<your-app-name>/`. Either:
-
-- Move your existing `doitdoit.json` there, then update the CLI's
-  `~/.doitdoit_config.json` `storage_path` to match, **or**
-- Pick a new file name in `config.js` (`dropboxFilePath`) and let the web app
-  create it on first save.
-
-If you chose **Full Dropbox** access, the file path can be anywhere; just set
-`dropboxFilePath` accordingly.
-
-### 3. Deploy on GitHub Pages
-
-1. **Configure Pages**: in the repository, open **Settings → Pages** and set
-   **Source** to **GitHub Actions**.
-2. **Push your changes**: the included workflow uploads `web/` as a Pages
-   artifact and deploys it. The deployment URL appears in the workflow and
-   Pages settings.
-
-That's it. Push to `main` to redeploy.
-
-## Local development
-
-The app is fully static. Any local file server works:
-
-```bash
-cd web
-python3 -m http.server 8000
-# or
-npx http-server -p 8000
+```sh
+node --test web/*.test.js
+python3 -m http.server 8000 --directory web
 ```
 
-Then open http://localhost:8000/. Add `http://localhost:8000/` to your
-Dropbox app's redirect URIs to test the OAuth round-trip locally.
+For local service use, set `serviceOrigin` in `config.js` to
+`http://localhost:8787`, and change `connect-src` in `index.html` to that origin.
+The local service allows `http://localhost:8000`; use that exact URL, not 127.0.0.1.
 
-## Managing tasks
+Production is served by the existing GitHub Pages workflow when `web/` changes
+on main. Deploy the service first when changing browser access. Its production
+`BROWSER_ORIGIN` is exactly `https://dtt101.github.io`; consent/callback, MCP and
+import endpoints are excluded from cross-origin access. No Cloudflare credentials
+belong in browser configuration.
 
-Use the controls under the bottom prompt to add a task to Today, Tomorrow,
-Future, or a date from the device's date picker. Dates beyond the visible
-five-day window appear as additional dated sections.
+`auth.js` owns public-client OAuth (S256 PKCE and checked state), rotating tokens
+and cross-tab refresh locks. `sync.js` owns snapshot pagination and retained
+revision-guarded commands. `domain.js` provides calendar/input and drag-preview
+helpers; rendering never writes tasks.
 
-The web companion uses a Tokyo Night inspired palette, a compact bottom composer,
-and 44px touch targets. Pinch-to-zoom stays available. Sync status is written out
-(Synced, Syncing, Unsaved, Sync failed, or Conflict). Invalid capture shortcuts
-leave your text in the composer so you can correct them.
-
-Future holds undated tasks. Setting a date moves the task immediately into its
-date bucket; moving it back to Future clears the date. On load, legacy dated
-Future tasks migrate before rollover and retention, using revision-checked
-uploads. Invalid dates remain untouched for correction. Rendering does not mutate
-tasks. The terminal separates completed tasks and any invalid-date recovery rows
-in Future; the web companion keeps a flat list.
-
-- Select the note icon beside a task title to open its notes in a scrollable dialog. Text is selectable and line breaks are preserved. Close with the close button or Escape.
-- Tap a task title to edit its title or schedule.
-- Drag the `≡` handle to reorder a task or move it between visible days and
-  Future. With a keyboard, focus the handle, press Space or Enter to pick up,
-  use the arrow keys to move, then press Space or Enter again to save.
-- Tap the checkbox to toggle completion. Delete is available inside the task editor.
-
-The original optional `!target` prefixes remain available as shortcuts and
-override the selected date control:
-
-| Input                          | Result                                |
-| ------------------------------ | ------------------------------------- |
-| `buy bread`                    | adds to today                         |
-| `!future write a postcard`     | adds to the Future bucket             |
-| `!2027-06-01 dentist`          | schedules for that specific date      |
-
-## Mobile install
-
-Open the deployed URL in Android Chrome, then **menu → Add to Home screen**.
-It launches fullscreen with the dark theme color in the status bar. iOS Safari
-works similarly via the share sheet.
-
-## Files
-
-```
-web/
-├── icons/          # Android, favicon, and Apple home-screen icons
-├── index.html      # local-only shell and Content Security Policy
-├── manifest.webmanifest # install metadata and maskable icon declarations
-├── style.css       # Tokyo Night colours, responsive layout, and touch controls
-├── app.js          # OAuth, mutations, accessible DOM rendering
-├── domain.js       # shared/testable task lifecycle rules
-├── sync.js         # shared/testable Dropbox revision operations
-├── *.test.js       # Node built-in unit tests
-├── config.js       # public Dropbox app key + file path
-└── .nojekyll       # tell GitHub Pages not to run Jekyll
-```
-
-The original double-check icon has an editable source in `icons/icon.svg`.
-The PNG variants are rendered from that source (48px favicon, 180px Apple,
-192px and 512px Android, and 1024px master). The solid background and central
-mark support maskable home-screen icons. To regenerate a size locally with
-librsvg, run `rsvg-convert -w 192 -h 192 icons/icon.svg -o icons/icon-192.png`.
-This is an asset-authoring step only; the app still has no build step.
-
-## Troubleshooting
-
-- **"no dropbox app key set"** — edit `config.js` and paste your app key.
-- **OAuth redirect mismatch** — the URL in your address bar must match a
-  redirect URI registered in your Dropbox app settings exactly (trailing
-  slash and protocol matter).
-- **"dropbox file is not valid JSON"** — usually a half-finished hand-edit
-  of the file. Open it in Dropbox's web UI and fix the syntax.
-- **Tasks added on web don't show in CLI (or vice versa)** — the CLI polls
-  every few seconds; the web page reloads on focus and every 60 seconds.
-- **Conflict warning** — download the recovery copy from the menu, then force
-  reload and reapply the desired change. The app never silently discards the
-  recovery snapshot.
-- **Logout** — header's `···` menu → **disconnect dropbox**. The app asks
-  Dropbox to revoke the token, then wipes it from localStorage; tasks remain
-  in Dropbox.
-
-## Privacy and recovery
-
-Task content is sent only to Dropbox's API and remains in the selected Dropbox
-file. OAuth credentials and conflict-recovery snapshots are stored in this
-browser's localStorage. The app contains no analytics or advertising. GitHub
-Pages and Dropbox may retain ordinary request metadata under their own terms.
-Disconnect when using a shared device, and remove this site's browser data if
-you also want to erase local recovery snapshots.
-
-Back up the Dropbox file before migrations. The CLI additionally maintains a
-local `.bak` copy on each successful replacement. A web conflict recovery can
-be downloaded as JSON and restored by replacing the Dropbox file only after
-reviewing both versions.
-
-[PKCE]: https://datatracker.ietf.org/doc/html/rfc7636
+The browser needs HTTPS (or localhost), Web Crypto and Web Locks, supported by
+current Chrome and Safari. Credentials and recovery commands are browser-local
+and accessible to JavaScript. Use a trusted browser/profile; there are no remote
+scripts, fonts, analytics or task caches. Requests go to the configured service;
+sign-in uses GitHub. Hosting providers may retain ordinary request metadata.

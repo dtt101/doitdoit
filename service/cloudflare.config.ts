@@ -26,6 +26,7 @@ export default defineConfig(({ mode }) => {
         SERVICE_ORIGIN: bindings.text(production
           ? "https://doitdoit-service.davidt-91d.workers.dev"
           : "http://localhost:8787"),
+        BROWSER_ORIGIN: bindings.text(production ? "https://dtt101.github.io" : "http://localhost:8000"),
         OWNER_TIMEZONE: bindings.text("Europe/London"),
         GITHUB_CLIENT_ID: bindings.secret(),
         GITHUB_CLIENT_SECRET: bindings.secret(),

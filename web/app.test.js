@@ -6,6 +6,8 @@ const vm = require("node:vm");
 const fs = require("node:fs");
 const Sync = require("./sync.js");
 const Domain = require("./domain.js");
+const Auth = require("./auth.js");
+const { webcrypto } = require("node:crypto");
 
 function deferred() {
   let resolve, reject;
@@ -44,7 +46,7 @@ function app() {
     createElementNS: element, documentElement: element(), visibilityState: "visible",
   });
   const window = Object.assign(element(), {
-    DOITDOIT_CONFIG: {}, DoitdoitSync: Sync, DoitdoitDomain: Domain,
+    DOITDOIT_CONFIG: {}, DoitdoitSync: Sync, DoitdoitDomain: Domain, DoitdoitAuth: Auth,
     location: { origin: "https://example.test", pathname: "/", search: "" },
   });
   const localStorage = {
@@ -52,9 +54,9 @@ function app() {
     setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key),
   };
   const context = vm.createContext({
-    window, document, localStorage, URLSearchParams, Blob,
+    window, document, localStorage, sessionStorage: localStorage, URLSearchParams, Blob, crypto: webcrypto,
     URL: { createObjectURL: blob => { downloads.push(blob); return "blob:test"; }, revokeObjectURL() {} },
-    console: { error() {}, warn() {} }, confirm: () => true, navigator: {},
+    console: { error() {}, warn() {} }, confirm: () => true, navigator: { locks: { request: async (key, fn) => fn() } }, AbortSignal, TextEncoder, btoa,
     setTimeout: (fn, delay) => { const id = ++timerID; timers.set(id, { fn, delay }); return id; },
     clearTimeout: id => timers.delete(id),
     setInterval: (fn, delay) => { const id = ++timerID; intervals.set(id, { fn, delay }); return id; },
@@ -63,16 +65,11 @@ function app() {
   });
   vm.runInContext(fs.readFileSync(require.resolve("./app.js"), "utf8"), context);
   const { state, reload, logout } = window.doitdoit;
-  Object.assign(state, { data: snapshot("base"), rev: "aaaaaaaaa", accessToken: "test", tokenExp: Date.now() + 3600000 });
+  Object.assign(state, { data: snapshot("base"), accessToken: true, online: true });
+  storage.set("doitdoit:service:https://doitdoit-service.davidt-91d.workers.dev:tokens", JSON.stringify({ access_token: "test", refresh_token: "refresh", client_id: "client", expires: Date.now() + 3600000 }));
   function edit(title) {
     get("add-input").value = "!future " + title;
     return get("add-form").emit("submit");
-  }
-  function save() {
-    const entry = [...timers].find(([, t]) => t.delay === 600 || t.delay === 400);
-    assert.ok(entry, "save scheduled");
-    timers.delete(entry[0]);
-    return entry[1].fn();
   }
   function reply(index, data, rev = "bbbbbbbbb", status = 200) {
     requests[index].resolve({ status, ok: status >= 200 && status < 300,
@@ -80,240 +77,9 @@ function app() {
       text: async () => JSON.stringify(data), json: async () => data,
     });
   }
-  return { state, reload, logout, edit, save, reply, requests, messages, storage, localStorage, get, window, intervals, downloads };
+  return { state, reload, logout, edit, reply, requests, messages, storage, localStorage, get, window, intervals, downloads };
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
-
-test("reload begun clean cannot replace an edit or its revision", async () => {
-  const a = app();
-  const loading = a.reload(); await tick();
-  await a.edit("local"); const expected = copy(a.state.data);
-  a.reply(0, snapshot("remote")); await loading;
-  assert.deepEqual(copy(a.state.data), expected);
-  assert.equal(a.state.rev, "aaaaaaaaa"); assert.equal(a.state.dirty, true);
-});
-
-test("only the latest overlapping reload may apply", async () => {
-  const a = app();
-  const first = a.reload(); const second = a.reload(); await tick();
-  a.reply(1, snapshot("latest"), "ccccccccc"); await second;
-  a.reply(0, snapshot("old")); await first;
-  assert.equal(a.state.data.Future[0].title, "latest"); assert.equal(a.state.rev, "ccccccccc");
-});
-
-test("upload A acknowledges only A and uploads B with A's revision", async () => {
-  const a = app(); await a.edit("A");
-  const saving = a.save(); await tick();
-  await a.edit("B"); const expected = copy(a.state.data);
-  assert.equal(JSON.parse(a.requests[0].options.body).Future.some(t => t.title === "B"), false);
-  a.reply(0, { rev: "bbbbbbbbb" }); await saving;
-  assert.equal(a.state.dirty, true);
-  await a.window.emit("focus");
-  for (const { fn, delay } of a.intervals.values()) if (delay === 60000) fn();
-  assert.equal(a.requests.length, 1);
-  const second = a.save(); await tick();
-  assert.deepEqual(JSON.parse(a.requests[1].options.body), expected);
-  assert.equal(JSON.parse(a.requests[1].options.headers["Dropbox-API-Arg"]).mode.update, "bbbbbbbbb");
-  a.reply(1, { rev: "ccccccccc" }); await second;
-  assert.equal(a.state.dirty, false);
-});
-
-test("failed upload retains newer edits and revision; forced reload saves exact recovery", async () => {
-  const a = app(); await a.edit("A"); const saving = a.save(); await tick();
-  await a.edit("B"); const expected = copy(a.state.data);
-  a.requests[0].reject(new Error("offline")); await saving;
-  assert.equal(a.state.dirty, true); assert.equal(a.state.rev, "aaaaaaaaa");
-  const loading = a.reload({ force: true }); await tick();
-  a.reply(1, snapshot("remote")); await loading;
-  assert.deepEqual(JSON.parse(a.storage.get("doitdoit:recovery")).data, expected);
-  assert.equal(a.state.dirty, false);
-  await a.get("menu-dialog").emit("click", { target: { closest: () => ({ dataset: { act: "recovery" } }) } });
-  assert.deepEqual(JSON.parse(await a.downloads[0].text()), expected);
-});
-
-for (const failure of ["quota", "readback"]) test(`recovery ${failure} failure blocks forced replacement and disconnect`, async () => {
-  const a = app(); await a.edit("unsaved"); const expected = copy(a.state.data);
-  if (failure === "quota") a.localStorage.setItem = () => { throw new Error("quota"); };
-  else a.localStorage.setItem = () => {};
-  const loading = a.reload({ force: true }); await tick();
-  a.reply(0, snapshot("remote")); await loading;
-  assert.deepEqual(copy(a.state.data), expected); assert.equal(a.state.dirty, true);
-  assert.equal(a.state.rev, "aaaaaaaaa"); assert.ok(a.messages.some(m => m.startsWith("load failed")));
-  await a.logout();
-  assert.deepEqual(copy(a.state.data), expected); assert.equal(a.state.accessToken, "test");
-  assert.ok(a.messages.some(m => m.startsWith("disconnect blocked")));
-});
-
-test("an edit during forced reload remains dirty without being discarded", async () => {
-  const a = app(); await a.edit("A"); const loading = a.reload({ force: true }); await tick();
-  await a.edit("B"); const expected = copy(a.state.data);
-  a.reply(0, snapshot("remote")); await loading;
-  assert.deepEqual(copy(a.state.data), expected); assert.equal(a.state.dirty, true);
-});
-
-test("maintenance upload and a new edit share save serialization", async () => {
-  const a = app(); const loading = a.reload(); await tick();
-  a.reply(0, { "2000-01-01": [{ id: "old", title: "rollover", completed: false }] }); await tick();
-  assert.equal(a.requests.length, 2); assert.equal(a.state.saving, true);
-  await a.edit("new");
-  await a.reload({ force: true }); assert.equal(a.requests.length, 2);
-  a.reply(1, { rev: "ccccccccc" }); await loading;
-  assert.equal(a.state.dirty, true);
-  const saving = a.save(); await tick();
-  assert.ok(JSON.parse(a.requests[2].options.body).Future.some(t => t.title === "new"));
-  a.reply(2, { rev: "ddddddddd" }); await saving;
-  assert.equal(a.state.dirty, false);
-});
-
-test("failed maintenance stays dirty and blocks background reload", async () => {
-  const a = app(); const loading = a.reload(); await tick();
-  a.reply(0, { "2000-01-01": [{ id: "old", title: "rollover", completed: false }] }); await tick();
-  a.requests[1].reject(new Error("offline")); await loading;
-  assert.equal(a.state.dirty, true); await a.window.emit("focus"); assert.equal(a.requests.length, 2);
-});
-
-test("disconnect preserves edits and ignores an in-flight save acknowledgement", async () => {
-  const a = app(); await a.edit("A"); const saving = a.save(); await tick();
-  await a.edit("B"); const expected = copy(a.state.data);
-  const logout = a.logout(); await tick();
-  assert.deepEqual(JSON.parse(a.storage.get("doitdoit:recovery")).data, expected);
-  assert.equal(a.state.data, null); assert.equal(a.get("btn-menu").hidden, false);
-  a.reply(0, { rev: "bbbbbbbbb" }); await saving;
-  assert.equal(a.state.rev, null); assert.equal(a.state.dirty, false);
-  a.reply(1, {}); await logout;
-});
-
-test("disconnect invalidates an in-flight reload", async () => {
-  const a = app(); const loading = a.reload(); await tick();
-  const logout = a.logout(); await tick();
-  a.reply(0, snapshot("late")); await loading;
-  assert.equal(a.state.data, null); a.reply(1, {}); await logout;
-});
-
-test("authentication failure retains unsaved edits and keeps recovery available", async () => {
-  const a = app(); a.state.refreshToken = "refresh"; await a.edit("local");
-  const expected = copy(a.state.data); const saving = a.save(); await tick();
-  a.reply(0, {}, undefined, 401); await tick();
-  a.reply(1, {}, undefined, 400); await saving;
-  assert.deepEqual(copy(a.state.data), expected); assert.equal(a.state.dirty, true);
-  assert.equal(a.state.rev, "aaaaaaaaa"); assert.ok(a.messages.some(m => m.includes("local edits retained")));
-});
-
-for (const kind of ["download", "upload"]) test(`malformed ${kind} revision cannot clear local state`, async () => {
-  const a = app();
-  if (kind === "upload") await a.edit("local");
-  const expected = copy(a.state.data);
-  const pending = kind === "download" ? a.reload() : a.save(); await tick();
-  a.reply(0, kind === "download" ? snapshot("remote") : {}, "invalid"); await pending;
-  assert.deepEqual(copy(a.state.data), expected); assert.equal(a.state.rev, "aaaaaaaaa");
-  assert.equal(a.state.dirty, kind === "upload");
-});
-
-test("reload response cannot overwrite a save that has already completed", async () => {
-  const a = app(); const loading = a.reload(); await tick();
-  await a.edit("new"); const saving = a.save(); await tick();
-  a.reply(1, { rev: "ccccccccc" }); await saving;
-  a.reply(0, snapshot("old")); await loading;
-  assert.ok(a.state.data.Future.some(t => t.title === "new"));
-  assert.equal(a.state.rev, "ccccccccc"); assert.equal(a.state.dirty, false);
-});
-
-test("conflict recovery failure is visible and further edits cannot bypass the conflict", async () => {
-  const a = app(); await a.edit("A"); const saving = a.save(); await tick();
-  a.localStorage.setItem = () => { throw new Error("quota"); };
-  a.reply(0, {}, undefined, 409); await saving;
-  assert.equal(a.state.dirty, true); assert.equal(a.state.conflict, true);
-  assert.ok(a.messages.some(m => m.includes("recovery failed: quota")));
-  await a.edit("B"); await a.save(); assert.equal(a.requests.length, 1);
-  assert.equal(a.state.conflict, true);
-});
-
-test("a late token refresh cannot reconnect a disconnected session", async () => {
-  const a = app(); a.state.refreshToken = "refresh"; await a.edit("local");
-  const saving = a.save(); await tick(); a.reply(0, {}, undefined, 401); await tick();
-  const logout = a.logout(); await tick();
-  a.reply(1, { access_token: "late", refresh_token: "late" }); await saving;
-  assert.equal(a.state.accessToken, null); assert.equal(a.storage.has("doitdoit:tokens"), false);
-  a.reply(2, {}); await logout;
-});
-
-test("reload arriving during an active interaction leaves the board and revision intact", async () => {
-  const a = app(); const loading = a.reload(); await tick();
-  a.state.interactionActive = true;
-  a.reply(0, snapshot("remote")); await loading;
-  assert.equal(a.state.data.Future[0].title, "base"); assert.equal(a.state.rev, "aaaaaaaaa");
-  assert.equal(a.get("sync-indicator").dataset.state, "idle");
-});
-
-
-test("capture keeps invalid input for correction and clears a successful capture", async () => {
-  const a = app();
-  const original = copy(a.state.data);
-  a.get("add-input").value = "!not-a-date book the dentist";
-  await a.get("add-form").emit("submit");
-  assert.equal(a.get("add-input").value, "!not-a-date book the dentist");
-  assert.deepEqual(copy(a.state.data), original);
-  assert.equal(a.state.dirty, false);
-  assert.ok(a.messages.some(message => message.includes("unknown target")));
-  await a.edit("book the dentist");
-  assert.equal(a.get("add-input").value, "");
-  assert.ok(a.state.data.Future.some(task => task.title === "book the dentist"));
-});
-
-test("sync status explains unsaved, syncing, saved and conflict states", async () => {
-  const a = app();
-  const indicator = a.get("sync-indicator");
-  assert.equal(indicator.textContent, "Not connected");
-  await a.edit("first");
-  assert.equal(indicator.textContent, "Unsaved");
-  const saving = a.save(); await tick();
-  assert.equal(indicator.textContent, "Syncing…");
-  a.reply(0, { rev: "bbbbbbbbb" }); await saving;
-  assert.equal(indicator.textContent, "Synced");
-  await a.edit("second");
-  const conflict = a.save(); await tick();
-  a.reply(1, {}, undefined, 409); await conflict;
-  assert.equal(indicator.textContent, "Conflict");
-  await a.edit("third");
-  assert.equal(indicator.textContent, "Conflict");
-});
-
-test("load migrates dated Future tasks with a conditional save and renders distant dates", async () => {
-  const a = app();
-  const legacy = { Future: [
-    { id: "scheduled", title: "Book a trip", due_date: "2099-06-21", notes: "Details\nMore", completed: false },
-    { id: "idea", title: "Learn pottery", completed: true },
-  ] };
-  const loading = a.reload(); await tick();
-  a.reply(0, legacy, "bbbbbbbbb"); await tick();
-  assert.equal(a.requests.length, 2);
-  const saved = JSON.parse(a.requests[1].options.body);
-  assert.deepEqual(saved.Future, [legacy.Future[1]]);
-  assert.deepEqual(saved["2099-06-21"], [legacy.Future[0]]);
-  const arg = JSON.parse(a.requests[1].options.headers["Dropbox-API-Arg"]);
-  assert.equal(arg.mode.update, "bbbbbbbbb");
-  a.reply(1, { rev: "ccccccccc" }); await loading;
-  assert.equal(a.state.dirty, false);
-  const sections = a.get("board").children[0].children;
-  const future = sections.find(section => section.dataset.key === "Future");
-  assert.equal(future.children[1].children.length, 1);
-  const distant = sections.find(section => section.dataset.key === "2099-06-21");
-  assert.equal(distant.children[1].children[0].dataset.id, "scheduled");
-  const again = a.reload(); await tick();
-  a.reply(2, saved, "ccccccccc"); await again;
-  assert.equal(a.requests.length, 3, "repeat load must not upload");
-});
-
-test("migration upload conflicts retain the migrated draft for recovery", async () => {
-  const a = app();
-  const loading = a.reload(); await tick();
-  a.reply(0, { Future: [{ id: "legacy", due_date: "2099-01-01" }] }); await tick();
-  a.reply(1, {}, undefined, 409); await loading;
-  assert.equal(a.state.conflict, true);
-  assert.equal(a.state.dirty, true);
-  assert.equal(a.state.data["2099-01-01"][0].id, "legacy");
-});
-
 
 test("notes icon opens large plain-text notes without expanding the task list or saving", async () => {
   const a = app();
@@ -322,7 +88,7 @@ test("notes icon opens large plain-text notes without expanding the task list or
     Future: [{ id: "idea", title: "Idea", notes }, { id: "empty", title: "Empty", notes: "" }, { id: "legacy", title: "Legacy" }],
     "2099-01-01": [{ id: "done", title: "Done", completed: true, notes: "Different notes" }],
   };
-  await a.edit("another idea");
+  await a.get("menu-dialog").emit("click", { target: { closest: () => ({ dataset: { act: "history" } }) } });
   const before = copy(a.state.data);
   const dirty = a.state.dirty;
   const sections = a.get("board").children[0].children;
@@ -351,4 +117,73 @@ test("notes icon opens large plain-text notes without expanding the task list or
   assert.deepEqual(copy(a.state.data), before);
   assert.equal(a.state.dirty, dirty);
   assert.equal(a.requests.length, 0);
+});
+
+test("service capture sends a retained command, then refreshes only after acknowledgement", async () => {
+  const a = app();
+  const saving = a.edit("new task"); await tick();
+  const command = JSON.parse(a.requests[0].options.body);
+  assert.equal(a.requests[0].options.method, "POST");
+  assert.equal(command.title, "new task");
+  assert.equal(command.scheduled_date, null);
+  assert.match(command.operation_id, /^[0-9a-f-]{36}$/);
+  assert.ok([...a.storage.keys()].some(key => key.includes(":pending:")));
+  assert.equal(a.state.data.Future.length, 1, "no optimistic task before acknowledgement");
+  a.reply(0, { task: { id: "new", revision: 1 } }); await tick();
+  a.reply(1, { tasks: [{ id: "new", title: "new task", revision: 1, status: "open", scheduled_date: null, position: "a" }], snapshot_cursor: 1, timezone: "Europe/London", next_cursor: null });
+  await saving;
+  assert.equal(a.state.data.Future[0].id, "new");
+  assert.equal(a.get("add-input").value, "");
+  assert.equal(a.state.dirty, false);
+});
+
+test("an uncertain save blocks further edits and survives refresh", async () => {
+  const a = app();
+  const saving = a.edit("retained"); await tick();
+  a.requests[0].reject(new Error("lost response")); await tick();
+  a.reply(1, { tasks: [], snapshot_cursor: 0, timezone: "Europe/London", next_cursor: null }); await saving;
+  assert.equal(a.state.dirty, true);
+  assert.match(a.get("sync-indicator").textContent, /retained/);
+  await a.edit("must wait");
+  assert.equal(a.requests.length, 2);
+  assert.equal(a.get("add-input").value, "!future must wait");
+});
+
+test("reads keep overdue dates and never send maintenance writes", async () => {
+  const a = app(); const loading = a.reload(); await tick();
+  a.reply(0, { tasks: [{ id: "old", title: "Still open", status: "open", revision: 1, scheduled_date: "2000-01-01", position: "a" }], snapshot_cursor: 1, timezone: "Pacific/Auckland", next_cursor: null });
+  await loading;
+  assert.equal(a.requests.length, 1);
+  assert.equal(a.state.data["2000-01-01"][0].scheduled_date, "2000-01-01");
+  const section = a.get("board").children[0].children.find(section => section.dataset.key === "2000-01-01");
+  assert.equal(section.children[0].children[0].textContent, "Overdue");
+  assert.equal(a.state.timezone, "Pacific/Auckland");
+});
+
+test("background reads cannot replace an active editor or a newer save", async () => {
+  const a = app(); const loading = a.reload(); await tick();
+  a.state.interactionActive = true;
+  a.reply(0, { tasks: [], snapshot_cursor: 0, timezone: "Europe/London", next_cursor: null }); await loading;
+  assert.equal(a.state.data.Future[0].title, "base");
+});
+
+test("invalid capture keeps input and sends nothing", async () => {
+  const a = app();
+  a.get("add-input").value = "!unknown task";
+  await a.get("add-form").emit("submit");
+  assert.equal(a.requests.length, 0);
+  assert.equal(a.get("add-input").value, "!unknown task");
+});
+
+test("completion sends the reviewed revision and leaves notes/date untouched", async () => {
+  const a = app();
+  a.state.data = { "2000-01-01": [{ id: "a", title: "Overdue", completed: false, revision: 7, notes: "Keep", due_date: "2000-01-01" }] };
+  const row = { dataset: { key: "2000-01-01", id: "a" } };
+  const button = { dataset: { action: "toggle" }, closest: () => row };
+  await a.get("board").emit("click", { target: { closest: () => button } }); await tick();
+  const body = JSON.parse(a.requests[0].options.body);
+  assert.equal(body.expected_revision, 7);
+  assert.deepEqual(body.changes, { status: "completed" });
+  a.reply(0, { task: { id: "a", revision: 8 } }); await tick();
+  a.reply(1, { tasks: [], snapshot_cursor: 1, timezone: "Europe/London", next_cursor: null }); await tick();
 });

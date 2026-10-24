@@ -4,8 +4,8 @@ Updated 2026-10-24. Implementation is on `main` after
 [PR #33](https://github.com/dtt101/doitdoit/pull/33). The Rust Worker and D1 schema
 are deployed; TUI service mode and reviewed import/export tooling are available.
 Encrypted off-machine backups are active and recovery-tested. The reviewed 69
-real tasks are imported and field-verified; JSON remains the default on this
-computer until the separate backend-selection step.
+real tasks are imported and field-verified. This computer now uses service mode;
+backend selection remains explicit on other computers.
 
 Use the [service guide](../service/README.md) for setup and clients,
 [Operations](../service/OPERATIONS.md) for production IDs/deployment/recovery,
@@ -32,7 +32,7 @@ checks; the published Linux binary starts and advertises service mode.
    `doitdoit service use`. Credentials and backend selection are per computer;
    never sync credentials between machines.
 6. Verify a task change from each TUI appears in the other clients and MCP.
-   Keep the Dropbox JSON/web companion separate from the authoritative service.
+   Keep the original Dropbox JSON as a stale recovery source; the web companion uses the service.
 
 Current step: import and `v0.9.0` publication complete; update/sign in/select the
 service on each computer. Owner confirmed a fresh build works in service mode.
@@ -76,11 +76,9 @@ Default-backend changes remain per-computer explicit actions.
   conflict/retry checks; verify macOS hands-on. Claude remains deferred.
 - Monitor daily backups, confirm Sunday retention, and repeat recovery drills.
   Keep the $0 paid-usage hard stop.
-- Decide the mobile web companion transition before retiring JSON. Proposed:
-  retain its static mobile UI, replace Dropbox I/O with the shared HTTP service
-  and GitHub OAuth, allow only its exact browser origin, and align overdue/retry
-  behavior with the TUI. Implementation/deployment is not yet authorized. Pause
-  edits through the Dropbox companion during cutover; it writes the old JSON.
+- Mobile companion now uses the shared service with GitHub OAuth, an exact browser
+  origin allowlist, retained revision-guarded commands and original-date Overdue
+  views. Verify owner sign-in and edits from the installed mobile app after rollout.
 
 Releases, tags, real-data import, backend cutover and plugin publication remain
 separate decisions. Do not infer authorization from completed infrastructure.
@@ -200,8 +198,8 @@ No automatic migration or dual writes. Follow the [operational cutover steps](..
   Keep original JSON and recovery files intact. After service edits, returning
   to JSON requires a fresh reviewed export.
 
-The Dropbox web companion remains a separate static JSON client. Do not imply
-it edits service tasks or continue using it as though its JSON were authoritative.
+The static web companion uses the shared service. Original Dropbox JSON is a
+recovery source, not a second live backend for the web app.
 
 ## Change validation
 

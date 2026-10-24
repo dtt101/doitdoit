@@ -4,110 +4,98 @@
   else root.DoitdoitSync = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
+  const clone = value => JSON.parse(JSON.stringify(value));
 
-  function asciiJson(value) {
-    return JSON.stringify(value).replace(/[\u0080-\uffff]/g, (char) =>
-      "\\u" + ("0000" + char.charCodeAt(0).toString(16)).slice(-4));
+  function toData(tasks) {
+    const data = {};
+    for (const task of [...tasks].sort((a, b) =>
+      (a.status === b.status ? 0 : a.status === "open" ? -1 : 1) ||
+      (a.position < b.position ? -1 : a.position > b.position ? 1 : a.id.localeCompare(b.id)))) {
+      if (task.deleted_at) continue;
+      const key = task.scheduled_date || "Future";
+      (data[key] ||= []).push({ ...task, completed: task.status === "completed", due_date: task.scheduled_date || "" });
+    }
+    return data;
   }
 
-  function revision(meta) {
-    if (!meta || typeof meta.rev !== "string" || !/^[0-9a-f]{9,}$/.test(meta.rev)) {
-      throw new Error("missing or invalid Dropbox revision metadata");
+  function createServiceStore({ origin, request, storage, locks = globalThis.navigator?.locks, uuid = () => crypto.randomUUID() }) {
+    const key = "doitdoit:service:pending:" + origin;
+    function read() {
+      const raw = storage.getItem(key);
+      if (!raw) return null;
+      const value = JSON.parse(raw);
+      if (value.origin !== origin || !value.body?.operation_id || !/^\/v1\/tasks(?:\/[0-9a-f-]+(?:\/(?:reorder|restore))?)?$/.test(value.path) ||
+          !["POST", "PATCH", "DELETE"].includes(value.method)) throw new Error("invalid retained command; download recovery before proceeding");
+      return value;
     }
-    return meta.rev;
-  }
-
-  async function downloadOnce(fetchImpl, token, path) {
-    const response = await fetchImpl("https://content.dropboxapi.com/2/files/download", {
-      method: "POST",
-      headers: { Authorization: "Bearer " + token, "Dropbox-API-Arg": asciiJson({ path }) },
-    });
-    if (response.status === 401) return { unauthorized: true };
-    if (response.status === 409) {
-      const body = await response.json().catch(() => null);
-      if (body?.error?.[".tag"] === "path" && body.error.path?.[".tag"] === "not_found") {
-        return { data: {}, rev: null };
-      }
-      throw new Error("download 409: Dropbox path could not be read");
-    }
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new Error("download " + response.status + " " + text.slice(0, 120));
-    }
-    const meta = JSON.parse(response.headers.get("Dropbox-API-Result") || "{}");
-    const rev = revision(meta);
-    const text = await response.text();
-    let data = {};
-    if (text.trim()) {
-      try { data = JSON.parse(text); }
-      catch { throw new Error("dropbox file is not valid JSON"); }
-    }
-    return { data, rev };
-  }
-
-  async function uploadOnce(fetchImpl, token, path, data, rev) {
-    if (rev !== null) revision({ rev });
-    const args = rev !== null
-      ? { path, mode: { ".tag": "update", update: rev }, mute: true, autorename: false, strict_conflict: true }
-      : { path, mode: "add", mute: true, autorename: false, strict_conflict: true };
-    const response = await fetchImpl("https://content.dropboxapi.com/2/files/upload", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer " + token,
-        "Dropbox-API-Arg": asciiJson(args),
-        "Content-Type": "application/octet-stream",
-      },
-      body: JSON.stringify(data, null, 2),
-    });
-    if (response.status === 401) return { unauthorized: true };
-    if (response.status === 409) {
-      const body = await response.json().catch(() => null);
-      throw Object.assign(new Error("conflict"), { conflict: true, body });
-    }
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new Error("upload " + response.status + " " + text.slice(0, 120));
-    }
-    const meta = await response.json();
-    return { rev: revision(meta) };
-  }
-
-  function recoverySnapshot(data, filePath, now = new Date()) {
-    return { savedAt: now.toISOString(), filePath, data: JSON.parse(JSON.stringify(data)) };
-  }
-
-  // The app owns authentication state; the store owns task-file transport.
-  function createJSONStore({ path, fetchImpl, ensureToken, refreshAccessToken, getToken }) {
-    // Null is a create-only expectation, allowed only after confirmed absence.
-    let missing = false;
-    let requestGeneration = 0;
-    async function authenticated(request) {
-      await ensureToken();
-      let result = await request();
-      if (result.unauthorized) {
-        await refreshAccessToken();
-        result = await request();
-        if (result.unauthorized) throw new Error("authentication failed; reconnect required");
-      }
-      return result;
+    function retain(value) {
+      const raw = JSON.stringify(value);
+      storage.setItem(key, raw);
+      if (storage.getItem(key) !== raw) throw new Error("retained save could not be verified; nothing was sent");
     }
     async function load() {
-      const request = ++requestGeneration;
-      const result = await authenticated(() => downloadOnce(fetchImpl, getToken(), path));
-      if (request === requestGeneration) missing = result.rev === null;
-      return result;
+      const tasks = [];
+      let after, cursor, timezone;
+      const seen = new Set();
+      do {
+        const query = new URLSearchParams({ limit: "100" });
+        if (after) { query.set("after", after); query.set("snapshot_cursor", String(cursor)); }
+        const page = await request("/v1/board?" + query);
+        if (!Array.isArray(page.tasks) || !Number.isSafeInteger(page.snapshot_cursor) || typeof page.timezone !== "string" ||
+            (cursor !== undefined && (cursor !== page.snapshot_cursor || timezone !== page.timezone))) throw new Error("invalid service snapshot");
+        cursor = page.snapshot_cursor; timezone = page.timezone;
+        tasks.push(...page.tasks);
+        after = page.next_cursor;
+        if (after && seen.has(after)) throw new Error("repeated service snapshot page");
+        seen.add(after);
+      } while (after);
+      return { data: toData(tasks), timezone };
     }
-    async function save(data, rev) {
-      if (rev === null && !missing) throw new Error("load the Dropbox file before creating it");
-      requestGeneration++; // Older downloads cannot change the creation expectation.
-      // Detach before authentication yields, including any refresh/retry.
-      const snapshot = JSON.parse(JSON.stringify(data));
-      const result = await authenticated(() => uploadOnce(fetchImpl, getToken(), path, snapshot, rev));
-      missing = false;
-      return result.rev;
+    async function retryCommand() {
+      const command = read();
+      if (!command) return null;
+      if (command.rejected) throw new Error("This save was rejected. Download recovery, then review the latest tasks.");
+      let result;
+      try {
+        result = await request(command.path, { method: command.method, body: JSON.stringify(command.body) });
+      } catch (err) {
+        // These responses establish that no command was accepted. A lost response,
+        // timeout, 401 or server error remains uncertain and retains identical bytes.
+        if ([400, 403, 404, 409, 413, 415, 422].includes(err.status)) {
+          command.rejected = true;
+          command.error = { code: err.code, message: err.message, current: err.current };
+          retain(command);
+        }
+        throw err;
+      }
+      if (!result?.task?.id || !Number.isSafeInteger(result.task.revision)) throw new Error("invalid save acknowledgement; retry retained save");
+      storage.removeItem(key);
+      if (storage.getItem(key) !== null) throw new Error("save acknowledged; retained command could not be cleared");
+      return result.task;
     }
-    return { load, save, recovery: (data, now) => recoverySnapshot(data, path, now) };
+    async function mutate(method, path, body) {
+      if (read()) throw new Error("Resolve the retained save from the menu first.");
+      retain({ origin, method, path, body: { ...clone(body), operation_id: uuid() }, savedAt: new Date().toISOString() });
+      return retryCommand();
+    }
+    function reviewRejected() {
+      const command = read();
+      if (!command?.rejected) throw new Error("The save may have succeeded. Retry it before making further changes.");
+      const archive = key + ":recovery";
+      const previous = JSON.parse(storage.getItem(archive) || "[]");
+      const bytes = JSON.stringify([...previous, command]);
+      storage.setItem(archive, bytes);
+      if (storage.getItem(archive) !== bytes) throw new Error("recovery copy could not be verified");
+      storage.removeItem(key);
+    }
+    const locked = fn => locks?.request ? locks.request(key, fn) : fn();
+    return { load, mutate: (...args) => locked(() => mutate(...args)), retry: () => locked(retryCommand), pending: read,
+      reviewRejected: () => locked(reviewRejected),
+      recovery: () => {
+        const pending = read();
+        const rejected = JSON.parse(storage.getItem(key + ":recovery") || "[]");
+        return pending || rejected.length ? { pending, rejected } : null;
+      } };
   }
-
-  return { asciiJson, downloadOnce, uploadOnce, recoverySnapshot, createJSONStore };
+  return { toData, createServiceStore };
 });

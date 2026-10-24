@@ -26,6 +26,14 @@ Discovery advertises those endpoints and S256 PKCE. The canonical resource is
 `SERVICE_ORIGIN`; scopes are `tasks:read`, `tasks:write` and `offline_access`.
 Confidential clients and Client ID Metadata Documents are not supported.
 
+The static web companion uses the same OAuth and task endpoints. `BROWSER_ORIGIN`
+allows one exact browser origin for `/oauth/register`, `/oauth/token`,
+`/oauth/revoke`, `/v1/tasks` (and task actions), `/v1/board` and `/v1/changes`.
+Preflights allow GET/POST/PATCH/DELETE and Authorization/Content-Type only.
+Responses include the matching allow-origin header, never credentialed CORS.
+Consent, GitHub callbacks, MCP and imports retain their same-origin restriction;
+native clients without Origin are unchanged.
+
 Access tokens last 15 minutes; rotating refresh tokens last 30 days. Replaying a
 consumed credential revokes the grant. Revocation invalidates all of its access
 and refresh tokens. Credential digests, not raw tokens, are stored in D1.

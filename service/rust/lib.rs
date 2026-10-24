@@ -43,6 +43,24 @@ pub async fn fetch(mut request: Request, env: Env, _context: Context) -> Result<
             response
         }
     };
+    if browser_origin(&request, &env, &origin).is_some() {
+        response.headers_mut().set(
+            "Access-Control-Allow-Origin",
+            &auth::var(&env, "BROWSER_ORIGIN").unwrap_or_default(),
+        )?;
+        response.headers_mut().set(
+            "Access-Control-Allow-Methods",
+            "GET, POST, PATCH, DELETE, OPTIONS",
+        )?;
+        response.headers_mut().set(
+            "Access-Control-Allow-Headers",
+            "Authorization, Content-Type",
+        )?;
+        response
+            .headers_mut()
+            .set("Access-Control-Expose-Headers", "WWW-Authenticate")?;
+    }
+    response.headers_mut().set("Vary", "Origin")?;
     let consent_page = request.method() == Method::Get
         && request.path() == "/authorize"
         && response.status_code() == 200;
@@ -66,6 +84,31 @@ pub async fn fetch(mut request: Request, env: Env, _context: Context) -> Result<
             .set("Referrer-Policy", "same-origin")?;
     }
     Ok(response)
+}
+// Browser access is deliberately narrower than the native/MCP API. Consent and
+// upstream callbacks remain same-origin; cookies are never enabled by CORS.
+fn browser_origin(request: &Request, env: &Env, service_origin: &str) -> Option<String> {
+    let allowed = auth::var(env, "BROWSER_ORIGIN").ok()?;
+    let parsed = worker::Url::parse(&allowed).ok()?;
+    if parsed.origin().ascii_serialization() != allowed
+        || allowed == service_origin
+        || !(parsed.scheme() == "https"
+            || (parsed.scheme() == "http" && parsed.host_str() == Some("localhost")))
+        || request.headers().get("Origin").ok().flatten().as_deref() != Some(allowed.as_str())
+    {
+        return None;
+    }
+    let path = request.path();
+    if matches!(
+        path.as_str(),
+        "/oauth/register" | "/oauth/token" | "/oauth/revoke" | "/v1/board" | "/v1/changes"
+    ) || path == "/v1/tasks"
+        || path.starts_with("/v1/tasks/")
+    {
+        Some(allowed)
+    } else {
+        None
+    }
 }
 async fn handle(request: &mut Request, env: &Env, origin: &str) -> ApiResult<Response> {
     let config = worker::Url::parse(origin).map_err(|_| ServiceError::internal())?;
@@ -94,13 +137,40 @@ async fn handle(request: &mut Request, env: &Env, origin: &str) -> ApiResult<Res
         .headers()
         .get("Origin")
         .map_err(|_| ServiceError::invalid())?
-        .is_some_and(|o| o != origin)
+        .is_some_and(|o| o != origin && browser_origin(request, env, origin).is_none())
     {
         return Err(ServiceError::new(
             403,
             "invalid_origin",
             "Cross-origin browser requests are not allowed.",
         ));
+    }
+    if request.method() == Method::Options && browser_origin(request, env, origin).is_some() {
+        let method = request
+            .headers()
+            .get("Access-Control-Request-Method")
+            .map_err(|_| ServiceError::invalid())?
+            .unwrap_or_default();
+        let headers = request
+            .headers()
+            .get("Access-Control-Request-Headers")
+            .map_err(|_| ServiceError::invalid())?
+            .unwrap_or_default();
+        if !matches!(method.as_str(), "GET" | "POST" | "PATCH" | "DELETE")
+            || headers
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .any(|s| {
+                    !s.eq_ignore_ascii_case("authorization")
+                        && !s.eq_ignore_ascii_case("content-type")
+                })
+        {
+            return Err(ServiceError::invalid());
+        }
+        return Response::empty()
+            .map(|r| r.with_status(204))
+            .map_err(|_| ServiceError::internal());
     }
     let path = request.path();
     if path.starts_with("/oauth/") || matches!(path.as_str(), "/authorize" | "/callback") {

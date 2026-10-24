@@ -33,7 +33,8 @@ recreating it. CLI captures can be resumed with
 `go run . service retry --file RETAINED_COMMAND`.
 
 After service edits, the old JSON file is stale. Export current service data
-before switching back. The Dropbox web companion only edits its separate JSON.
+before switching back. The [mobile web companion](../web/README.md) uses the same
+service as the TUI and MCP; sign in with GitHub.
 
 ## Connect an assistant
 

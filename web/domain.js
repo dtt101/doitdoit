@@ -50,8 +50,6 @@
       : target.kind === "custom" ? parseDay(target.date) : now;
     if (!date) return { error: "choose a valid date" };
     date = startOfDay(date);
-    const today = startOfDay(now);
-    if (date < today) date = today;
     const due = todayStr(date);
     return { key: due, due };
   }
@@ -62,58 +60,6 @@
     if (due === todayStr(now)) return { kind: "today", date: due };
     if (due === todayStr(addDays(now, 1))) return { kind: "tomorrow", date: due };
     return { kind: "custom", date: due };
-  }
-
-  function rollOverIncompleteTasks(data, now = new Date()) {
-    const today = todayStr(now);
-    const todayDate = startOfDay(now);
-    const toRoll = [];
-    const datesToRemove = [];
-    let changed = false;
-    for (const dateStr of Object.keys(data)) {
-      if (dateStr === "Future") continue;
-      const parsed = parseDay(dateStr);
-      if (!parsed || parsed >= todayDate) continue;
-      const remaining = [];
-      for (const task of data[dateStr]) {
-        if (!task.completed) { task.due_date = today; toRoll.push(task); }
-        else remaining.push(task);
-      }
-      if (remaining.length) data[dateStr] = remaining;
-      else datesToRemove.push(dateStr);
-    }
-    if (toRoll.length) { data[today] = (data[today] || []).concat(toRoll); changed = true; }
-    for (const date of datesToRemove) { delete data[date]; changed = true; }
-    if (data[today] && data[today].length === 0) delete data[today];
-    if (groupTasksByCompletion(data)) changed = true;
-    return changed;
-  }
-
-  function pruneOldTasks(data, retentionDays, now = new Date()) {
-    if (!Number.isInteger(retentionDays) || retentionDays <= 0) return false;
-    const cutoff = todayStr(addDays(now, -retentionDays));
-    let changed = false;
-    for (const key of Object.keys(data)) {
-      if (key === "Future") {
-        const tasks = data[key] || [];
-        const active = tasks.filter((task) => !task.completed);
-        if (active.length !== tasks.length) { data[key] = active; changed = true; }
-      } else if (key < cutoff) { delete data[key]; changed = true; }
-    }
-    return changed;
-  }
-
-  function migrateDatedFutureTasks(data) {
-    const future = data.Future || [];
-    const remain = [];
-    let changed = false;
-    for (const task of future) {
-      if (!parseDay(task.due_date)) { remain.push(task); continue; }
-      insertTask(data, task.due_date, task);
-      changed = true;
-    }
-    if (changed) data.Future = remain;
-    return changed;
   }
 
   function parseAddInput(raw, selectedTarget, now = new Date()) {
@@ -202,7 +148,7 @@
   }
 
   return { todayStr, parseDay, addDays, startOfDay, storageTarget, targetForTask,
-    rollOverIncompleteTasks, pruneOldTasks, migrateDatedFutureTasks, parseAddInput,
+    parseAddInput,
     insertBeforeCompleted, groupTasksByCompletion, findTask, insertTask, editTask,
     toggleTask, deleteTask, moveTask };
 });

@@ -1,176 +1,71 @@
 "use strict";
-
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const Sync = require("./sync.js");
-
-function response(status, body, headers = {}) {
-  return {
-    status,
-    ok: status >= 200 && status < 300,
-    headers: { get: (name) => headers[name] || null },
-    text: async () => typeof body === "string" ? body : JSON.stringify(body),
-    json: async () => typeof body === "string" ? JSON.parse(body) : body,
-  };
+const { createServiceStore, toData } = require("./sync.js");
+const origin = "https://service.example";
+const task = (extra = {}) => ({ id: "a", title: "Task", status: "open", scheduled_date: "2000-01-01", revision: 1, position: "a", notes: "café\nDetails", ...extra });
+function fixture(request, storage = new Map()) {
+  const adapter = { getItem: k => storage.get(k) ?? null, setItem: (k,v) => storage.set(k,v), removeItem: k => storage.delete(k) };
+  return { store: createServiceStore({ origin, request, storage: adapter, locks: null, uuid: () => "operation-1" }), storage, adapter };
 }
-
-test("revision upload sends update mode and returns the new revision", async () => {
-  let options;
-  const fetchImpl = async (_url, opts) => { options = opts; return response(200, { rev: "bbbbbbbbb" }); };
-  const result = await Sync.uploadOnce(fetchImpl, "token", "/tasks.json", { Future: [] }, "aaaaaaaaa");
-  assert.equal(result.rev, "bbbbbbbbb");
-  assert.match(options.headers["Dropbox-API-Arg"], /update/);
-  assert.match(options.headers["Dropbox-API-Arg"], /aaaaaaaaa/);
+test("snapshot pagination fixes its cursor, preserves past dates and excludes deleted rows", async () => {
+  const urls = [];
+  const a = fixture(async url => {
+    urls.push(url);
+    return { tasks: urls.length === 1 ? [task()] : [task({ id: "b", scheduled_date: null }), task({ id: "c", deleted_at: "2026-01-01" })], timezone: "Europe/London", snapshot_cursor: 7, next_cursor: urls.length === 1 ? "a" : null };
+  });
+  const result = await a.store.load();
+  assert.equal(result.data["2000-01-01"][0].notes, "café\nDetails");
+  assert.equal(result.data.Future[0].id, "b");
+  assert.match(urls[1], /snapshot_cursor=7/);
+  assert.equal(Object.values(result.data).flat().length, 2);
 });
-
-test("upload conflicts are surfaced without replacing local data", async () => {
-  const local = { Future: [{ id: "1", title: "local" }] };
-  const fetchImpl = async () => response(409, { error_summary: "conflict" });
-  await assert.rejects(
-    Sync.uploadOnce(fetchImpl, "token", "/tasks.json", local, "aaaaaaaaa"),
-    (error) => error.conflict === true,
-  );
-  const recovery = Sync.recoverySnapshot(local, "/tasks.json", new Date("2026-08-26T12:00:00Z"));
-  local.Future[0].title = "changed later";
-  assert.equal(recovery.data.Future[0].title, "local");
+test("sorts only by service status, opaque position and ID", () => {
+  assert.deepEqual(toData([task({ id: "done", status: "completed", position: "0" }), task({ id: "b", position: "b" }), task()])["2000-01-01"].map(t => t.id), ["a", "b", "done"]);
 });
-
-test("download handles missing files and invalid JSON", async () => {
-  assert.deepEqual(await Sync.downloadOnce(async () => response(409, { error: { ".tag": "path", path: { ".tag": "not_found" } } }), "t", "/x"), { data: {}, rev: null });
-  await assert.rejects(
-    Sync.downloadOnce(async () => response(200, "{broken", { "Dropbox-API-Result": '{"rev":"111111111"}' }), "t", "/x"),
-    /not valid JSON/,
-  );
-});
-
-test("JSON store refreshes authentication while preserving path and revision", async () => {
-  let token = "aaaaaaaaa";
-  let refreshes = 0;
+test("lost acknowledgements survive recreation and retry identical commands", async () => {
   const calls = [];
-  const store = Sync.createJSONStore({
-    path: "/tasks.json", getToken: () => token, ensureToken: async () => {},
-    refreshAccessToken: async () => { token = "bbbbbbbbb"; refreshes++; },
-    fetchImpl: async (url, options) => {
-      calls.push({ url, options });
-      if (options.headers.Authorization === "Bearer aaaaaaaaa") return response(401, "");
-      if (url.endsWith("download")) return response(200, { Future: [] }, { "Dropbox-API-Result": '{"rev":"111111111"}' });
-      return response(200, { rev: "222222222" });
-    },
-  });
-  const snapshot = await store.load();
-  assert.deepEqual(snapshot, { data: { Future: [] }, rev: "111111111" });
-  token = "aaaaaaaaa";
-  assert.equal(await store.save(snapshot.data, snapshot.rev), "222222222");
-  assert.equal(refreshes, 2);
-  for (const { url, options } of calls) {
-    const args = JSON.parse(options.headers["Dropbox-API-Arg"]);
-    assert.equal(args.path, "/tasks.json");
-    if (url.endsWith("upload")) assert.deepEqual(args.mode, { ".tag": "update", update: "111111111" });
-  }
+  const a = fixture(async (path, options) => { calls.push([path, options]); throw new Error("offline"); });
+  await assert.rejects(a.store.mutate("PATCH", "/v1/tasks/a", { expected_revision: 1, changes: { status: "completed" } }), /offline/);
+  assert.ok(a.store.pending());
+  await assert.rejects(a.store.mutate("POST", "/v1/tasks", { title: "duplicate" }), /retained/);
+  assert.throws(() => a.store.reviewRejected(), /may have succeeded/);
+  const b = fixture(async (path, options) => { calls.push([path, options]); return { task: task() }; }, a.storage);
+  await b.store.retry();
+  assert.deepEqual(calls[1], calls[0]);
+  assert.equal(b.store.pending(), null);
+});
+test("a rejected revision requires explicit review and keeps the original command", async () => {
+  const a = fixture(async () => { throw Object.assign(new Error("Changed remotely"), { status: 409, code: "revision_conflict", current: task({ revision: 2 }) }); });
+  await assert.rejects(a.store.mutate("DELETE", "/v1/tasks/a", { expected_revision: 1 }), /remotely/);
+  await assert.rejects(a.store.retry(), /rejected/);
+  a.store.reviewRejected();
+  assert.equal(a.store.pending(), null);
+  assert.equal(a.store.recovery().rejected[0].error.current.revision, 2);
+});
+test("storage failure prevents sending and failed recovery blocks discard", async () => {
+  let calls = 0;
+  const a = fixture(async () => { calls++; });
+  a.adapter.setItem = () => { throw new Error("quota"); };
+  await assert.rejects(a.store.mutate("POST", "/v1/tasks", { title: "Safe" }), /quota/);
+  assert.equal(calls, 0);
+});
+test("malformed acknowledgement stays retained", async () => {
+  const a = fixture(async () => ({}));
+  await assert.rejects(a.store.mutate("POST", "/v1/tasks", { title: "Safe" }), /acknowledgement/);
+  assert.ok(a.store.pending());
 });
 
-test("JSON store propagates conflicts and creates a detached recovery snapshot", async () => {
-  const store = Sync.createJSONStore({
-    path: "/tasks.json", getToken: () => "token", ensureToken: async () => {},
-    refreshAccessToken: async () => assert.fail("unexpected refresh"),
-    fetchImpl: async () => response(409, { error_summary: "conflict" }),
-  });
-  const data = { Future: [{ id: "a", title: "local" }] };
-  await assert.rejects(store.save(data, "aaaaaaaaa"), error => error.conflict);
-  const snapshot = store.recovery(data, new Date("2026-09-07T12:00:00Z"));
-  data.Future[0].title = "changed";
-  assert.equal(snapshot.data.Future[0].title, "local");
-  assert.equal(snapshot.filePath, "/tasks.json");
+test("recovery write failure cannot discard a rejected save", async () => {
+  const a = fixture(async () => { throw Object.assign(new Error("conflict"), { status: 409 }); });
+  await assert.rejects(a.store.mutate("PATCH", "/v1/tasks/a", { expected_revision: 1, changes: { title: "Draft" } }));
+  a.adapter.setItem = () => { throw new Error("quota"); };
+  assert.throws(() => a.store.reviewRejected(), /quota/);
+  assert.equal(a.store.pending().body.changes.title, "Draft");
 });
 
-for (const meta of [{}, null, { rev: null }, { rev: 123 }, { rev: "" }, { rev: "bad" }, { rev: "12345678g" }]) {
-  test(`invalid revision metadata is rejected on both reads and writes: ${JSON.stringify(meta)}`, async () => {
-    await assert.rejects(Sync.downloadOnce(async () => response(200, {}, {
-      "Dropbox-API-Result": JSON.stringify(meta),
-    }), "t", "/x"), /revision metadata/);
-    await assert.rejects(Sync.uploadOnce(async () => response(200, meta), "t", "/x", {}, "aaaaaaaaa"), /revision metadata/);
-  });
-}
-
-test("only structured path/not_found is absence, all other 409 responses fail", async () => {
-  for (const body of [{}, { error_summary: "path/not_found/..." },
-    { error: { ".tag": "path", path: { ".tag": "not_file" } } },
-    { error: { ".tag": "path", path: { ".tag": "restricted_content" } } }, "invalid JSON"]) {
-    await assert.rejects(Sync.downloadOnce(async () => response(409, body), "t", "/x"), /download 409/);
-  }
-  for (const metadata of ["{broken", "[]", "{}"]) {
-    await assert.rejects(Sync.downloadOnce(async () => response(200, {}, {
-      "Dropbox-API-Result": metadata,
-    }), "t", "/x"));
-  }
-});
-
-test("confirmed missing file uses strict create-only mode and a concurrent creator conflicts", async () => {
-  const calls = [];
-  const store = Sync.createJSONStore({
-    path: "/x", ensureToken: async () => {}, refreshAccessToken: async () => {}, getToken: () => "t",
-    fetchImpl: async (url, options) => {
-      calls.push(options);
-      if (url.endsWith("download")) return response(409, { error: { ".tag": "path", path: { ".tag": "not_found" } } });
-      const args = JSON.parse(options.headers["Dropbox-API-Arg"]);
-      assert.equal(args.mode, "add"); assert.equal(args.autorename, false); assert.equal(args.strict_conflict, true);
-      return response(409, { error: { ".tag": "path", path: { ".tag": "conflict" } } });
-    },
-  });
-  await assert.rejects(store.save({}, null), /before creating/); assert.equal(calls.length, 0);
-  const loaded = await store.load(); assert.equal(loaded.rev, null);
-  await assert.rejects(store.save({ Future: [] }, loaded.rev), err => err.conflict);
-});
-
-test("revision updates are strict and invalid write expectations never reach the network", async () => {
-  const fetchImpl = async (_url, options) => {
-    const args = JSON.parse(options.headers["Dropbox-API-Arg"]);
-    assert.deepEqual(args.mode, { ".tag": "update", update: "aaaaaaaaa" });
-    assert.equal(args.strict_conflict, true); assert.equal(args.autorename, false);
-    return response(200, { rev: "bbbbbbbbb" });
-  };
-  await Sync.uploadOnce(fetchImpl, "t", "/x", {}, "aaaaaaaaa");
-  for (const rev of [undefined, "", 12, "malformed"]) {
-    await assert.rejects(Sync.uploadOnce(() => assert.fail("unexpected upload"), "t", "/x", {}, rev), /revision/);
-  }
-});
-
-test("authentication retries are bounded and keep the original detached upload", async () => {
-  let release;
-  const wait = new Promise(resolve => { release = resolve; });
-  let calls = 0, refreshes = 0;
-  const data = { Future: [{ title: "A" }] };
-  const store = Sync.createJSONStore({
-    path: "/x", ensureToken: () => wait, getToken: () => "t",
-    refreshAccessToken: async () => { refreshes++; },
-    fetchImpl: async (_url, options) => {
-      calls++;
-      assert.equal(JSON.parse(options.body).Future[0].title, "A");
-      return response(401, {});
-    },
-  });
-  const saving = store.save(data, "aaaaaaaaa"); data.Future[0].title = "B"; release();
-  await assert.rejects(saving, /authentication failed/);
-  assert.equal(calls, 2); assert.equal(refreshes, 1);
-});
-
-test("stale overlapping download cannot revoke confirmed creation context", async () => {
-  const pending = [];
-  const store = Sync.createJSONStore({
-    path: "/x", ensureToken: async () => {}, getToken: () => "t", refreshAccessToken: async () => {},
-    fetchImpl: (url, options) => {
-      if (url.endsWith("upload")) {
-        assert.equal(JSON.parse(options.headers["Dropbox-API-Arg"]).mode, "add");
-        return Promise.resolve(response(200, { rev: "ccccccccc" }));
-      }
-      return new Promise(resolve => pending.push(resolve));
-    },
-  });
-  const first = store.load(), latest = store.load();
-  await new Promise(resolve => setImmediate(resolve));
-  pending[1](response(409, { error: { ".tag": "path", path: { ".tag": "not_found" } } }));
-  const loaded = await latest;
-  pending[0](response(200, {}, { "Dropbox-API-Result": '{"rev":"aaaaaaaaa"}' }));
-  await first;
-  assert.equal(await store.save(loaded.data, loaded.rev), "ccccccccc");
+test("a changed snapshot cursor is rejected instead of mixing pages", async () => {
+  let calls = 0;
+  const a = fixture(async () => ({ tasks: [task()], snapshot_cursor: ++calls, timezone: "Europe/London", next_cursor: calls === 1 ? "a" : null }));
+  await assert.rejects(a.store.load(), /snapshot/);
 });
