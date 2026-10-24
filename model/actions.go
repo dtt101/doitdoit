@@ -10,13 +10,16 @@ import (
 )
 
 func (m *Model) addTask(title string) {
+	if m.cloud != nil && m.ShowOverdue {
+		m.returnToToday()
+	}
 	m.captureMoveUndo()
 	title = strings.TrimSpace(title)
 	currentDate := m.getCurrentKey()
 	newTask := Task{
-		ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
+		ID:        fmt.Sprintf("%d", m.serviceNow().UnixNano()),
 		Title:     title,
-		CreatedAt: time.Now(),
+		CreatedAt: m.serviceNow(),
 		Completed: false,
 	}
 
@@ -117,7 +120,7 @@ func (m *Model) reorderTask(direction int) bool {
 	}
 	// Reordering stays within the displayed section, including Ideas and
 	// invalid-date recovery rows in Future. Completion grouping remains intact.
-	if newRowIdx < 0 || tasks[m.RowIdx].Completed != tasks[newRowIdx].Completed {
+	if newRowIdx < 0 || tasks[m.RowIdx].Completed != tasks[newRowIdx].Completed || (m.cloud != nil && tasks[m.RowIdx].DueDate != tasks[newRowIdx].DueDate) {
 		return false
 	}
 
@@ -128,12 +131,12 @@ func (m *Model) reorderTask(direction int) bool {
 }
 
 func (m Model) moveBaseDate() time.Time {
-	if !m.ShowFuture && m.ColIdx >= 0 && m.ColIdx < len(m.dateKeys) {
+	if !m.ShowFuture && !m.ShowOverdue && !m.ShowDeleted && m.ColIdx >= 0 && m.ColIdx < len(m.dateKeys) {
 		if parsed, err := parseDate(m.dateKeys[m.ColIdx]); err == nil {
 			return parsed
 		}
 	}
-	return startOfDay(time.Now())
+	return startOfDay(m.serviceNow())
 }
 
 func (m Model) relativeMoveTarget(days int) moveTarget {
@@ -155,8 +158,8 @@ func (m *Model) scheduleTask(target moveTarget) bool {
 		if err != nil {
 			return false
 		}
-		today := startOfDay(time.Now())
-		if parsed.Before(today) {
+		today := startOfDay(m.serviceNow())
+		if m.cloud == nil && parsed.Before(today) {
 			parsed = today
 		}
 		dueDate = parsed.Format(dateLayout)

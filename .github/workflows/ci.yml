@@ -62,3 +62,39 @@ jobs:
           distribution: goreleaser
           version: v2.17.1
           args: check
+
+  service:
+    runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: 1.93.1
+    defaults:
+      run:
+        working-directory: service
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: service/package-lock.json
+
+      - name: Set up Rust
+        run: rustup toolchain install 1.93.1 --profile minimal --component rustfmt --component clippy --target wasm32-unknown-unknown
+
+      - name: Install pinned Rust Worker build helper
+        run: make setup
+
+      - name: Check Rust formatting, lints and contracts
+        run: make check-rust
+
+      - name: Test local Worker and D1
+        run: make test
+
+      - name: Test backup validation and encryption
+        run: make test-backup
+
+      - name: Bundle Worker without deploying
+        run: make bundle

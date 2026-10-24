@@ -33,3 +33,18 @@ dist/
 
 # mise local
 .mise.local.toml
+
+# Cloudflare service dependencies, local databases and credentials
+service/node_modules/
+service/.wrangler/
+service/.dev.vars*
+service/.env*
+service/coverage/
+
+# Rust Worker build artifacts and local build helpers
+service/target/
+service/build/
+service/.tools/
+
+service/.cloudflare/
+service/.backups/

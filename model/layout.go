@@ -2,7 +2,6 @@ package model
 
 import (
 	"strings"
-	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/lipgloss/v2"
@@ -47,7 +46,7 @@ func (m Model) footerStyle() lipgloss.Style {
 
 // Choose columns for presentation only; resizing never changes task storage.
 func (m Model) visibleColumnCount() int {
-	if m.ShowFuture || m.FocusToday {
+	if m.ShowFuture || m.ShowOverdue || m.ShowDeleted || m.FocusToday {
 		return 1
 	}
 	count := max(1, len(m.dateKeys))
@@ -71,6 +70,12 @@ func (m Model) visibleColumnStart() int {
 }
 
 func (m Model) visibleKeys() []string {
+	if m.ShowDeleted {
+		return []string{"Deleted"}
+	}
+	if m.ShowOverdue {
+		return []string{"Overdue"}
+	}
 	if m.ShowFuture {
 		return []string{"Future"}
 	}
@@ -161,8 +166,10 @@ func (m *Model) syncViewport() {
 }
 
 func (m *Model) returnToToday() {
-	wasToday := !m.ShowFuture && len(m.dateKeys) > m.ColIdx && m.dateKeys[m.ColIdx] == time.Now().Format(dateLayout)
+	wasToday := !m.ShowFuture && !m.ShowOverdue && !m.ShowDeleted && m.ColIdx >= 0 && len(m.dateKeys) > m.ColIdx && m.dateKeys[m.ColIdx] == m.serviceNow().Format(dateLayout)
 	m.ShowFuture = false
+	m.ShowOverdue = false
+	m.ShowDeleted = false
 	m.updateDateKeys()
 	m.ColIdx, m.columnOffset = 0, 0
 	if !wasToday {

@@ -2,7 +2,7 @@
 
 **A fast, keyboard-first task manager for your terminal — with your tasks kept in a file you own.**
 
-`doitdoit` gives you a calm, multi-day view of what is in front of you, gets out of the way when you are working, and makes sure unfinished tasks do not disappear into yesterday. There is no account, database, or hosted backend: the entire backend is one readable JSON file.
+`doitdoit` gives you a calm, multi-day view of what is in front of you, gets out of the way when you are working, and makes sure unfinished tasks do not disappear into yesterday. By default, the backend is one readable JSON file with no account required. This branch also offers an explicitly selected [Cloudflare backend](#experimental-cloudflare-backend) for the TUI and MCP clients.
 
 Supported desktop platforms are **macOS and Linux**, with **Omarchy as a first-class Linux platform**. Windows is no longer supported. Release archives cover Intel/AMD 64-bit (`amd64`) and ARM64 (`arm64`) on both supported operating systems.
 
@@ -13,8 +13,8 @@ Put that file in Dropbox, iCloud Drive, or Google Drive and your task list can t
 ## Why doitdoit?
 
 - **See the days ahead.** Work from a clean, scrolling multi-day view instead of a long, undifferentiated list. Every day has its own column.
-- **Keep your data yours.** Everything lives in a single portable, human-readable JSON file. Back it up, inspect it, script against it, or sync it with the service you already use.
-- **Never lose an unfinished task.** Anything incomplete automatically rolls forward to Today. You choose whether completed history is kept forever or pruned after a positive number of days.
+- **Keep your data yours.** The default backend is a single portable, human-readable JSON file. Back it up, inspect it, script against it, or sync it with the service you already use. The optional service provides explicit export.
+- **Never lose an unfinished task.** In JSON mode, anything incomplete automatically rolls forward to Today. You choose whether completed history is kept forever or pruned after a positive number of days. Service mode keeps the original date and shows unfinished past tasks as overdue, with history retained.
 - **Plan quickly from the keyboard.** Add, edit, complete, delete, copy, reorder, schedule, repeat a move, and undo without leaving the terminal.
 - **Capture now, decide later.** Drop ideas into Future, then schedule them for tomorrow, the next seven days, or an exact date when you are ready.
 - **Looks at home on Omarchy.** `doitdoit` follows your active Omarchy theme and includes every stock Omarchy 4 (Quattro) palette.
@@ -362,3 +362,57 @@ On Omarchy, `omarchy update` also updates globally configured mise tools. Merely
 This software is licensed under the [MIT License](./LICENSE). Third-party attributions and licence terms are in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
 
 Uninstalling intentionally leaves your task JSON file and `~/.doitdoit_config.json` in place; back them up and remove them manually only if you no longer want the data.
+
+
+### Experimental Cloudflare backend
+
+A Rust/WASM Cloudflare Worker exposes HTTP and authenticated MCP endpoints,
+with D1 storage. The Go TUI and capture command can explicitly select this
+backend. JSON remains the default; there is no automatic migration or dual write.
+
+From this checkout, sign in and try the service for one session:
+
+```sh
+go run . service login
+go run . --service https://doitdoit-service.davidt-91d.workers.dev
+```
+
+Login opens GitHub through the hosted service and returns to a temporary local
+callback. It does not require `make dev`. Private credentials and pending commands
+live under your OS configuration directory in `doitdoit/services/`.
+In service mode, `o` shows open overdue tasks with their original dates, `x`
+shows deleted tasks (`enter` restores), `r` refreshes or retries a retained write,
+and `u` sends a revision-guarded inverse operation. Reads and midnight never
+reschedule tasks. A conflict keeps the attempted command for review.
+Add from Overdue switches to Today before entry. For a retained failed command,
+`d` opens review and a second `d` archives it privately. Archiving does not cancel
+a possible server write; check its outcome before recreating an uncertain task.
+
+CLI capture retains its private draft before network requests. Explicit dates
+and undated captures skip timezone lookup; Today/Tomorrow use the original
+capture instant in the owner timezone. `service retry --file RETAINED_COMMAND`
+resumes an unresolved capture or retries the same resolved date and operation ID.
+
+`service use` explicitly selects the signed-in service for future launches;
+`service use-json` selects JSON. `--file PATH` still explicitly selects JSON.
+Do not switch back to an old JSON file after service edits expecting it to
+contain those edits: export and review the current service data first.
+
+Export and import are separate, explicit commands:
+
+```sh
+go run . service export --out /path/to/new-private-export.json
+go run . service import --file /path/to/tasks.json --dry-run
+# Review the frozen source, mappings, issues and any preserved recovery files.
+go run . service import --file /path/to/tasks.json --apply --reviewed-recovery
+```
+
+Export refuses to overwrite an existing file. Import preserves source bytes,
+notes, dates, completion and ordering; it reports invalid or ambiguous source
+data and requires review of `.bak`/conflict/recovery material. Repeating the same
+source resumes the same run. Publication is atomic and verified by field-level
+export comparison. Import never selects the backend. The static Dropbox web
+companion continues to use its separate JSON file and cannot edit service data.
+
+See the [implementation plan](plans/cloudflare-task-service.md),
+[service development guide](service/README.md), and [API contract](api/README.md).

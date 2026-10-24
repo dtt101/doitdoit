@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "doitdoit-service-local",
+  "main": "build/worker/shim.mjs",
+  "build": {
+    "command": ".tools/bin/worker-build --release --no-panic-recovery",
+    "watch_dir": ["rust", "Cargo.toml", "Cargo.lock"],
+  },
+  "compatibility_date": "2026-10-19",
+  "compatibility_flags": ["global_fetch_strictly_public"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "ratelimits": [
+    { "name": "AUTH_LIMIT", "namespace_id": "2026101901", "simple": { "limit": 60, "period": 60 } },
+    { "name": "REGISTER_LIMIT", "namespace_id": "2026101902", "simple": { "limit": 10, "period": 60 } }
+  ],
+  "vars": {
+    "SERVICE_ORIGIN": "http://localhost:8787",
+    "OWNER_TIMEZONE": "Europe/London",
+  },
+  "d1_databases": [
+    {"binding":"UPGRADE_DB","database_name":"doitdoit-upgrade-test","database_id":"11111111-1111-4111-8111-111111111111"},
+    {
+      "binding": "DB",
+      "database_name": "doitdoit-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations",
+    },
+  ],
+}

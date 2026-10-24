@@ -38,6 +38,10 @@ func (m *Model) recordRevision(revision taskstore.Revision) {
 }
 
 func (m *Model) persist() {
+	if m.cloud != nil {
+		m.persistService()
+		return
+	}
 	revision, err := m.dataStore().Save(taskstore.Data(m.Data), &taskstore.Revision{Hash: m.dataHash, Exists: m.dataExists})
 	if errors.Is(err, ErrDataConflict) && m.saveErr == nil {
 		// Once a save fails, undo may contain unsaved edits rather than the

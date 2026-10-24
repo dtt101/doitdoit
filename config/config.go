@@ -9,6 +9,8 @@ import (
 )
 
 type Config struct {
+	Backend       string `json:"backend,omitempty"`
+	ServiceOrigin string `json:"service_origin,omitempty"`
 	StoragePath   string `json:"storage_path"`
 	Theme         string `json:"theme,omitempty"`
 	RetentionDays *int   `json:"retention_days,omitempty"`
@@ -39,6 +41,12 @@ func LoadConfig() (*Config, error) {
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err
+	}
+	if cfg.Backend != "" && cfg.Backend != "json" && cfg.Backend != "service" {
+		return nil, fmt.Errorf("unknown task backend %q", cfg.Backend)
+	}
+	if cfg.Backend == "service" && cfg.ServiceOrigin == "" {
+		return nil, fmt.Errorf("service backend requires service_origin")
 	}
 	if cfg.RetentionDays != nil && *cfg.RetentionDays < 0 {
 		return nil, fmt.Errorf("retention_days must be zero or a positive integer")

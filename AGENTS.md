@@ -3,7 +3,8 @@
 ## Overview
 
 `doitdoit` is a Go 1.27 terminal task manager built with Bubble Tea. It stores
-tasks in a user-owned JSON file. The repository also contains an experimental,
+tasks in a user-owned JSON file by default, with an explicitly selected
+experimental Cloudflare service backend. The repository also contains an experimental,
 fully static Dropbox web companion in `web/`.
 
 Supported desktop platforms are macOS and Linux only (`amd64` and `arm64`).
@@ -19,6 +20,12 @@ These instructions apply to the whole repository.
 - Run the Go test suite with `go test -count=1 ./...`.
 - Run web tests with `node --test web/*.test.js`; the web app has no package
   manager, dependency installation, or build step.
+- For the experimental Cloudflare service, use Rust 1.93+ and Node 24+.
+  Run one-time `make setup` in `service/`, then `make check` and `make bundle`
+  (a deployment dry-run). `make check-rust` runs Cargo checks alone. All service
+  application code, including OAuth and MCP, is Rust. Node is used only for
+  Cloudflare development tooling and local workerd/D1 integration tests with
+  mocked GitHub, never real tasks or accounts.
 - Before handing off a non-trivial Go change, also run `go vet ./...`. Run
   `go test -race ./...` for persistence, reload, concurrency, or release-related
   changes.
@@ -40,6 +47,14 @@ These instructions apply to the whole repository.
 - `styles/`: embedded themes and Omarchy theme resolution.
 - `web/`: independent static companion; `domain.js` holds task behavior and
   `sync.js` holds Dropbox revision-aware I/O.
+- `service/`: experimental Rust/WASM Cloudflare task service and D1 migrations,
+  including Rust OAuth/MCP endpoints and local integration tests.
+- `api/`: experimental service contract and shared Go/Rust fixtures.
+- `taskclient/`: HTTP task operations, desktop OAuth, private credentials and retained commands.
+- `tasktransfer/`: strict explicit legacy/portable import planning and field verification.
+- `service_tui.go`: service backend startup; `model/service.go` owns task-command orchestration.
+- `devtools/service-smoke/`: browser-login and HTTP/MCP smoke test client
+  for the Rust service; invoked by `make smoke` in `service/`.
 - `releasecheck/`: release licence and third-party inventory checks.
 - `.github/workflows/`: the authoritative CI and release gates.
 

@@ -41,6 +41,9 @@ type moveUndoSnapshot struct {
 }
 
 type Model struct {
+	cloud       *serviceState
+	ShowOverdue bool
+	ShowDeleted bool
 	Data        TodoData
 	FilePath    string
 	VisibleDays int
@@ -178,7 +181,7 @@ func newModelWithStore(filePath string, visibleDays, retentionDays int, store ta
 
 func (m *Model) updateDateKeys() {
 	// Reset the viewport to the next N days starting from today.
-	today := startOfDay(time.Now())
+	today := startOfDay(m.serviceNow())
 	m.todayKey = today.Format(dateLayout)
 	m.updateDateKeysFrom(today)
 }
@@ -198,14 +201,14 @@ func (m Model) firstVisibleDate() time.Time {
 			return date
 		}
 	}
-	return startOfDay(time.Now())
+	return startOfDay(m.serviceNow())
 }
 
 // shiftDateWindow moves the viewport by one day. It never permits dates before
 // today, so navigation is infinite in the forward direction only.
 func (m *Model) shiftDateWindow(days int) bool {
 	firstDay := m.firstVisibleDate().AddDate(0, 0, days)
-	if firstDay.Before(startOfDay(time.Now())) {
+	if firstDay.Before(startOfDay(m.serviceNow())) {
 		return false
 	}
 	m.updateDateKeysFrom(firstDay)
@@ -213,10 +216,19 @@ func (m *Model) shiftDateWindow(days int) bool {
 }
 
 func (m Model) Init() tea.Cmd {
+	if m.cloud != nil {
+		return tea.Batch(textinput.Blink, dateTick(), serviceTick(), m.serviceRead(true))
+	}
 	return tea.Batch(textinput.Blink, dateTick(), reloadTick())
 }
 
 func (m Model) getCurrentKey() string {
+	if m.ShowDeleted {
+		return "Deleted"
+	}
+	if m.ShowOverdue {
+		return "Overdue"
+	}
 	if m.ShowFuture {
 		return "Future"
 	}

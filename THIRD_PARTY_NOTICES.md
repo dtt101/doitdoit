@@ -98,3 +98,21 @@ The Tokyo Night inspired colours in `web/style.css` also use values from the
 bundled Omarchy Tokyo Night palette. The Omarchy attribution and MIT terms
 above apply. The double-check artwork in `web/icons/icon.svg` and its PNG
 variants are original project assets, with no additional third-party artwork.
+
+## Experimental Cloudflare service
+
+The Rust/WASM service dependency inventory is maintained in
+[service/THIRD_PARTY_NOTICES.md](service/THIRD_PARTY_NOTICES.md), with exact versions
+in service/Cargo.lock. Its direct crates are worker 0.8.7 (Apache-2.0),
+serde 1.0.229 (MIT or Apache-2.0), serde_json 1.0.154 (MIT or Apache-2.0),
+sha2 0.10.9 (MIT or Apache-2.0), uuid 1.28.0 (MIT or Apache-2.0), and
+chrono 0.4.45 (MIT or Apache-2.0), base64 0.22.1 (MIT or Apache-2.0), and
+futures-util 0.3.34 (MIT or Apache-2.0). worker-build 0.8.7 (Apache-2.0) is build tooling.
+
+There are no runtime npm dependencies. Cloudflare development tools are
+`@cloudflare/vitest-plugin` 1.4.5 (MIT), `vitest` 5.0.5 (MIT), and
+`cf` 1.0.0-beta.18 and `wrangler` 4.151.2 (MIT or Apache-2.0), pinned in service/package-lock.json.
+They are not linked into the Go desktop archives. Installed packages retain
+their licence files. No service bundle is included in a desktop release.
+Before distributing a service bundle, include its complete transitive licence
+inventory and applicable licence texts with the deployment artifact.
