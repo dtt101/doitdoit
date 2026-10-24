@@ -3,8 +3,9 @@
 Updated 2026-10-24. Implementation is on `main` after
 [PR #33](https://github.com/dtt101/doitdoit/pull/33). The Rust Worker and D1 schema
 are deployed; TUI service mode and reviewed import/export tooling are available.
-Encrypted off-machine backups are active and recovery-tested. Real tasks have
-not been imported, and JSON remains the default backend.
+Encrypted off-machine backups are active and recovery-tested. The reviewed 69
+real tasks are imported and field-verified; JSON remains the default on this
+computer until the separate backend-selection step.
 
 Use the [service guide](../service/README.md) for setup and clients,
 [Operations](../service/OPERATIONS.md) for production IDs/deployment/recovery,
@@ -12,13 +13,68 @@ and the [API contract](../api/README.md) for wire behavior.
 
 ## Remaining work
 
-1. Finish client acceptance: fresh/revoked ChatGPT login, Gemini completion writes,
-   and broader TUI conflict/retry workflows. Check macOS hands-on. Claude is
-   deferred at the owner's request.
-2. Monitor daily backups, confirm the first Sunday retention run, and repeat
-   recovery drills periodically. Keep the $0 paid-usage hard stop.
-3. When explicitly requested, dry-run the real JSON source, review all mappings
-   and recovery material, then obtain a separate import/backend-cutover decision.
+The immediate goal is shared real tasks across the TUI and MCP on all computers.
+The service-capable `v0.9.0` release is authorized for publication; `v0.8.0`
+predates service mode.
+
+### Cutover checklist
+
+1. Stop JSON-mode TUIs and Dropbox web edits on all computers; let file sync finish.
+2. Dry-run the configured JSON source. Freeze its bytes and review task counts,
+   field/ID/date issues, backups, conflict copies and retained drafts. Recheck the
+   source fingerprint before applying if editing or sync has resumed.
+3. After explicit approval, take a fresh service backup, import the reviewed source
+   once, and verify every field, count and order through export. Keep all originals.
+4. Publish a service-capable CLI release after separate release/tag authorization.
+   Use the existing GitHub Releases/mise path for macOS and Linux.
+5. On each computer, update with mise, run `doitdoit service login`, then
+   `doitdoit service use`. Credentials and backend selection are per computer;
+   never sync credentials between machines.
+6. Verify a task change from each TUI appears in the other clients and MCP.
+   Keep the Dropbox JSON/web companion separate from the authoritative service.
+
+Current step: approved current-source-only import complete; publish `v0.9.0`,
+then update/sign in/select the service on each computer. Default-backend changes
+remain per-computer explicit actions.
+
+### Dry-run result — 2026-10-24
+
+- Configured JSON: 69 tasks (24 open, 45 completed); no validation issues.
+- All 69 legacy IDs have deterministic service-UUID mappings.
+- Snapshot and report saved privately under the service configuration directory;
+  frozen bytes match the source. Source and configuration are unchanged.
+- Preserved one `.bak` and five saved review files; no pending recovery file.
+  The backup's 66 IDs are present in the current source, with scheduling/status
+  differences. Older saved reviews contain other task versions/IDs requiring
+  review; do not restore or merge them automatically.
+- Recovery review found 36 historical open title/note combinations unmatched by
+  current ID or exact title; they may reflect deleted/renamed/completed tasks.
+  No differing nonempty notes were found for matched tasks. Private candidate
+  list: `service/.backups/import-review/recovery-review.md` (ignored, mode 0600).
+  Owner selected current-source-only import; no candidates were restored.
+- No service requests, import, rollover, pruning or backend change occurred.
+
+### Import result — 2026-10-24
+
+- Owner approved current 69 tasks only; all historical recovery candidates were
+  excluded. Approved snapshot and original recovery-review report remain private.
+- [Pre-import encrypted backup](https://github.com/dtt101/doitdoit/actions/runs/40126815027)
+  passed. Import used the frozen reviewed source, not a newly read live file.
+- All 69 tasks were published and field-verified through export. The five existing
+  service test tasks were unchanged; total service task count is 74.
+- [Post-import encrypted backup](https://github.com/dtt101/doitdoit/actions/runs/40126936482)
+  passed SQL restore validation, encryption and independent artifact upload.
+- Original JSON and configuration are unchanged. The private `verified.json`
+  under the service import directory records the source fingerprint and run ID.
+  Keep JSON-mode clients stopped until their explicit cutover; original files
+  will become stale once real service edits begin.
+
+### Follow-up checks
+
+- Finish fresh/revoked ChatGPT login, Gemini completion writes and broader TUI
+  conflict/retry checks; verify macOS hands-on. Claude remains deferred.
+- Monitor daily backups, confirm Sunday retention, and repeat recovery drills.
+  Keep the $0 paid-usage hard stop.
 
 Releases, tags, real-data import, backend cutover and plugin publication remain
 separate decisions. Do not infer authorization from completed infrastructure.
