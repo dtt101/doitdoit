@@ -2,14 +2,16 @@
 
 Status as of 2026-10-24: the expanded Rust service and migration 0004 are deployed.
 The Go TUI/CLI service mode and explicit import/recovery tooling are implemented
-in the working tree. Local checks and the independent D1 restore drill pass.
+on `main` after PR #33. Local checks and the independent D1 restore drill pass.
 The extended production smoke passes, including desktop refresh and revocation.
 ChatGPT and TUI edits pass in both directions by user report. A Gemini consent
-navigation fix is deployed; user confirmed Gemini sign-in and task listing.
+navigation fix is deployed; user confirmed Gemini sign-in and shared task edits.
+Encrypted off-machine backups are enabled; the first hosted export and recovery
+test passed. Go 1.27.3 security checks and Linux/macOS CI passed before merge.
 Broader TUI/platform and assistant checks remain open; real-data import and
 cutover have not occurred.
 
-Architecture accepted: 2026-10-19. Work branch: `feat/cloudflare-task-service`.
+Architecture accepted: 2026-10-19. `feat/cloudflare-task-service` merged via PR #33.
 Implementation checkpoint: expanded service operations, Go TUI/CLI integration,
 explicit import/recovery tooling and service-mode review fixes. The earlier
 consent callback fix is recorded in `5ed3f22`.
@@ -18,11 +20,11 @@ consent callback fix is recorded in `5ed3f22`.
 
 | Stage | Status | Remaining acceptance gate |
 | --- | --- | --- |
-| 1. Contract and infrastructure spike | Contracts settled; Codex verified | ChatGPT/Claude and natural client refresh checks |
+| 1. Contract and infrastructure spike | Codex verified; ChatGPT/Gemini shared workflows and idle reads pass | Fresh/revoked client auth checks; Claude deferred |
 | 2. Complete service operations | Implemented, locally tested and deployed; hosted smoke passed | Further client acceptance tracked below |
-| 3. Go client and TUI integration | Implemented; hosted desktop login/refresh verified | Hands-on TUI/macOS verification |
+| 3. Go client and TUI integration | Linux shared workflows and hosted desktop login/refresh verified | Broader workflows and hands-on macOS verification |
 | 4. Import, recovery and web transition | Tooling and fixture tests implemented | Explicit reviewed real-data import stays separate |
-| 5. Operational handoff and cutover readiness | Backup, restore and code rollback verified | Off-machine backup operation and remaining client checks |
+| 5. Operational handoff and cutover readiness | Encrypted scheduled backup, restore and code rollback verified | Monitor backup schedule; remaining client checks and explicit cutover |
 | Later: plugin packaging | Deferred | Direct MCP remains the current route |
 
 Stages retain the detailed acceptance gates below. Initial production deployment
@@ -183,13 +185,10 @@ ChatGPT's later idle-session check is recorded below; Claude remains unverified.
   rejection and refusing output replacement. Added `make test-backup` to CI.
   Actual production SQL also validated and encrypted/decrypted byte-for-byte.
 - Setup/recovery and the public-schedule inactivity limitation are documented in
-  `service/OPERATIONS.md`. Still needed: confirmed spending hard stop, recovery
-  key custody, dedicated `CLOUDFLARE_BACKUP_API_TOKEN` secret, reviewed publication
-  to the default branch, activation and a successful hosted backup/restore drill.
-  No paid usage, activation gates or hosted schedule were enabled by preparing
-  these files. User subsequently created `CLOUDFLARE_BACKUP_API_TOKEN` in GitHub;
-  its name/presence was verified without reading the value. Its export permission
-  still needs a hosted test. No activation variables are set yet.
+  `service/OPERATIONS.md`. Initial preparation left activation off pending spending
+  controls, recovery-key custody, a token and a hosted restore test. User created
+  `CLOUDFLARE_BACKUP_API_TOKEN`; its presence was verified without reading its value.
+  Those activation checks are now completed as recorded below.
 - User confirmed the private recovery key has a secure independent copy and
   supplied GitHub billing status showing an account-wide Actions budget of $0
   with usage blocked (also Packages at $0/blocked). These satisfy the activation
@@ -198,11 +197,32 @@ ChatGPT's later idle-session check is recorded below; Claude remains unverified.
 - PR #33 was opened for that merge. The initial CI vulnerability scan found
   standard-library issues in the older Go toolchain; `go.mod` and `mise.toml`
   now both require Go 1.27.3, the patch identified by govulncheck. Application
-  dependency versions are unchanged. Patched-toolchain checks precede merge.
+  dependency versions are unchanged. Patched-toolchain tests/vet/race and
+  govulncheck passed; Linux, macOS and service CI all passed before merge.
+
+### Merge and hosted backup acceptance — 2026-10-24
+
+- PR #33 merged at `b07b50176c0616575e42cbc9dd5fbc7a6de7154c` after all CI gates
+  passed. Local checkout is on `main`. No release/tag, production Worker deployment,
+  real-task import or backend cutover was performed as part of this merge.
+- Set `BACKUP_PAID_USAGE_BLOCKED=true` and `BACKUP_ENABLED=true` after the user's
+  recovery-key custody and $0 hard-stop confirmations. Daily 03:43 UTC scheduling
+  and manual runs are active.
+- First hosted run [40125151080](https://github.com/dtt101/doitdoit/actions/runs/40125151080)
+  passed export, SQLite validation, encryption and upload using the dedicated
+  token. Encrypted artifact is 12,468 bytes with expiry 2026-10-31; no plaintext
+  SQL, private key or private log was uploaded.
+- Downloaded that artifact and imported the exported private-key file into a
+  separate temporary keyring. Decryption yielded 76,122 SQL bytes; isolated SQLite
+  restore recovered 13 tables with integrity and foreign-key checks passing.
+  Temporary plaintext/keyring were removed; production was not restored.
+- Independent backup automation is operational. Sunday copies receive 35-day
+  retention; the first Sunday run remains to occur. Continue monitoring scheduled
+  runs and public-repository inactivity disabling; no paid usage was enabled.
 
 1. Exercise hands-on service TUI workflows on supported desktop platforms and
    intended ChatGPT/Claude clients, including natural access-token expiry.
-2. Operate the documented independent/off-machine backup retention policy.
+2. Monitor the active encrypted backup schedule and periodic recovery checks.
 3. Review the dry-run of the actual source only when separately requested, then
    obtain explicit authorization for real-data publication and backend cutover.
 
@@ -613,7 +633,8 @@ forward for stage 1 hosted testing; production contains disposable test data.
 
 - [x] Document deployment credentials and operational recovery procedures.
 - [x] Confirm D1 Free Time Travel (7 days), document independent export retention
-  and dashboard usage/cost visibility. Off-machine backup scheduling remains operational work.
+  and dashboard usage/cost visibility. Encrypted off-machine daily/weekly retention
+  is active, with the first hosted backup and isolated recovery verified.
 - [x] Restore into a separate recovery database and compare exported data.
 - [x] Verify production code rollback against migration 0004 and restore the latest
   Worker. Code rollback did not rewind database contents or migrations.

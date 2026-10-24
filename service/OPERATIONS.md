@@ -41,8 +41,7 @@ Export may briefly interrupt D1 queries. Its log can include a signed download
 URL. Keep backup files/logs private; `.backups/` is ignored. Keep at least the
 last seven daily exports and four weekly exports in independent private storage,
 plus a pre-migration export. This is the retention policy to operate before
-cutover. The encrypted GitHub Actions workflow is prepared below; activation is
-separate from adding its files.
+cutover. The encrypted GitHub Actions workflow below is active as of 2026-10-24.
 Do not delete the only verified backup after a deployment.
 
 ### Automated encrypted exports
@@ -51,6 +50,15 @@ Do not delete the only verified backup after a deployment.
 for an on-demand backup. It uses standard `ubuntu-latest` runners in this public
 repository, installs the pinned tooling with `npm ci`, and runs the same SQL
 export. It does not build/deploy the Worker or change task data.
+
+Activation was completed after the owner confirmed a protected independent copy
+of the recovery key and an account-wide $0 Actions budget with usage blocked.
+Both activation variables are true, and the dedicated token is installed.
+[First hosted run](https://github.com/dtt101/doitdoit/actions/runs/40125151080)
+succeeded on 2026-10-24. Its downloaded encrypted artifact decrypted using the
+exported private-key file in a temporary keyring and restored 13 tables into
+isolated SQLite, with integrity and foreign-key checks passing. Temporary
+plaintext was removed. Sunday retention will first be exercised on a Sunday run.
 
 Before upload, `scripts/prepare-backup.py` restores SQL into in-memory SQLite,
 checks the expected service tables, integrity and foreign keys, and encrypts it

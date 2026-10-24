@@ -247,17 +247,18 @@ See the [API contract](../api/README.md) for input/result bounds and errors.
 
 ## Encrypted automated backups
 
-The daily GitHub Actions export workflow and a manual run option are prepared in
-`.github/workflows/backup.yml`. It validates a full SQL restore and encrypts the
+The daily GitHub Actions export workflow and a manual run option are active in
+`.github/workflows/backup.yml` (03:43 UTC daily). It validates a full SQL restore and encrypts the
 export before uploading; the private recovery key stays off GitHub. Daily copies
 expire after seven days and Sunday copies after 35 days. Size limits prevent
 unbounded artifact growth.
 
-Activation requires a dedicated Cloudflare token, a safely stored recovery key
-and confirmation that GitHub blocks paid artifact usage. Both activation variables
-default to off. See [backup setup and recovery](OPERATIONS.md#automated-encrypted-exports)
-for the exact configuration and free-usage limitations. Prepared files do not mean
-the hosted schedule has been enabled.
+The owner confirmed independent recovery-key storage and a $0 Actions hard stop;
+the dedicated backup token and both activation variables are configured. The
+[first hosted run](https://github.com/dtt101/doitdoit/actions/runs/40125151080)
+passed, and its downloaded artifact decrypted/restored successfully in isolation.
+See [backup setup and recovery](OPERATIONS.md#automated-encrypted-exports)
+for configuration, retention and free-usage limitations.
 
 ## Production deployment
 
