@@ -195,6 +195,10 @@ ChatGPT's later idle-session check is recorded below; Claude remains unverified.
   with usage blocked (also Packages at $0/blocked). These satisfy the activation
   prerequisites by user report. User explicitly authorized merging the full
   Cloudflare service branch so scheduled tooling can run from `main`.
+- PR #33 was opened for that merge. The initial CI vulnerability scan found
+  standard-library issues in the older Go toolchain; `go.mod` and `mise.toml`
+  now both require Go 1.27.3, the patch identified by govulncheck. Application
+  dependency versions are unchanged. Patched-toolchain checks precede merge.
 
 1. Exercise hands-on service TUI workflows on supported desktop platforms and
    intended ChatGPT/Claude clients, including natural access-token expiry.
