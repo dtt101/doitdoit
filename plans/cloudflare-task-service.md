@@ -14,8 +14,9 @@ and the [API contract](../api/README.md) for wire behavior.
 ## Remaining work
 
 The immediate goal is shared real tasks across the TUI and MCP on all computers.
-The service-capable `v0.9.0` release is authorized for publication; `v0.8.0`
-predates service mode.
+The service-capable [v0.9.0 release](https://github.com/dtt101/doitdoit/releases/tag/v0.9.0)
+is published. All four macOS/Linux archives passed checksum and build-metadata
+checks; the published Linux binary starts and advertises service mode.
 
 ### Cutover checklist
 
@@ -33,9 +34,9 @@ predates service mode.
 6. Verify a task change from each TUI appears in the other clients and MCP.
    Keep the Dropbox JSON/web companion separate from the authoritative service.
 
-Current step: approved current-source-only import complete; publish `v0.9.0`,
-then update/sign in/select the service on each computer. Default-backend changes
-remain per-computer explicit actions.
+Current step: import and `v0.9.0` publication complete; update/sign in/select the
+service on each computer. Owner confirmed a fresh build works in service mode.
+Default-backend changes remain per-computer explicit actions.
 
 ### Dry-run result — 2026-10-24
 
@@ -75,6 +76,11 @@ remain per-computer explicit actions.
   conflict/retry checks; verify macOS hands-on. Claude remains deferred.
 - Monitor daily backups, confirm Sunday retention, and repeat recovery drills.
   Keep the $0 paid-usage hard stop.
+- Decide the mobile web companion transition before retiring JSON. Proposed:
+  retain its static mobile UI, replace Dropbox I/O with the shared HTTP service
+  and GitHub OAuth, allow only its exact browser origin, and align overdue/retry
+  behavior with the TUI. Implementation/deployment is not yet authorized. Pause
+  edits through the Dropbox companion during cutover; it writes the old JSON.
 
 Releases, tags, real-data import, backend cutover and plugin publication remain
 separate decisions. Do not infer authorization from completed infrastructure.
