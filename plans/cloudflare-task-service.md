@@ -78,7 +78,8 @@ Default-backend changes remain per-computer explicit actions.
   Keep the $0 paid-usage hard stop.
 - Mobile companion now uses the shared service with GitHub OAuth, an exact browser
   origin allowlist, retained revision-guarded commands and original-date Overdue
-  views. Verify owner sign-in and edits from the installed mobile app after rollout.
+  views. Owner confirmed mobile GitHub sign-in and service tasks visible after
+  rollout. Verify create/complete writes against the TUI next.
 
 Releases, tags, real-data import, backend cutover and plugin publication remain
 separate decisions. Do not infer authorization from completed infrastructure.
@@ -91,6 +92,7 @@ separate decisions. Do not infer authorization from completed infrastructure.
 | Desktop | Linux shared tasks and hosted OAuth verified; Linux/macOS CI passed | Hands-on macOS and broader network/conflict recovery |
 | ChatGPT | Create/read/complete, edits both ways with TUI, idle-session read passed | Fresh login and client revocation |
 | Gemini | Login/read/create, TUI completion read-back and idle-session read passed | Completion writes |
+| Mobile web | Service-only Pages deployment passed; owner confirmed GitHub sign-in and shared tasks visible | Create/complete writes with TUI read-back |
 | Claude | Deferred | All client checks |
 | Recovery | Independent D1 restore and code rollback drills passed; encrypted hosted artifact decrypted/restored | Ongoing schedule and periodic restore monitoring |
 
