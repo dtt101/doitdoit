@@ -93,5 +93,8 @@ jobs:
       - name: Test local Worker and D1
         run: make test
 
+      - name: Test backup validation and encryption
+        run: make test-backup
+
       - name: Bundle Worker without deploying
         run: make bundle

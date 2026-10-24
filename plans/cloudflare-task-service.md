@@ -131,7 +131,7 @@ ChatGPT's later idle-session check is recorded below; Claude remains unverified.
 - Wrangler backup failed with Cloudflare authentication error 10000. The connected
   Cloudflare API exported the full SQL successfully to private ignored
   `service/.backups/20261024T100919Z-pre-gemini-consent.sql` (62,219 bytes) before
-  deployment. Repair Wrangler backup authentication before relying on that command.
+  deployment. The later Wrangler retry and restore verification are recorded below.
 - Deployed version `55534ca4-2d1d-4b50-8c18-83a4de53207c`. User confirmed a fresh
   Gemini connection succeeded and listed tasks after deployment. This verifies
   sign-in and reads by user report.
@@ -139,8 +139,62 @@ ChatGPT's later idle-session check is recorded below; Claude remains unverified.
   `2026-11-02`, with note `Created through Gemini.` User confirmed it appeared
   correctly in the service TUI. User then completed the task in the TUI; Gemini
   fetched it as completed with the same date and note. This verifies edits in
-  both directions by user report. Gemini completion writes and natural
-  expiry/session continuity remain unverified.
+  both directions by user report. Gemini completion writes remain unverified.
+- Following the instruction to wait at least 16 minutes without reconnecting,
+  user reported Gemini fetched the task as completed with its original date
+  and note. Idle-session continuity passes by user report; the token refresh
+  exchange and elapsed interval were not independently traced.
+
+### Backup command verification — 2026-10-24
+
+- User chose to retain the existing cf/Wrangler tool split after checking cf's
+  missing D1 SQL export support. No dependency or local database changes were made.
+- Retrying `make backup-production` with the existing Wrangler login succeeded;
+  no new login, token copying or credential changes were needed. Earlier error
+  10000 did not recur; its underlying cause remains unconfirmed.
+- Private ignored backup: `service/.backups/20261024T181216Z-yoZh9G.sql`,
+  76,122 bytes, mode 0600 under a 0700 directory. SQL restored to an isolated
+  in-memory SQLite database with 13 tables; integrity check passed and no foreign
+  key violations were found. No production restore was performed.
+- Added backup authentication troubleshooting to `service/OPERATIONS.md`.
+  Independent/off-machine retention and scheduling activation remain outstanding.
+
+### Encrypted scheduled backup preparation — 2026-10-24
+
+- User authorized automation only if it incurs no cost. Verified the repository
+  is public and currently has no Actions artifacts. Standard public Linux runners
+  are free; artifact storage uses a shared allowance, so small files alone cannot
+  establish zero cost. Billing API access did not establish a spending hard stop.
+- Added `.github/workflows/backup.yml`: daily 03:43 UTC/manual export, in-memory
+  SQLite validation, GPG encryption, encrypted-only artifact upload, seven-day
+  daily/35-day Sunday retention and always-run removal of runner copies. The job
+  rejects forks/private repositories and uses read-only repository permissions.
+- Raw/encrypted files are capped at 1 MiB. Repository artifacts plus a reserved
+  2 MiB upload allowance must fit within 16 MiB. No dependency cache is created.
+  Both `BACKUP_ENABLED` and `BACKUP_PAID_USAGE_BLOCKED` default to off. Do not
+  activate unless paid Actions/artifact storage is blocked at account level.
+- Generated public recipient `service/backup-recipient.asc` with pinned fingerprint
+  `76004AFB9D8EB8FE0AC750097AA20096FA5B2F0B`. Private key is only in ignored
+  `service/.backups/recovery/doitdoit-backup-private-key.asc` (0600), without a
+  passphrase. User must preserve a protected independent copy before activation;
+  no private key is to be uploaded to GitHub.
+- Five isolated tests cover invalid/oversized/partial exports, foreign-key
+  violations, forbidden disk attachment, real encryption/decryption, wrong-key
+  rejection and refusing output replacement. Added `make test-backup` to CI.
+  Actual production SQL also validated and encrypted/decrypted byte-for-byte.
+- Setup/recovery and the public-schedule inactivity limitation are documented in
+  `service/OPERATIONS.md`. Still needed: confirmed spending hard stop, recovery
+  key custody, dedicated `CLOUDFLARE_BACKUP_API_TOKEN` secret, reviewed publication
+  to the default branch, activation and a successful hosted backup/restore drill.
+  No paid usage, activation gates or hosted schedule were enabled by preparing
+  these files. User subsequently created `CLOUDFLARE_BACKUP_API_TOKEN` in GitHub;
+  its name/presence was verified without reading the value. Its export permission
+  still needs a hosted test. No activation variables are set yet.
+- User confirmed the private recovery key has a secure independent copy and
+  supplied GitHub billing status showing an account-wide Actions budget of $0
+  with usage blocked (also Packages at $0/blocked). These satisfy the activation
+  prerequisites by user report. User explicitly authorized merging the full
+  Cloudflare service branch so scheduled tooling can run from `main`.
 
 1. Exercise hands-on service TUI workflows on supported desktop platforms and
    intended ChatGPT/Claude clients, including natural access-token expiry.

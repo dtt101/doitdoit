@@ -41,8 +41,98 @@ Export may briefly interrupt D1 queries. Its log can include a signed download
 URL. Keep backup files/logs private; `.backups/` is ignored. Keep at least the
 last seven daily exports and four weekly exports in independent private storage,
 plus a pre-migration export. This is the retention policy to operate before
-cutover; automated off-machine backup scheduling is not configured by this PR.
+cutover. The encrypted GitHub Actions workflow is prepared below; activation is
+separate from adding its files.
 Do not delete the only verified backup after a deployment.
+
+### Automated encrypted exports
+
+`.github/workflows/backup.yml` runs at 03:43 UTC daily and supports **Run workflow**
+for an on-demand backup. It uses standard `ubuntu-latest` runners in this public
+repository, installs the pinned tooling with `npm ci`, and runs the same SQL
+export. It does not build/deploy the Worker or change task data.
+
+Before upload, `scripts/prepare-backup.py` restores SQL into in-memory SQLite,
+checks the expected service tables, integrity and foreign keys, and encrypts it
+with GnuPG. Only `.sql.gpg` is uploaded; raw SQL, private export logs and local
+keyrings are removed at the end of the runner job. Failed validation/encryption
+blocks upload. Run `make test-backup` for isolated tests, including encryption
+round-trip and wrong-key rejection.
+
+Daily artifacts expire after seven days; Sunday artifacts after 35 days. The
+workflow limits both raw and encrypted exports to 1 MiB and checks that the
+repository's current artifacts plus a reserved upload allowance fit within
+16 MiB. It fails rather than deleting existing backups or raising these limits.
+These caps cover this workflow, not shared usage in other repositories.
+
+**Zero-cost activation requirements:** standard hosted runners are free for
+public repositories, but artifact storage shares the account's included allowance
+with other Actions/Packages usage. In GitHub **Settings → Billing & licensing →
+Budgets and alerts**, verify a hard stop on paid Actions/artifact storage usage;
+an email-only budget alert is insufficient. If the account cannot enforce this,
+leave the workflow disabled. No paid plan or larger runner is required or enabled.
+See [Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+and [spending controls](https://docs.github.com/en/billing/how-tos/set-up-budgets).
+
+Before activating:
+
+1. Preserve the private recovery key from
+   `service/.backups/recovery/doitdoit-backup-private-key.asc` in protected offline
+   storage or a password manager. It is owner-only, ignored by Git, and currently
+   has no passphrase. Do not upload it to GitHub, put it in chat, or rely on this
+   machine as the only copy. The public recipient in `service/backup-recipient.asc`
+   has fingerprint `76004AFB9D8EB8FE0AC750097AA20096FA5B2F0B`; the encryptor pins
+   that fingerprint. Keep old private keys when rotating recipients.
+2. Add repository secret `CLOUDFLARE_BACKUP_API_TOKEN` for the existing Cloudflare
+   account with only the D1 permission required by SQL export (D1 Edit). No Worker
+   deployment or GitHub OAuth application secrets belong in this job. Scope the
+   token to the account; do not claim database-only restriction where the API
+   token permissions do not support it. Test the actual export before relying on it.
+3. After verifying paid usage is blocked, set repository variable
+   `BACKUP_PAID_USAGE_BLOCKED=true`. After securing the recovery key and installing
+   the token, set `BACKUP_ENABLED=true`. Both gates default to off. The workflow
+   also rejects forks/private repositories and uses a read-only GitHub token.
+4. Publish the reviewed workflow to the default branch, run it manually, download
+   its encrypted artifact and perform a restore drill before calling automation
+   operational. No workflow push, secret provisioning, billing changes or gate
+   activation is implied by the local files alone.
+
+For local decryption into a new private file:
+
+```sh
+umask 077
+gpg --import /path/to/offline/doitdoit-backup-private-key.asc
+gpg --output recovered-new.sql --decrypt downloaded.sql.gpg
+```
+
+Never use a production restore as the test. Follow the isolated restore procedure
+below, and revoke restored OAuth grants before any replacement database is served.
+Enable GitHub Actions failure notifications for your account. Scheduled jobs can
+be delayed, and public-repository schedules can be disabled after 60 days without
+activity; periodically check successful runs and re-enable if necessary. See
+[scheduled workflow controls](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
+Manual pre-migration exports remain separate and are never pruned by this workflow.
+
+### Backup authentication failures
+
+`cf` and Wrangler keep separate OAuth logins. A successful `cf` deployment does
+not verify Wrangler's access for the SQL export. If backup fails, inspect the
+private log locally; it may contain signed download URLs, so do not paste the
+whole log into chat or an issue. Cloudflare error 10000 means the API rejected
+authentication; it does not establish that the database or export script is broken.
+
+Retry `make backup-production` once. If authentication still fails, run
+`npm exec -- wrangler login` from `service/`, complete Cloudflare sign-in, then
+retry the backup. Never paste credentials into chat. For unattended backups, use
+a narrowly scoped account API token supplied privately through
+`CLOUDFLARE_API_TOKEN` instead of depending on interactive sign-in.
+
+On 2026-10-24, an earlier error 10000 did not recur on retry with the saved
+Wrangler login. The resulting private SQL backup restored successfully into an
+isolated in-memory SQLite database, with integrity and foreign-key checks passing.
+No credential changes were needed; the original authentication failure's cause
+was not established. Keep independent backup retention as a separate operational
+requirement.
 
 [D1 Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/) is
 always enabled, but the [Free-plan recovery window is seven days](https://developers.cloudflare.com/d1/platform/limits/).

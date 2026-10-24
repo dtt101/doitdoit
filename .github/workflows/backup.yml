@@ -1,0 +1,93 @@
+name: Encrypted database backup
+
+on:
+  schedule:
+    - cron: '43 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: production-database-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    # Explicit activation only after recovery-key custody and zero paid usage
+    # have been confirmed. Never run on forks or private/billable runners.
+    if: >-
+      github.repository == 'dtt101/doitdoit' &&
+      github.event.repository.private == false &&
+      vars.BACKUP_ENABLED == 'true' &&
+      vars.BACKUP_PAID_USAGE_BLOCKED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: service
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Check credentials and artifact storage allowance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BACKUP_TOKEN: ${{ secrets.CLOUDFLARE_BACKUP_API_TOKEN }}
+        run: |
+          test -n "$BACKUP_TOKEN" || { echo 'Backup token is missing'; exit 1; }
+          gh api --paginate 'repos/dtt101/doitdoit/actions/artifacts?per_page=100' \
+            --jq '[.artifacts[] | select(.expired == false) | .size_in_bytes] | add // 0' \
+            > "$RUNNER_TEMP/artifact-sizes"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          sizes = Path(os.environ['RUNNER_TEMP'], 'artifact-sizes').read_text().split()
+          # Reserve 2 MiB for a <=1 MiB file plus artifact/archive overhead.
+          if sum(map(int, sizes)) + 2 * 1024 * 1024 > 16 * 1024 * 1024:
+              raise SystemExit('Repository artifact limit reached; refusing another upload')
+          PY
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          # No dependency cache: this workflow must not accumulate cache storage.
+
+      - name: Install pinned development tools
+        run: npm ci
+
+      - name: Export, validate and encrypt
+        id: backup
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_BACKUP_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 91d8cf0b8c805dac586f9ab55d6d6212
+          DOITDOIT_BACKUP_DIR: ${{ runner.temp }}/private-backup
+        run: |
+          umask 077
+          make backup-production
+          set -- "$DOITDOIT_BACKUP_DIR"/*.sql
+          test "$#" -eq 1
+          output="$RUNNER_TEMP/encrypted-backup/doitdoit-$(date -u +%Y%m%dT%H%M%SZ).sql.gpg"
+          python3 scripts/prepare-backup.py "$1" backup-recipient.asc "$output"
+          echo "file=$output" >> "$GITHUB_OUTPUT"
+          # Weekly snapshots remain for five weeks; other daily snapshots for seven days.
+          retention=7
+          if [ "$(date -u +%u)" = 7 ]; then retention=35; fi
+          echo "retention=$retention" >> "$GITHUB_OUTPUT"
+
+      - name: Upload encrypted SQL only
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: doitdoit-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.backup.outputs.file }}
+          retention-days: ${{ steps.backup.outputs.retention }}
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Remove runner copies
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/private-backup" "$RUNNER_TEMP/encrypted-backup"

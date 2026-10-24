@@ -18,7 +18,8 @@ creation, completion and edits in both directions with the TUI passed on
 revocation remain to be checked. Gemini sign-in, listing and creation visible in
 the TUI passed by user report after the consent fix. Completion in the TUI was
 read back correctly by Gemini with date and note preserved. Gemini completion
-writes, idle refresh and Claude remain unverified.
+writes and Claude remain unverified. The follow-up Gemini idle-session read
+succeeded by user report; the token refresh exchange was not independently traced.
 
 Implemented locally: create/get/list/update, soft delete/restore, history,
 filter/search, neighbor-based reorder with compaction, immutable paged boards,
@@ -195,8 +196,9 @@ Custom apps is absent, account or regional availability may prevent this route.
 User confirmed successful Gemini connection, task listing and creation on
 2026-10-24 after the consent fix. The created task's date and note were confirmed
 in the TUI. User then completed it in the TUI; Gemini fetched it as completed
-with the original date and note preserved. Gemini completion writes and idle
-refresh remain to be checked.
+with the original date and note preserved. The follow-up read requested after
+at least 16 minutes idle also succeeded by user report; the refresh exchange
+was not independently traced. Gemini completion writes remain to be checked.
 If a previous attempt stopped on the consent button with a `form-action` console
 error, restart the connection from Gemini. The continuation-page fix was deployed
 on 2026-10-24; an old consent page still has the previous policy and a used handle
@@ -242,6 +244,20 @@ indefinitely. Migration 0004 preserves existing task/history/receipt rows while
 adding group ordering, recoverable deletion and staged imports. An integration
 test applies it to a populated 0001–0003 database and checks exact preservation.
 See the [API contract](../api/README.md) for input/result bounds and errors.
+
+## Encrypted automated backups
+
+The daily GitHub Actions export workflow and a manual run option are prepared in
+`.github/workflows/backup.yml`. It validates a full SQL restore and encrypts the
+export before uploading; the private recovery key stays off GitHub. Daily copies
+expire after seven days and Sunday copies after 35 days. Size limits prevent
+unbounded artifact growth.
+
+Activation requires a dedicated Cloudflare token, a safely stored recovery key
+and confirmation that GitHub blocks paid artifact usage. Both activation variables
+default to off. See [backup setup and recovery](OPERATIONS.md#automated-encrypted-exports)
+for the exact configuration and free-usage limitations. Prepared files do not mean
+the hosted schedule has been enabled.
 
 ## Production deployment
 

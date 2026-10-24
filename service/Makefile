@@ -1,4 +1,4 @@
-.PHONY: setup check check-rust build test dev migrate-local bundle smoke bundle-production migrate-production deploy backup-production
+.PHONY: setup check check-rust build test test-backup dev migrate-local bundle smoke bundle-production migrate-production deploy backup-production
 WORKER_BUILD_VERSION := 0.8.7
 
 setup:
@@ -19,6 +19,8 @@ check: check-rust test
 # workerd/D1 is a JavaScript host; these tests call only the generated Rust Worker.
 test: build
 	npm exec -- vitest run
+test-backup:
+	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py'
 bundle:
 	npm exec -- cf deploy --mode development --dry-run
 dev:
