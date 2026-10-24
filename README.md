@@ -366,53 +366,23 @@ Uninstalling intentionally leaves your task JSON file and `~/.doitdoit_config.js
 
 ### Experimental Cloudflare backend
 
-A Rust/WASM Cloudflare Worker exposes HTTP and authenticated MCP endpoints,
-with D1 storage. The Go TUI and capture command can explicitly select this
-backend. JSON remains the default; there is no automatic migration or dual write.
+The TUI and assistant MCP clients can share tasks through a Rust/WASM Cloudflare
+Worker backed by D1. JSON remains the default; there is no automatic migration
+or synchronization between backends.
 
-From this checkout, sign in and try the service for one session:
+From this checkout:
 
 ```sh
 go run . service login
 go run . --service https://doitdoit-service.davidt-91d.workers.dev
 ```
 
-Login opens GitHub through the hosted service and returns to a temporary local
-callback. It does not require `make dev`. Private credentials and pending commands
-live under your OS configuration directory in `doitdoit/services/`.
-In service mode, `o` shows open overdue tasks with their original dates, `x`
-shows deleted tasks (`enter` restores), `r` refreshes or retries a retained write,
-and `u` sends a revision-guarded inverse operation. Reads and midnight never
-reschedule tasks. A conflict keeps the attempted command for review.
-Add from Overdue switches to Today before entry. For a retained failed command,
-`d` opens review and a second `d` archives it privately. Archiving does not cancel
-a possible server write; check its outcome before recreating an uncertain task.
+Use `service use` to select the signed-in service for future launches, or
+`service use-json` to return to JSON. `--file PATH` selects JSON explicitly.
+The Dropbox web companion remains a separate JSON client. After service edits,
+export current data before returning to an old JSON file.
 
-CLI capture retains its private draft before network requests. Explicit dates
-and undated captures skip timezone lookup; Today/Tomorrow use the original
-capture instant in the owner timezone. `service retry --file RETAINED_COMMAND`
-resumes an unresolved capture or retries the same resolved date and operation ID.
-
-`service use` explicitly selects the signed-in service for future launches;
-`service use-json` selects JSON. `--file PATH` still explicitly selects JSON.
-Do not switch back to an old JSON file after service edits expecting it to
-contain those edits: export and review the current service data first.
-
-Export and import are separate, explicit commands:
-
-```sh
-go run . service export --out /path/to/new-private-export.json
-go run . service import --file /path/to/tasks.json --dry-run
-# Review the frozen source, mappings, issues and any preserved recovery files.
-go run . service import --file /path/to/tasks.json --apply --reviewed-recovery
-```
-
-Export refuses to overwrite an existing file. Import preserves source bytes,
-notes, dates, completion and ordering; it reports invalid or ambiguous source
-data and requires review of `.bak`/conflict/recovery material. Repeating the same
-source resumes the same run. Publication is atomic and verified by field-level
-export comparison. Import never selects the backend. The static Dropbox web
-companion continues to use its separate JSON file and cannot edit service data.
-
-See the [implementation plan](plans/cloudflare-task-service.md),
-[service development guide](service/README.md), and [API contract](api/README.md).
+See the [service guide](service/README.md) for TUI controls, ChatGPT/Gemini setup
+and reviewed import/export; [Operations](service/OPERATIONS.md) for encrypted
+backups, deployment and recovery; the [API contract](api/README.md) for protocol
+details; and the [plan](plans/cloudflare-task-service.md) for remaining work.

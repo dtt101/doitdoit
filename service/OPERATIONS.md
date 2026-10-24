@@ -1,111 +1,99 @@
-# Production operations and recovery
+# Service operations
 
-Use the account, Worker, D1 IDs and latest deployed version recorded in
-[the plan](../plans/cloudflare-task-service.md). Local development and production
-are the only environments. Never point a development Worker at production D1.
+Commands below run from `service/` unless stated otherwise. Use local development
+or the existing production environment; never bind development to production D1.
+
+## Production reference
+
+| Resource | Value |
+| --- | --- |
+| Account | `91d8cf0b8c805dac586f9ab55d6d6212` |
+| Worker | `doitdoit-service` |
+| Origin | `https://doitdoit-service.davidt-91d.workers.dev` |
+| D1 | `doitdoit-prod` / `43659423-7b12-42ac-8f1e-fc97f3ed0fea` |
+| Region / timezone | Western Europe / `Europe/London` |
+| Current recorded Worker version | `55534ca4-2d1d-4b50-8c18-83a4de53207c` |
+| Previous version | `344b0f95-3840-4252-836b-5b80796b47de` (Gemini consent issue) |
+| Applied migrations | `0001`–`0004` |
+
+Read replication is disabled. Hourly auth cleanup runs at minute 17. Verify the
+live version before rollback; merging Git does not deploy the Worker.
 
 ## Deploy
 
-Run `make check` and `make bundle-production`, save a private full SQL backup,
-then `make migrate-production` followed by `make deploy`. Migration 0004 rebuilds
-receipt/event tables while preserving their rows and foreign keys; the upgrade
-integration test covers a populated 0001–0003 database. It also keeps the old
-create/update command shape working for code rollback. Old UUID positions are
-compacted on the next ordering operation, with history and revision changes.
+Keep `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` and `GITHUB_OWNER_ID` in ignored
+`.env.production` with permissions `0600`. The production GitHub OAuth callback
+is `https://doitdoit-service.davidt-91d.workers.dev/callback`.
 
-Deployment credentials belong to the official `cf` login or a narrowly scoped
-Cloudflare API token in CI. Application OAuth credentials are separate. Production
-GitHub secrets live in ignored `.env.production` (`0600`); localhost secrets live
-in `.dev.vars`. Do not put either file, access tokens, signed export URLs, SQL
-backups or database query results in Git or chat. There is no automatic deploy
-workflow that needs a repository secret today. CI tests with mocked identities.
+```sh
+make check
+make test-backup
+make bundle-production
+make backup-production
+make migrate-production
+make deploy
+```
 
-## Two different exports
+Deployment uses `cf` authentication and uploads the production secrets file.
+Retain the pre-migration SQL backup. After deploy, check `/health`, OAuth
+sign-in and authenticated reads/writes. The extended hosted smoke creates and
+completes two labelled test tasks and revokes its temporary login:
 
-`doitdoit service export --out NEW_FILE` writes a private, consistent portable
-task snapshot including deleted tasks. It preserves dates, notes, status, rank,
-revision and timestamps. It is useful for task recovery and explicit import to
-another empty account/database. It does not contain history, operation receipts
-or OAuth grants, and is not a full database backup.
+```sh
+go run ../devtools/service-smoke --url https://doitdoit-service.davidt-91d.workers.dev --extended
+```
 
-For full recovery, use a D1 SQL export. The current `cf` beta has no equivalent
-export command, so the installed Wrangler tooling remains the fallback:
+## Backups
 
-Run `make backup-production`. It writes a new timestamped `0600` SQL file and
-private log in ignored `.backups/` (`0700`). Set `DOITDOIT_BACKUP_DIR` to an
-appropriate private independent-storage destination if desired. Existing
-backups are never overwritten or pruned. The command checks for a nonempty
-export; a restore drill is still needed to prove recovery.
+| Export | Contains | Use |
+| --- | --- | --- |
+| `doitdoit service export --out NEW_FILE` | Task state, including deleted tasks | Portable task recovery/import |
+| `make backup-production` | Full D1 SQL, including history, receipts and OAuth state | Database recovery |
 
-Export may briefly interrupt D1 queries. Its log can include a signed download
-URL. Keep backup files/logs private; `.backups/` is ignored. Keep at least the
-last seven daily exports and four weekly exports in independent private storage,
-plus a pre-migration export. This is the retention policy to operate before
-cutover. The encrypted GitHub Actions workflow below is active as of 2026-10-24.
-Do not delete the only verified backup after a deployment.
+Manual SQL backups and logs are owner-only files under ignored `.backups/`.
+Set `DOITDOIT_BACKUP_DIR` to use another private destination. Files are never
+replaced or pruned. Export may briefly block D1 queries. Logs can contain signed
+download URLs; keep SQL, logs and credentials out of Git and chat.
 
 ### Automated encrypted exports
 
-`.github/workflows/backup.yml` runs at 03:43 UTC daily and supports **Run workflow**
-for an on-demand backup. It uses standard `ubuntu-latest` runners in this public
-repository, installs the pinned tooling with `npm ci`, and runs the same SQL
-export. It does not build/deploy the Worker or change task data.
+The [backup workflow](../.github/workflows/backup.yml) is active on `main`.
 
-Activation was completed after the owner confirmed a protected independent copy
-of the recovery key and an account-wide $0 Actions budget with usage blocked.
-Both activation variables are true, and the dedicated token is installed.
-[First hosted run](https://github.com/dtt101/doitdoit/actions/runs/40125151080)
-succeeded on 2026-10-24. Its downloaded encrypted artifact decrypted using the
-exported private-key file in a temporary keyring and restored 13 tables into
-isolated SQLite, with integrity and foreign-key checks passing. Temporary
-plaintext was removed. Sunday retention will first be exercised on a Sunday run.
+- Schedule: **03:43 UTC daily**; **Run workflow** also supports manual exports.
+- Validation: restore SQL into temporary SQLite, check tables, integrity and
+  foreign keys, then encrypt with GnuPG. Only the encrypted artifact is uploaded.
+- Retention: seven days for daily copies; 35 days for Sunday copies.
+- Limits: 1 MiB per raw/encrypted export; repository artifacts plus 2 MiB reserved
+  upload space must fit within 16 MiB. Exceeding a limit fails the job.
+- Credentials: repository secret `CLOUDFLARE_BACKUP_API_TOKEN`, scoped to this
+  Cloudflare account with **D1 Edit**, without Worker/DNS permissions.
+- Gates: repository variables `BACKUP_ENABLED=true` and
+  `BACKUP_PAID_USAGE_BLOCKED=true`. Set `BACKUP_ENABLED=false` to pause jobs.
 
-Before upload, `scripts/prepare-backup.py` restores SQL into in-memory SQLite,
-checks the expected service tables, integrity and foreign keys, and encrypts it
-with GnuPG. Only `.sql.gpg` is uploaded; raw SQL, private export logs and local
-keyrings are removed at the end of the runner job. Failed validation/encryption
-blocks upload. Run `make test-backup` for isolated tests, including encryption
-round-trip and wrong-key rejection.
+The account has a user-confirmed **$0 Actions budget with usage blocked**.
+Keep that hard stop: public standard runners are free, but artifact storage
+shares an account allowance. Size caps alone do not guarantee zero charges.
+Do not activate on a private repository or enable paid usage.
+[GitHub billing controls](https://docs.github.com/en/billing/how-tos/set-up-budgets).
 
-Daily artifacts expire after seven days; Sunday artifacts after 35 days. The
-workflow limits both raw and encrypted exports to 1 MiB and checks that the
-repository's current artifacts plus a reserved upload allowance fit within
-16 MiB. It fails rather than deleting existing backups or raising these limits.
-These caps cover this workflow, not shared usage in other repositories.
+Enable Actions failure notifications and periodically check successful runs.
+Public-repository schedules may stop after 60 days without repository activity;
+re-enable if necessary. A skipped/disabled job is not a backup.
 
-**Zero-cost activation requirements:** standard hosted runners are free for
-public repositories, but artifact storage shares the account's included allowance
-with other Actions/Packages usage. In GitHub **Settings → Billing & licensing →
-Budgets and alerts**, verify a hard stop on paid Actions/artifact storage usage;
-an email-only budget alert is insufficient. If the account cannot enforce this,
-leave the workflow disabled. No paid plan or larger runner is required or enabled.
-See [Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
-and [spending controls](https://docs.github.com/en/billing/how-tos/set-up-budgets).
+[First hosted backup](https://github.com/dtt101/doitdoit/actions/runs/40125151080)
+and downloaded-artifact recovery passed on 2026-10-24. Sunday retention still
+needs its first Sunday run. Keep manual pre-migration exports separately.
 
-Before activating:
+### Recovery key
 
-1. Preserve the private recovery key from
-   `service/.backups/recovery/doitdoit-backup-private-key.asc` in protected offline
-   storage or a password manager. It is owner-only, ignored by Git, and currently
-   has no passphrase. Do not upload it to GitHub, put it in chat, or rely on this
-   machine as the only copy. The public recipient in `service/backup-recipient.asc`
-   has fingerprint `76004AFB9D8EB8FE0AC750097AA20096FA5B2F0B`; the encryptor pins
-   that fingerprint. Keep old private keys when rotating recipients.
-2. Add repository secret `CLOUDFLARE_BACKUP_API_TOKEN` for the existing Cloudflare
-   account with only the D1 permission required by SQL export (D1 Edit). No Worker
-   deployment or GitHub OAuth application secrets belong in this job. Scope the
-   token to the account; do not claim database-only restriction where the API
-   token permissions do not support it. Test the actual export before relying on it.
-3. After verifying paid usage is blocked, set repository variable
-   `BACKUP_PAID_USAGE_BLOCKED=true`. After securing the recovery key and installing
-   the token, set `BACKUP_ENABLED=true`. Both gates default to off. The workflow
-   also rejects forks/private repositories and uses a read-only GitHub token.
-4. Publish the reviewed workflow to the default branch, run it manually, download
-   its encrypted artifact and perform a restore drill before calling automation
-   operational. No workflow push, secret provisioning, billing changes or gate
-   activation is implied by the local files alone.
+- Private key: `.backups/recovery/doitdoit-backup-private-key.asc`, ignored and
+  owner-only, without a passphrase. The owner has a protected independent copy.
+- Public key: `backup-recipient.asc`; pinned fingerprint
+  `76004AFB9D8EB8FE0AC750097AA20096FA5B2F0B`.
+- Never upload the private key to GitHub. Keep old private keys when rotating
+  recipients, and update/test the pinned fingerprint in `scripts/prepare-backup.py`.
 
-For local decryption into a new private file:
+Download an encrypted artifact from Actions and decrypt to a new private file:
 
 ```sh
 umask 077
@@ -113,95 +101,69 @@ gpg --import /path/to/offline/doitdoit-backup-private-key.asc
 gpg --output recovered-new.sql --decrypt downloaded.sql.gpg
 ```
 
-Never use a production restore as the test. Follow the isolated restore procedure
-below, and revoke restored OAuth grants before any replacement database is served.
-Enable GitHub Actions failure notifications for your account. Scheduled jobs can
-be delayed, and public-repository schedules can be disabled after 60 days without
-activity; periodically check successful runs and re-enable if necessary. See
-[scheduled workflow controls](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
-Manual pre-migration exports remain separate and are never pruned by this workflow.
+### Backup failures
 
-### Backup authentication failures
+For manual error 10000, inspect the private log and retry once. If it persists:
 
-`cf` and Wrangler keep separate OAuth logins. A successful `cf` deployment does
-not verify Wrangler's access for the SQL export. If backup fails, inspect the
-private log locally; it may contain signed download URLs, so do not paste the
-whole log into chat or an issue. Cloudflare error 10000 means the API rejected
-authentication; it does not establish that the database or export script is broken.
+```sh
+npm exec -- wrangler login
+make backup-production
+```
 
-Retry `make backup-production` once. If authentication still fails, run
-`npm exec -- wrangler login` from `service/`, complete Cloudflare sign-in, then
-retry the backup. Never paste credentials into chat. For unattended backups, use
-a narrowly scoped account API token supplied privately through
-`CLOUDFLARE_API_TOKEN` instead of depending on interactive sign-in.
+`cf` and Wrangler keep separate logins. For hosted authentication failures,
+replace the GitHub backup token and verify its account/D1 permissions. Do not
+paste tokens or complete export logs into issues or chat.
 
-On 2026-10-24, an earlier error 10000 did not recur on retry with the saved
-Wrangler login. The resulting private SQL backup restored successfully into an
-isolated in-memory SQLite database, with integrity and foreign-key checks passing.
-No credential changes were needed; the original authentication failure's cause
-was not established. Keep independent backup retention as a separate operational
-requirement.
+D1's [Free Time Travel recovery window](https://developers.cloudflare.com/d1/platform/limits/)
+is seven days. It supplements independent backups; a production rewind also
+rewinds task edits and OAuth/receipt state.
 
-[D1 Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/) is
-always enabled, but the [Free-plan recovery window is seven days](https://developers.cloudflare.com/d1/platform/limits/).
-It supplements an independent export. Restoring production rewinds accepted
-task edits and OAuth/receipt state; it needs an explicit incident decision and
-clients must reconnect safely. Never use it as a routine code rollback.
+## Restore
 
-## Restore drill
+Test in an isolated database, never by overwriting production:
 
-Create a temporary D1 database with read replication disabled, without connecting
-any Worker. Import the full SQL with `wrangler d1 execute TEMP_ID --remote
---file PRIVATE_BACKUP --yes`. Query every restored table into a private file and
-compare all values to a local SQLite restore of the same export; check foreign
-keys, task dates/notes/order, history and receipts. Remove the temporary database
-after verification. Record only counts, timestamps and IDs in the plan, never
-private task values or credential hashes.
+1. Decrypt an artifact and restore it into temporary SQLite. Check integrity,
+   foreign keys and task fields. Remove temporary plaintext afterward.
+2. For a cloud restore drill, create an unbound temporary D1 database with read
+   replication disabled. Import using `npm exec -- wrangler d1 execute TEMP_ID
+   --remote --file PRIVATE_BACKUP --yes` with the production account selected.
+3. Compare every restored table with the local SQLite restore. Delete the
+   temporary database after verification; retain the verified backup.
 
-Restored OAuth grants must never be exposed through a new Worker. For an actual
-recovery into a replacement database, revoke restored grants and require fresh
-client login before serving it. Keep the damaged database for review until the
-recovery is verified. Source JSON and retained local commands remain untouched.
+For actual recovery, preserve the damaged database until verification completes.
+Revoke restored OAuth grants and require fresh client login before serving a
+replacement database. Never expose restored credentials through a test Worker.
 
 ## Code rollback
 
-Inspect `cf workers deployments create --help`, then preview and deploy a
-reviewed existing version at 100% using `--strategy percentage --versions
-'[{"version_id":"VERSION_UUID","percentage":100}]'`. Use `--dry-run` first.
-Do not bypass secret/binding compatibility checks. Verify health, discovery,
-existing-task reads and authenticated operations, then restore the intended
-current version at 100%. A code rollback does not rewind D1 or apply down migrations.
-Clients calling newer operations need the new Worker restored.
+Check `npm exec -- cf workers deployments create --help`. Preview a reviewed
+existing version with `--dry-run`, then deploy it at 100% using
+`--strategy percentage --versions '[{"version_id":"VERSION_UUID","percentage":100}]'`.
+Do not bypass binding/secret compatibility checks. Verify health and authenticated
+operations. Code rollback does not rewind D1 or reverse migrations; older Worker
+versions may not support newer client operations.
 
-## Usage and incident checks
+## Failed or conflicting task writes
 
-On [Workers Free](https://developers.cloudflare.com/workers/platform/pricing/),
-quota exhaustion can interrupt service; this project never enables a paid plan
-automatically. Review Workers requests/CPU/errors and D1 Metrics → Row Metrics
-and storage in the Cloudflare dashboard. [D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/)
-currently lists 5 million reads/day and 100,000 writes/day on Free. Index writes
-and history count too. The TUI applies paged change events every 15 seconds while
-idle and separately after a task acknowledgement. Reconciliation does not delay
-the acknowledgement or fetch a full board on each write. Startup, manual
-refresh, view changes and invalid-cursor recovery use snapshots. Replayed events
-cannot replace a newer acknowledged revision. It does not continuously rewrite data.
+Preserve the retained command and retry the identical operation ID after an
+uncertain outcome. A timeout does not establish failure. For HTTP 409, review the
+current task before submitting a new operation ID/revision. In the TUI, `d` opens
+retained-command review; a second `d` archives it privately without cancelling a
+possible server write. Lost refresh-rotation responses require login again.
+History and receipts are retained indefinitely; do not prune without a new contract.
 
-For an uncertain write, keep its private command and retry the exact operation
-ID. In the TUI, `d` opens a retained-command review and a second `d` archives it
-privately and refreshes. Archiving does not cancel a server write or establish
-its outcome; check the service before recreating any uncertain task. Conflicted
-updates cannot be applied to soft-deleted tasks; archive the edit and use an
-explicit restore from Deleted if needed. A 409 requires reviewing the current revision; never guess a new revision
-or operation ID merely because a request timed out. A lost refresh rotation
-response requires login again; the desktop intentionally will not replay the
-possibly spent refresh credential. History and retry receipts are retained
-indefinitely. Do not prune them without a new retry/cursor retention contract.
+Monitor Worker errors/CPU and D1 usage in the Cloudflare dashboard. Free quotas
+can interrupt service; do not enable a paid plan automatically.
 
-## Cutover boundary
+## Cutover
 
-Real-data import and `service use` require a separate explicit cutover decision.
-Dry-run first, review all mapping/issues/recovery material, publish atomically,
-then verify every field and count from export. The original JSON and its `.bak`
-remain unchanged. After service edits, switching to the old JSON loses sight of
-those edits; recovery requires a reviewed current export. The static Dropbox
-companion continues to edit only its old JSON and is not a service client.
+Real-task import and selecting the service as default require an explicit decision:
+
+1. Freeze the source JSON and dry-run the import.
+2. Review field mappings, invalid/ambiguous data and all recovery material.
+3. Apply the import and verify every field, count and order through export.
+4. Select the service with `doitdoit service use`.
+
+Keep the original JSON, `.bak` and recovery files. After service edits, the old
+JSON is stale; returning to it requires a reviewed current service export. The
+Dropbox web companion remains a separate JSON client.

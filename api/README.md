@@ -18,6 +18,26 @@ and JSON responses. Read/write input bodies are limited to 64 KiB, including
 MCP and OAuth requests. Import requests allow 256 KiB. Responses contain private data and are not cacheable.
 API and MCP clients use the same service-issued credentials and task operations.
 
+## OAuth and MCP protocol
+
+Public clients register at `/oauth/register`, authorize at `/authorize`, exchange
+codes/refresh credentials at `/oauth/token`, and revoke at `/oauth/revoke`.
+Discovery advertises those endpoints and S256 PKCE. The canonical resource is
+`SERVICE_ORIGIN`; scopes are `tasks:read`, `tasks:write` and `offline_access`.
+Confidential clients and Client ID Metadata Documents are not supported.
+
+Access tokens last 15 minutes; rotating refresh tokens last 30 days. Replaying a
+consumed credential revokes the grant. Revocation invalidates all of its access
+and refresh tokens. Credential digests, not raw tokens, are stored in D1.
+
+MCP targets `2025-11-25` and accepts `2025-03-26`/`2025-06-18` headers. It supports
+initialize, ping, tools/list and the 11 tools below. It has no SSE subscriptions,
+sessions, resumability, sampling or server notifications. Client notifications
+receive HTTP 202 without mutations. Auth routes are limited per IP/edge location
+to 10 registrations/minute and 60 other auth requests/minute. Hourly cleanup
+removes expired login state/dead credentials, retaining spent credentials while
+their grant is live for replay detection.
+
 ## Task representation
 
 See the fixture for exact field names and null handling.
