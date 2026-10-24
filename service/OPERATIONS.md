@@ -12,8 +12,8 @@ or the existing production environment; never bind development to production D1.
 | Origin | `https://doitdoit-service.davidt-91d.workers.dev` |
 | D1 | `doitdoit-prod` / `43659423-7b12-42ac-8f1e-fc97f3ed0fea` |
 | Region / timezone | Western Europe / `Europe/London` |
-| Current recorded Worker version | `55534ca4-2d1d-4b50-8c18-83a4de53207c` |
-| Previous version | `344b0f95-3840-4252-836b-5b80796b47de` (Gemini consent issue) |
+| Current recorded Worker version | `c84d947b-752b-46ae-8840-92f3b466a711` (web browser access) |
+| Previous version | `55534ca4-2d1d-4b50-8c18-83a4de53207c` |
 | Applied migrations | `0001`–`0004` |
 
 Read replication is disabled. Hourly auth cleanup runs at minute 17. Verify the
