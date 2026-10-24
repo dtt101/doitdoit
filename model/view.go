@@ -522,14 +522,23 @@ func (m Model) helpItems() []helpItem {
 	}
 	if m.cloud != nil {
 		for i := range items {
-			if items[i].key == "r" {
-				items[i].description = "refresh / retry retained command"
+			switch items[i].key {
+			case "space / enter":
+				items[i].description = "complete / reopen task"
+			case "d":
+				items[i].description = "move to Deleted"
+			case "r":
+				items[i].description = "refresh / retry save"
 			}
 			if items[i].key == "a" && m.ShowOverdue {
 				items[i].description = "add task to Today"
 			}
 		}
-		items = append(items, helpItem{"o", "open overdue tasks"}, helpItem{"x", "deleted tasks; Enter restores"})
+		overdueToggle := "Overdue view"
+		if m.ShowOverdue {
+			overdueToggle = "main view"
+		}
+		items = append(items, helpItem{"o", overdueToggle}, helpItem{"x", "Deleted view"})
 		if m.ShowOverdue || m.ShowDeleted {
 			items[0].key = "↑/↓ / k/j"
 		}
@@ -610,7 +619,7 @@ func (m Model) renderHelpModal(offset int) (string, int) {
 	heading := styles.TitleStyle.Width(innerWidth).Render("Keyboard shortcuts")
 	explanation := "Unfinished tasks from earlier days carry forward to Today automatically."
 	if m.cloud != nil {
-		explanation = "Open tasks from earlier days appear in Overdue with their original dates. Reads and midnight never reschedule tasks."
+		explanation = "Changes are saved to the service and shared with your other devices and MCP clients. Unfinished tasks stay open in Overdue with their original dates. Deleted tasks can be restored with Enter in Deleted view."
 	} else if m.carriedForward > 0 {
 		explanation = m.rolloverNotice() + " " + explanation
 	}

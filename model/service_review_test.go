@@ -177,6 +177,11 @@ func TestServiceFooterBoundsAndHelpMatchRenderedState(t *testing.T) {
 	if strings.Contains(help, "carry forward") || !strings.Contains(help, "original dates") {
 		t.Fatal("service help describes rollover")
 	}
+	for _, obsolete := range []string{"rescan copies", "retained command"} {
+		if strings.Contains(help, obsolete) {
+			t.Fatalf("service help contains obsolete wording %q", obsolete)
+		}
+	}
 	found := map[string]bool{}
 	for _, item := range m.helpItems() {
 		found[item.key] = true
