@@ -208,3 +208,30 @@ func TestServiceEditorCanTypeQuitShortcut(t *testing.T) {
 		t.Fatal("quit shortcut intercepted task text")
 	}
 }
+
+func TestServicePollRecoveryClearsTransientReadError(t *testing.T) {
+	m, _ := cloudFixture(t)
+	offline := fmt.Errorf("task service: could not obtain credentials: offline")
+	updated, _ := m.Update(serviceResult{sequence: m.cloud.sequence, err: offline})
+	m = updated.(Model)
+	if m.Err != offline || m.cloud.connected {
+		t.Fatal("poll failure not shown")
+	}
+	updated, _ = m.Update(serviceResult{sequence: m.cloud.sequence, polled: true, cursor: 1})
+	m = updated.(Model)
+	if m.Err != nil || !m.cloud.connected {
+		t.Fatalf("recovered poll left stale error: %v", m.Err)
+	}
+}
+
+func TestServicePollRecoveryKeepsUnrelatedError(t *testing.T) {
+	m, _ := cloudFixture(t)
+	updated, _ := m.Update(serviceResult{sequence: m.cloud.sequence, err: fmt.Errorf("offline")})
+	m = updated.(Model)
+	m.Err = fmt.Errorf("task title cannot be empty")
+	updated, _ = m.Update(serviceResult{sequence: m.cloud.sequence, polled: true, cursor: 1})
+	m = updated.(Model)
+	if m.Err == nil {
+		t.Fatal("successful poll cleared an error it did not cause")
+	}
+}

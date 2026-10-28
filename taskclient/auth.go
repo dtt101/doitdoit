@@ -12,10 +12,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -103,6 +105,19 @@ func LoadCredentials(path string) (Credentials, error) {
 	}
 	return c, nil
 }
+
+// errAuthNotSent reports that no connection was established, so the request
+// (and any one-time credential in it) cannot have reached the service.
+var errAuthNotSent = errors.New("OAuth service unreachable; check the network and reconnect")
+
+// authTransport never reuses connections. A pooled connection can be silently
+// dead after sleep; a refresh sent on it would leave the outcome uncertain.
+var authTransport = func() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.DisableKeepAlives = true
+	return t
+}()
+
 func authRequest(ctx context.Context, origin, path string, input any, form bool, output any) error {
 	var body string
 	content := "application/json"
@@ -116,15 +131,20 @@ func authRequest(ctx context.Context, origin, path string, input any, form bool,
 		}
 		body = string(b)
 	}
+	var connected atomic.Bool
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{GotConn: func(httptrace.GotConnInfo) { connected.Store(true) }})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, origin+path, strings.NewReader(body))
 	if err != nil {
 		return errors.New("invalid OAuth request")
 	}
 	req.Header.Set("Content-Type", content)
 	req.Header.Set("Accept", "application/json")
-	client := &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := &http.Client{Transport: authTransport, Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	r, err := client.Do(req)
 	if err != nil {
+		if !connected.Load() {
+			return errAuthNotSent
+		}
 		return errors.New("OAuth response unavailable; sign in again if refresh outcome is uncertain")
 	}
 	defer r.Body.Close()
@@ -201,6 +221,15 @@ func CredentialSource(origin, path string) TokenSource {
 		}
 		var tokens authTokens
 		err = authRequest(ctx, origin, "/oauth/token", url.Values{"grant_type": {"refresh_token"}, "client_id": {c.ClientID}, "refresh_token": {c.RefreshToken}, "resource": {origin}}, true, &tokens)
+		if errors.Is(err, errAuthNotSent) {
+			// Nothing was sent (e.g. the network is still down after sleep), so the
+			// refresh token is unspent and a later reconnect may safely use it.
+			c.RefreshUncertain = false
+			if saveErr := SaveCredentials(path, c); saveErr != nil {
+				return "", saveErr
+			}
+			return "", err
+		}
 		if err != nil {
 			return "", err
 		}
