@@ -177,6 +177,10 @@ func (c *Client) do(ctx context.Context, method, path string, input, output any)
 	}
 	token, err := c.tokens(ctx)
 	if err != nil {
+		if errors.Is(err, errAuthNotSent) {
+			// Safe to show: no credential detail, and it clears once the network returns.
+			return fmt.Errorf("task service: %w", err)
+		}
 		return errors.New("task service: could not obtain credentials")
 	}
 	req.Header.Set("Authorization", "Bearer "+token)

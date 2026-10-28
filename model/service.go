@@ -22,6 +22,7 @@ type serviceState struct {
 	recoveryBlocked       bool
 	discardReview         bool
 	connected             bool
+	readErr               error // last poll failure, cleared by the next successful read
 	client                *taskclient.Client
 	origin, draftPath     string
 	tasks                 map[string]taskclient.Task
@@ -422,6 +423,12 @@ func (m Model) updateService(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.cloud.busy = false
+		if value.err == nil && (value.polled || value.board != nil) && m.cloud.readErr != nil {
+			if m.Err == m.cloud.readErr {
+				m.Err = nil
+			}
+			m.cloud.readErr = nil
+		}
 		if value.polled {
 			m.cloud.connected = true
 			if m.State == Browsing {
@@ -454,6 +461,7 @@ func (m Model) updateService(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		} else if value.err != nil {
 			m.cloud.connected = false
+			m.cloud.readErr = value.err
 			m.Err = value.err
 		}
 		if value.board != nil && m.cloud.pending == nil && m.State == Browsing {
