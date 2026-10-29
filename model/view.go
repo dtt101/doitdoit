@@ -85,6 +85,7 @@ func (m Model) renderDaySection(dateStr string, dayIdx, colWidth int) string {
 func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 	focused := m.ShowFuture || m.ShowOverdue || m.ShowDeleted || m.ColIdx == dayIdx
 	header := "Future"
+	overdue := 0
 	if m.ShowDeleted {
 		header = "Deleted — recoverable"
 	} else if m.ShowOverdue {
@@ -97,6 +98,10 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 			if m.FocusToday {
 				header += " (focus)"
 			}
+			// Without rollover, overdue service tasks only stay visible if Today says so.
+			if m.cloud != nil {
+				overdue = m.serviceOverdueCount()
+			}
 		}
 	}
 	remaining := 0
@@ -105,7 +110,7 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 			remaining++
 		}
 	}
-	doc := dayContent{header: dayHeader(header, remaining, colWidth), focusStart: -1}
+	doc := dayContent{header: dayHeader(header, remaining, overdue, colWidth), focusStart: -1}
 	appendBlock := func(content string) {
 		doc.lines = append(doc.lines, strings.Split(lipgloss.Wrap(content, colWidth, ""), "\n")...)
 	}
@@ -209,14 +214,30 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 	return doc
 }
 
-// Headers retain their two-line footprint in narrow windows.
-func dayHeader(label string, remaining, width int) string {
+// Headers retain their two-line footprint in narrow windows: a title and a
+// blank row, or a title and a counts row, so task lists stay aligned.
+func dayHeader(label string, remaining, overdue, width int) string {
 	count := fmt.Sprintf("%d remaining", remaining)
-	if lipgloss.Width(label+" · "+count) <= width {
-		return styles.TitleStyle.Width(width).Render(label + " · " + count)
+	if overdue == 0 {
+		if lipgloss.Width(label+" · "+count) <= width {
+			return styles.TitleStyle.Width(width).Render(label + " · " + count)
+		}
+		return styles.TitleStyle.PaddingBottom(0).Width(width).Render(label) + "\n" +
+			lipgloss.NewStyle().Foreground(styles.Subtle).Width(width).Render(count)
 	}
-	return styles.TitleStyle.PaddingBottom(0).Width(width).Render(label) + "\n" +
-		lipgloss.NewStyle().Foreground(styles.Subtle).Width(width).Render(count)
+	warning := fmt.Sprintf("%d overdue", overdue)
+	warningStyle := lipgloss.NewStyle().Foreground(styles.Warning).Bold(true)
+	title := styles.TitleStyle.PaddingBottom(0)
+	if lipgloss.Width(label+" · "+count+" · "+warning) <= width {
+		return lipgloss.NewStyle().PaddingBottom(1).Width(width).Render(
+			title.Render(label+" · "+count+" · ") + warningStyle.Render(warning))
+	}
+	subtle := lipgloss.NewStyle().Foreground(styles.Subtle)
+	counts := subtle.Render(count+" · ") + warningStyle.Render(warning)
+	if lipgloss.Width(count+" · "+warning) > width {
+		counts = warningStyle.Render(warning) // overdue matters more than remaining
+	}
+	return title.Width(width).Render(label) + "\n" + lipgloss.NewStyle().Width(width).Render(counts)
 }
 
 func (m Model) taskView(task Task, selected bool, width int) string {

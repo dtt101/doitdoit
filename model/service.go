@@ -713,6 +713,19 @@ func (m Model) serviceStatus() string {
 	return "Service · saved · o overdue · x deleted · r refresh"
 }
 
+// serviceOverdueCount counts open, undeleted tasks scheduled before the
+// owner's today, regardless of which view is showing.
+func (m Model) serviceOverdueCount() int {
+	today := m.serviceNow().Format(dateLayout)
+	count := 0
+	for _, t := range m.cloud.tasks {
+		if t.DeletedAt == nil && t.Status == "open" && t.ScheduledDate != nil && *t.ScheduledDate < today {
+			count++
+		}
+	}
+	return count
+}
+
 func (m Model) serviceStatusView() string {
 	message := m.serviceStatus()
 	width := m.footerContentWidth()
