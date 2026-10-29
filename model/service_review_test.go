@@ -307,3 +307,42 @@ func TestServiceChangeReconciliationUsesPagedEventsAndPreservesNewerAcknowledgem
 		})
 	}
 }
+
+func TestServiceTodayHeaderCountsOverdueTasks(t *testing.T) {
+	m, _ := cloudFixture(t)
+	today := m.serviceNow()
+	todayKey := today.Format(dateLayout)
+	header := func(width int) string {
+		return ansi.Strip(m.dayContent(todayKey, 0, width).header)
+	}
+	if text := header(80); strings.Contains(text, "overdue") {
+		t.Fatalf("header without overdue tasks = %q", text)
+	}
+	past := today.AddDate(0, 0, -2).Format(dateLayout)
+	deletedAt := time.Now()
+	m.cloud.tasks = map[string]taskclient.Task{
+		"late":      {ID: "late", Status: "open", ScheduledDate: &past},
+		"later":     {ID: "later", Status: "open", ScheduledDate: &past},
+		"done":      {ID: "done", Status: "completed", ScheduledDate: &past},
+		"deleted":   {ID: "deleted", Status: "open", ScheduledDate: &past, DeletedAt: &deletedAt},
+		"today":     {ID: "today", Status: "open", ScheduledDate: &todayKey},
+		"unplanned": {ID: "unplanned", Status: "open"},
+	}
+	m.serviceData()
+	if text := header(80); !strings.Contains(text, "Today · 1 remaining · 2 overdue") {
+		t.Fatalf("wide header = %q", text)
+	}
+	if text := header(24); !strings.Contains(text, "1 remaining · 2 overdue") || lipgloss.Height(m.dayContent(todayKey, 0, 24).header) != 2 {
+		t.Fatalf("narrow header = %q", text)
+	}
+	if text := header(12); !strings.Contains(text, "2 overdue") || strings.Contains(text, "remaining") {
+		t.Fatalf("very narrow header = %q", text)
+	}
+	tomorrow := today.AddDate(0, 0, 1).Format(dateLayout)
+	if text := ansi.Strip(m.dayContent(tomorrow, 1, 80).header); strings.Contains(text, "overdue") {
+		t.Fatalf("non-today header = %q", text)
+	}
+	if status := m.serviceStatus(); strings.Contains(status, "2 overdue") {
+		t.Fatalf("status line repeats the count: %q", status)
+	}
+}
