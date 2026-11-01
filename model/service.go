@@ -494,7 +494,7 @@ func (m Model) updateService(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.todayKey = now.Format(dateLayout)
 		m.serviceData()
 		first := m.firstVisibleDate()
-		if m.FocusToday || first.Before(startOfDay(now)) {
+		if first.Before(startOfDay(now)) {
 			m.updateDateKeysFrom(startOfDay(now))
 		}
 		return m, dateTick()
@@ -710,7 +710,7 @@ func (m Model) serviceStatus() string {
 	if m.ShowDeleted {
 		return "Service · deleted tasks · enter restore · x return"
 	}
-	return "Service · saved · o overdue · x deleted · r refresh"
+	return "Service · saved · x deleted · r refresh"
 }
 
 // serviceOverdueCount counts open, undeleted tasks scheduled before the

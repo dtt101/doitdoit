@@ -46,7 +46,7 @@ func (m Model) footerStyle() lipgloss.Style {
 
 // Choose columns for presentation only; resizing never changes task storage.
 func (m Model) visibleColumnCount() int {
-	if m.ShowFuture || m.ShowOverdue || m.ShowDeleted || m.FocusToday {
+	if m.ShowFuture || m.ShowOverdue || m.ShowDeleted {
 		return 1
 	}
 	count := max(1, len(m.dateKeys))

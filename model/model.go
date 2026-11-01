@@ -33,7 +33,6 @@ type moveTarget struct {
 type moveUndoSnapshot struct {
 	Data          TodoData
 	ShowFuture    bool
-	FocusToday    bool
 	HideCompleted bool
 	DateKeys      []string
 	ColIdx        int
@@ -104,7 +103,6 @@ type Model struct {
 	// Future View
 	ShowFuture    bool
 	ShowHelp      bool
-	FocusToday    bool
 	HideCompleted bool
 
 	// Presentation state is independent of the date window used for scheduling.

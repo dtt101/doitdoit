@@ -167,9 +167,7 @@ The default view shows up to three days, with one day per column. Narrow windows
 show fewer columns, keeping the selected day on screen. Move right to see later
 days and left to return toward Today.
 
-Press `t` to jump back to Today. Press `T` to focus on Today alone; press it again
-to restore the responsive multi-day layout at Today. Focus mode stays on Today
-across midnight. Both shortcuts work from Future too.
+Press `t` to jump back to Today, including from Future.
 
 Long lists scroll inside their columns, keeping the selected task, day header,
 and footer visible. Use `j`/`k` or Up/Down to select tasks, and Page Up/Page Down
@@ -196,7 +194,7 @@ the task to Today.
 
 Setting a date immediately moves a task out of Future into that date's calendar
 bucket, however far away. Moving a task to Future clears its date. Navigation,
-resizing, and Today focus only change the display; they never move or save tasks.
+and resizing only change the display; they never move or save tasks.
 
 On load, legacy tasks in Future with valid dates move to their recorded date
 buckets before normal rollover and retention run. Overdue incomplete tasks roll
@@ -223,7 +221,6 @@ it. Save errors appear instead of a success confirmation.
 | `h` `j` `k` `l` or arrows | Move between days and tasks |
 | `Page Up` / `Page Down` | Scroll a task list, including long wrapped titles |
 | `t` | Return to Today in the current layout |
-| `T` | Toggle Today-only focus; return to Today |
 | `a` | Add a task to the selected day or Future |
 | `e` | Edit the selected task title |
 | `n` | Open plain-text notes for the selected task |

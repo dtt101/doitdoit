@@ -5,7 +5,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -87,8 +86,8 @@ func TestSingleDayArgumentStillAllowsCalendarNavigation(t *testing.T) {
 	m.updateDateKeys()
 	m = resizeModel(m, 200, 24)
 	m = pressRune(m, 'l')
-	if len(m.visibleKeys()) != 1 || m.getCurrentKey() != dayKey(1) || m.FocusToday {
-		t.Fatal("a one-day window must be a navigable calendar, independent of Today focus")
+	if len(m.visibleKeys()) != 1 || m.getCurrentKey() != dayKey(1) {
+		t.Fatal("a one-day window must be a navigable calendar")
 	}
 	m = pressRune(m, 't')
 	if len(m.visibleKeys()) != 1 || m.getCurrentKey() != dayKey(0) {
@@ -226,49 +225,6 @@ func TestResizeInputPreservesTextAndCursor(t *testing.T) {
 	}
 }
 
-func TestTodayFocusAndJumpPreserveMaximumAndUndoDate(t *testing.T) {
-	m := resizeModel(newFeedbackTestModel(t), 120, 24)
-	m.updateDateKeysFrom(startOfDayNow().AddDate(0, 0, 5))
-	key := m.dateKeys[1]
-	m.ColIdx = 1
-	m.Data[key] = []Task{{ID: "restore", Title: "Restore here"}}
-	m.persist()
-	m = pressRune(m, 'd')
-	m = pressRune(m, 'T')
-	if !m.FocusToday || m.ShowFuture || m.getCurrentKey() != dayKey(0) || len(m.visibleKeys()) != 1 || m.VisibleDays != 3 {
-		t.Fatalf("focus did not show Today: %+v", m.visibleKeys())
-	}
-	m = pressRune(m, 'l')
-	if m.getCurrentKey() != dayKey(0) {
-		t.Fatal("Today focus navigated to another date")
-	}
-	m = pressRune(m, 'f')
-	m = pressRune(m, 't')
-	if m.ShowFuture || !m.FocusToday || m.getCurrentKey() != dayKey(0) {
-		t.Fatal("Today jump did not restore focused Today from Future")
-	}
-	m = pressRune(m, 'u')
-	if m.FocusToday || m.getCurrentKey() != key || m.Data[key][m.RowIdx].ID != "restore" {
-		t.Fatal("undo after changing views did not restore its original date and task")
-	}
-	m = pressRune(pressRune(m, 'T'), 'T')
-	if m.FocusToday || len(m.visibleKeys()) != 3 || m.getCurrentKey() != dayKey(0) {
-		t.Fatal("leaving Today focus did not restore the requested day layout")
-	}
-}
-
-func TestFocusFollowsTodayAcrossMidnight(t *testing.T) {
-	m := newFeedbackTestModel(t)
-	m.FocusToday = true
-	m.todayKey = dayKey(-1)
-	m.updateDateKeysFrom(startOfDayNow().AddDate(0, 0, -1))
-	updated, _ := m.Update(dateTickMsg(time.Now()))
-	m = updated.(Model)
-	if m.getCurrentKey() != dayKey(0) || len(m.visibleKeys()) != 1 {
-		t.Fatal("focus did not follow Today after midnight")
-	}
-}
-
 func TestShortHelpCanScrollToEveryShortcut(t *testing.T) {
 	m := resizeModel(newFeedbackTestModel(t), 40, 12)
 	m = pressRune(m, '?')
@@ -303,5 +259,23 @@ func TestTinyWindowPausesEditsAndRecovers(t *testing.T) {
 	m = resizeModel(m, 80, 24)
 	if !strings.Contains(m.View().Content, "First task") {
 		t.Fatal("board did not recover after resizing")
+	}
+}
+
+func TestTodayJumpAndUndoRestoreOriginalDate(t *testing.T) {
+	m := resizeModel(newFeedbackTestModel(t), 120, 24)
+	m.updateDateKeysFrom(startOfDayNow().AddDate(0, 0, 5))
+	key := m.dateKeys[1]
+	m.ColIdx = 1
+	m.Data[key] = []Task{{ID: "restore", Title: "Restore here"}}
+	m.persist()
+	m = pressRune(m, 'd')
+	m = pressRune(m, 't')
+	if m.getCurrentKey() != dayKey(0) || len(m.visibleKeys()) != 3 {
+		t.Fatal("Today jump did not preserve the day layout")
+	}
+	m = pressRune(m, 'u')
+	if m.getCurrentKey() != key || m.Data[key][m.RowIdx].ID != "restore" {
+		t.Fatal("undo did not restore the original date and task")
 	}
 }

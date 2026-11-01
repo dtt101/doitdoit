@@ -66,7 +66,6 @@ func (m *Model) captureMoveUndo() {
 	m.moveUndo = &moveUndoSnapshot{
 		Data:          cloneTodoData(m.Data),
 		ShowFuture:    m.ShowFuture,
-		FocusToday:    m.FocusToday,
 		HideCompleted: m.HideCompleted,
 		DateKeys:      append([]string(nil), m.dateKeys...),
 		ColIdx:        m.ColIdx,
@@ -87,7 +86,6 @@ func (m *Model) undoMove() bool {
 	snapshot := m.moveUndo
 	m.Data = cloneTodoData(snapshot.Data)
 	m.ShowFuture = snapshot.ShowFuture
-	m.FocusToday = snapshot.FocusToday
 	m.HideCompleted = snapshot.HideCompleted
 	if len(snapshot.DateKeys) > 0 {
 		m.dateKeys = append([]string(nil), snapshot.DateKeys...)

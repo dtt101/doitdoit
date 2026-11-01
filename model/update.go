@@ -183,14 +183,14 @@ func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
 		m.Data.pruneOldTasks(m.RetentionDays)
 		m.clearMoveUndo()
 		firstDay := m.firstVisibleDate()
-		if m.FocusToday || firstDay.Before(startOfDay(m.serviceNow())) {
+		if firstDay.Before(startOfDay(m.serviceNow())) {
 			firstDay = startOfDay(m.serviceNow())
 		}
 		m.updateDateKeysFrom(firstDay)
 		m.todayKey = todayKey
 		m.ColIdx = 0
 		for i, dateKey := range m.dateKeys {
-			if !m.FocusToday && dateKey == focusedDate {
+			if dateKey == focusedDate {
 				m.ColIdx = i
 				break
 			}
@@ -327,7 +327,7 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "right", "l":
-		if !m.ShowFuture && !m.ShowOverdue && !m.ShowDeleted && !m.FocusToday {
+		if !m.ShowFuture && !m.ShowOverdue && !m.ShowDeleted {
 			if m.ColIdx < len(m.dateKeys)-1 {
 				m.ColIdx++
 			} else {
@@ -336,7 +336,7 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.clampRow()
 		}
 	case "left", "h":
-		if !m.ShowFuture && !m.ShowOverdue && !m.ShowDeleted && !m.FocusToday {
+		if !m.ShowFuture && !m.ShowOverdue && !m.ShowDeleted {
 			if m.ColIdx > 0 {
 				m.ColIdx--
 			} else {
@@ -356,9 +356,6 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "pgdown":
 		m.scrollPage(1)
 	case "t":
-		m.returnToToday()
-	case "T":
-		m.FocusToday = !m.FocusToday
 		m.returnToToday()
 	case "a":
 		if m.cloud != nil && m.ShowOverdue {

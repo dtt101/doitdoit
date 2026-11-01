@@ -44,7 +44,7 @@ Usage:
 
 Run without a command to open the interactive task manager.
 The layout adapts to the terminal width. Use left/right to navigate days,
-t to return to Today, or T to toggle Today focus.
+t to return to Today.
 
 Interactive options:
 `)

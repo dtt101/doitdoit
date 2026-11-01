@@ -62,7 +62,7 @@ func TestServiceOverdueNavigationAndRelativeMovesUseToday(t *testing.T) {
 	}
 }
 func TestServiceReturnToTodayResetsOverdueSelection(t *testing.T) {
-	for _, key := range []rune{'t', 'T'} {
+	for _, key := range []rune{'t'} {
 		m, _ := cloudFixture(t)
 		today := m.serviceNow().Format(dateLayout)
 		m.serviceBoard(taskclient.Board{Timezone: "Europe/London", Tasks: []taskclient.Task{reviewTask("a", today), reviewTask("b", today), reviewTask("c", "2020-01-01"), reviewTask("d", "2020-01-01")}})
@@ -344,5 +344,24 @@ func TestServiceTodayHeaderCountsOverdueTasks(t *testing.T) {
 	}
 	if status := m.serviceStatus(); strings.Contains(status, "2 overdue") {
 		t.Fatalf("status line repeats the count: %q", status)
+	}
+}
+
+func TestOverdueShortcutAppearsInTaskControls(t *testing.T) {
+	m, _ := cloudFixture(t)
+	m.cloud.busy = false
+	if footer := ansi.Strip(m.helpView()); !strings.Contains(footer, "o overdue") {
+		t.Fatalf("task controls missing overdue shortcut: %q", footer)
+	}
+	if status := m.serviceStatus(); strings.Contains(status, "o overdue") {
+		t.Fatalf("service status contains overdue shortcut: %q", status)
+	}
+	m = serviceKey(m, 'o')
+	if !m.ShowOverdue || !strings.Contains(ansi.Strip(m.helpView()), "o days") {
+		t.Fatal("overdue shortcut did not switch views and update the controls")
+	}
+	m = serviceKey(m, 'o')
+	if m.ShowOverdue {
+		t.Fatal("overdue shortcut did not return to the days view")
 	}
 }

@@ -95,9 +95,6 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 		header = displayDate.Format("Mon, Jan 02")
 		if dateStr == m.serviceNow().Format(dateLayout) {
 			header = "Today"
-			if m.FocusToday {
-				header += " (focus)"
-			}
 			// Without rollover, overdue service tasks only stay visible if Today says so.
 			if m.cloud != nil {
 				overdue = m.serviceOverdueCount()
@@ -410,12 +407,15 @@ func (m Model) footerHelpItems() []helpItem {
 		if m.cloud != nil && m.ShowOverdue {
 			items[0].description = "add to Today"
 		}
-		if (m.height == 0 || m.height >= 16) && (m.width == 0 || m.width >= 36) {
-			focusToggle := "focus today"
-			if m.FocusToday {
-				focusToggle = "all days"
+		if m.cloud != nil {
+			overdueToggle := "overdue"
+			if m.ShowOverdue {
+				overdueToggle = "days"
 			}
-			items = append(items, helpItem{"t", "today"}, helpItem{"T", focusToggle})
+			items = append(items, helpItem{"o", overdueToggle})
+		}
+		if (m.height == 0 || m.height >= 16) && (m.width == 0 || m.width >= 36) {
+			items = append(items, helpItem{"t", "today"})
 		}
 		return items
 	case Adding:
@@ -517,9 +517,6 @@ func (m Model) helpItems() []helpItem {
 		navigation = "↑/↓ / k/j"
 		viewToggle = "main view"
 	}
-	if m.FocusToday && !m.ShowFuture {
-		navigation = "↑/↓ / k/j"
-	}
 	items := []helpItem{
 		{navigation, "navigate"},
 		{"a", "add task"},
@@ -537,7 +534,6 @@ func (m Model) helpItems() []helpItem {
 		{"r", "review conflicts / rescan copies"},
 		{"f", viewToggle},
 		{"t", "return to Today"},
-		{"T", "toggle Today focus"},
 		{"pgup / pgdown", "scroll list"},
 		{"q / ctrl+c", "quit"},
 	}
