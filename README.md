@@ -2,7 +2,7 @@
 
 **A fast, keyboard-first task manager for your terminal — with your tasks kept in a file you own.**
 
-`doitdoit` gives you a calm, multi-day view of what is in front of you, gets out of the way when you are working, and makes sure unfinished tasks do not disappear into yesterday. By default, the backend is one readable JSON file with no account required. This branch also offers an explicitly selected [Cloudflare backend](#experimental-cloudflare-backend) for the TUI and MCP clients.
+`doitdoit` gives you a calm, multi-day view of what is in front of you, gets out of the way when you are working, and makes sure unfinished tasks do not disappear into yesterday. By default, the backend is one readable JSON file with no account required. An experimental, explicitly selected [Cloudflare backend](#experimental-cloudflare-backend) also connects the TUI, web companion and MCP clients.
 
 Supported desktop platforms are **macOS and Linux**, with **Omarchy as a first-class Linux platform**. Windows is no longer supported. Release archives cover Intel/AMD 64-bit (`amd64`) and ARM64 (`arm64`) on both supported operating systems.
 
@@ -118,11 +118,11 @@ go build -o doitdoit
 ./doitdoit
 ```
 
-## One file is the backend
+## JSON file storage
 
-There is no server to maintain and no proprietary data store. Task data is saved atomically to one `doitdoit.json` file with owner-only permissions, while machine-specific settings such as the file location and theme stay separately in `~/.doitdoit_config.json`.
+In the default JSON mode there is no server to maintain or account required. Task data is saved atomically to one `doitdoit.json` file with owner-only permissions, while machine-specific settings such as the file location and theme stay separately in `~/.doitdoit_config.json`.
 
-The terminal application has no ads or telemetry and sends no task data to the maintainer. It accesses the network only indirectly when you deliberately place its JSON file in a third-party synced folder; that provider's terms then apply.
+In JSON mode, the terminal application has no ads or telemetry and sends no task data to the maintainer. A third-party sync provider may access the file if you put it in a synced folder. Service mode sends task data to the configured service.
 
 This makes a few useful workflows almost effortless:
 
@@ -159,7 +159,7 @@ This JSON conflict review is available in the terminal; the service-backed web a
 
 Back up both the task JSON file and `~/.doitdoit_config.json` before migrations or major upgrades, and test that the backup can be read. Need to relocate an existing task file later? `doitdoit config move <new_path>` moves it and updates your configuration, but refuses any existing file, directory, or symlink at the destination so it cannot overwrite data.
 
-Completed history is preserved forever by default. Choose a positive pruning period during first-run setup or change it later with `doitdoit config retention <days>`. Pruning never occurs until that choice has been saved. `doitdoit config retention forever` returns to non-pruning mode.
+In JSON mode, completed history is preserved forever by default. Choose a positive pruning period during first-run setup or change it later with `doitdoit config retention <days>`. Pruning never occurs until that choice has been saved. `doitdoit config retention forever` returns to non-pruning mode.
 
 ## Daily workflow
 
@@ -182,21 +182,20 @@ the selection marker visible. Completed tasks appear in a separate section;
 press `c` to collapse or expand it across the current session. Collapsing only
 changes the display and navigation, preserving the task file and stored order.
 
-When unfinished tasks carry forward, a session notice reports how many moved
+In JSON mode, when unfinished tasks carry forward, a session notice reports how many moved
 to Today. It appears in the footer when space allows; `?` also explains rollover.
 The count reflects rollover observed during this session and is never stored.
 
 Press `f` for the separate Future list. Completed tasks appear in a **Completed**
 section. `J`/`K` reorder within the displayed section.
 To set or change a date, select a task, press `m` then `d`, enter `YYYY-MM-DD`
-or `MM-DD`, and press Enter. `MM-DD` uses the current year; past dates move
-the task to Today.
+or `MM-DD`, and press Enter. `MM-DD` uses the current year. In JSON mode, past dates move the task to Today; service mode preserves the chosen date.
 
 Setting a date immediately moves a task out of Future into that date's calendar
-bucket, however far away. Moving a task to Future clears its date. Navigation,
+bucket, however far away. Moving a task to Future clears its date. Navigation
 and resizing only change the display; they never move or save tasks.
 
-On load, legacy tasks in Future with valid dates move to their recorded date
+In JSON mode, on load, legacy tasks in Future with valid dates move to their recorded date
 buckets before normal rollover and retention run. Overdue incomplete tasks roll
 to Today; completed tasks keep their historical dates, subject to retention.
 The migration uses the normal revision-checked save and backup. Malformed dates
@@ -365,7 +364,7 @@ Uninstalling intentionally leaves your task JSON file and `~/.doitdoit_config.js
 
 ### Experimental Cloudflare backend
 
-The TUI and assistant MCP clients can share tasks through a Rust/WASM Cloudflare
+The TUI, web companion and assistant MCP clients can share tasks through a Rust/WASM Cloudflare
 Worker backed by D1. JSON remains the default; there is no automatic migration
 or synchronization between backends.
 
@@ -384,4 +383,4 @@ export current data before returning to an old JSON file.
 See the [service guide](service/README.md) for TUI controls, ChatGPT/Gemini setup
 and reviewed import/export; [Operations](service/OPERATIONS.md) for encrypted
 backups, deployment and recovery; the [API contract](api/README.md) for protocol
-details; and the [plan](plans/cloudflare-task-service.md) for remaining work.
+details; and the [SaaS plan](plans/saas.md) for the proposed paid offering. The hosted service is experimental; paid subscriptions are not yet available.

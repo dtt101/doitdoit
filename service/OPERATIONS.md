@@ -165,5 +165,4 @@ Real-task import and selecting the service as default require an explicit decisi
 4. Select the service with `doitdoit service use`.
 
 Keep the original JSON, `.bak` and recovery files. After service edits, the old
-JSON is stale; returning to it requires a reviewed current service export. The
-Dropbox web companion remains a separate JSON client.
+JSON is stale; returning to it requires a reviewed current service export. The web companion uses the service and does not update Dropbox JSON.

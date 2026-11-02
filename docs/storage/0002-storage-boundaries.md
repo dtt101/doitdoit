@@ -1,80 +1,46 @@
-# Stage 2: legacy storage boundaries
+# JSON storage boundaries
 
-Status: implemented, with the existing JSON adapter as the only runtime format.
-The immutable backend experiment has been removed. JSON remains authoritative;
-no sidecars or migration are required.
+The default desktop backend is a user-owned JSON file. The optional service is a
+separate backend; switching is explicit and does not synchronize the two. The web
+companion uses the service. See the [service guide](../../service/README.md).
 
-## Go boundary
+## JSON contract
 
-`taskstore` has no Bubble Tea, clipboard, configuration, or theme dependencies.
-It owns task data and lifecycle operations, conservative bucket merging, capture,
-and the `Store` interface. `JSONStore` implements the existing JSON serialization,
-content checks, atomic replacement, `0600` files, backups, and no-replace moves.
+`taskstore` owns task data and lifecycle operations independent of Bubble Tea.
+`JSONStore` implements the existing schema and `Store` interface. Preserve field
+names, task IDs, local-calendar `YYYY-MM-DD` buckets and the undated `Future`
+bucket. On load, valid dated tasks in `Future` are normalized before incomplete
+past tasks roll to Today and explicitly configured retention is applied. Invalid
+dates remain available for recovery. Retention defaults to forever.
 
-`Load` returns task data paired with its revision. `Save` takes that expected
-revision and returns the revision actually saved. A nil expectation is retained
-only for the existing unconditional `TodoData.Save` compatibility API. Snapshot
-mtime/size metadata supports the existing reload policy; it never authorizes a save.
-`LoadStore` performs startup maintenance above the adapter and saves only when dirty.
+Writes use atomic replacement and owner-only permissions, with a `.bak` of the
+previous valid contents. Loads pair data with its revision; conditional saves
+check that revision. Independent bucket changes may merge, but competing edits
+within a bucket remain visible conflicts. Identical results may converge. Storage
+moves refuse existing destinations. Preserve these guarantees and the existing
+recovery behavior when changing the implementation.
 
-The TUI owns selection, presentation, input validation, scheduling target selection,
-feedback, and undo navigation. It passes data operations to `taskstore` and all
-I/O through its store. Existing `model.Task`, `TodoData`, `Load`, and `CaptureTask`
-entry points remain compatibility wrappers. The CLI now calls `taskstore` directly.
-Configuration commands retain their public move functions and sentinel errors.
+JSON conflict recovery discovers adjacent Dropbox conflict copies and requires
+explicit review of nonredundant unfinished differences. It preserves recovery
+material before cleanup. Failed saves retain a private draft and baseline; drafts
+are cleared only after resolution or explicit discard. Ordinary quit is blocked
+if a pending draft cannot be persisted, with export or explicit discard available.
+Completed differences are not automatically restored. See the [README](../../README.md#recover-tasks-from-dropbox-copies)
+for the user workflow.
 
-## Write/read inventory
+Revision checks do not eliminate the check-to-replacement race with generic folder
+sync. Conflict review cannot recover a version the app never observed or guarantee
+a provider uploaded a save. Local recovery copies are not a second synced source
+of truth. No immutable-record sidecars or automatic backend migration are used.
 
-| Entry point | Boundary | Existing policy retained |
-| --- | --- | --- |
-| TUI startup | `LoadStore` → `Store.Load/Save` | Rollover, explicit retention, completion grouping; distribution stays in memory |
-| CLI add | `Capture` → `LoadStore`, `Store.Save` | Validate input, insert before completed, compare loaded revision |
-| TUI task edits, undo, midnight maintenance | `Model.persist` → `Store.Save` | Expected revision, error feedback, one conservative merge retry |
-| Conflict retry | `Store.Load`, `Merge`, `Store.Save` | Separate buckets merge; competing same-bucket edits remain conflicts |
-| Background reload | `checkStore` → `Store.Load` | Pause while typing; transient failures ignored; stale result gate and in-memory maintenance retained |
-| Legacy `TodoData.Save/SaveIfUnchanged` | `JSONStore.Save` | Existing serialization and conditional/unconditional API behavior |
-| `config move` | `JSONStore.Move` | Exclusive hard-link publication, cross-filesystem copy fallback, no destination overwrite |
-| Web load/focus reload | `taskStore.load` | Existing Dropbox download and auth refresh |
-| Web edits and load maintenance | `taskStore.save` | Existing revision upload, debounce, errors, and recovery snapshots |
+## Boundaries and verification
 
-Configuration/theme files and OAuth token storage are not task-file adapters.
-First-run path selection still checks whether the configured file exists and keeps
-its current prompts. The revised [storage plan](../../plans/major-version-storage.md)
-retains this boundary and JSON format; automatic migration has been cancelled.
+`LoadStore` applies lifecycle maintenance above the adapter. The TUI owns input,
+presentation and conflict review; CLI capture uses `taskstore` directly. Service
+clients use task operations and revision-guarded commands instead of whole-file
+`Store.Load/Save`; service reads do not roll over or prune tasks.
 
-## Snapshot consistency
-
-Extraction exposed separate reads of data and its comparison hash in capture,
-startup tracking, and conflict retry. These now use one paired snapshot. A follow-up
-read after saving may refresh matching metadata, but cannot replace the revision
-with an external edit's hash. An intervening same-bucket edit therefore remains a
-visible conflict instead of being accidentally authorized for overwrite.
-
-The JSON adapter still has the existing narrow check-to-rename race and eventual
-folder sync limitations. This stage does not promise cross-device atomic writes.
-
-## Web boundary
-
-`Sync.createJSONStore` exposes `load`, `save`, and detached `recovery` snapshots.
-The application supplies authentication callbacks and retains browser/UI state.
-Transport, revision handling, and authentication retries use the existing code.
-Task insert/edit/toggle/delete/move operations now live in `domain.js`; rendering,
-dialogs, drag cancellation, debounce, and maintenance timing stay in `app.js`.
-There are no new scripts, dependencies, OAuth permissions, or storage keys.
-
-This is an extraction, not an alignment of historical client differences. Existing
-web empty-bucket cleanup and flat-Future drag rules remain; Go retains its current
-empty buckets and presentation-constrained reordering. Existing lifecycle tests
-continue to protect shared rollover, retention, and distribution behavior.
-
-## Verification
-
-Existing lifecycle/persistence/UI tests remain unchanged. The existing move tests
-move to `taskstore` with only their package declaration changed. Added tests inject
-intervening writes around capture, maintenance, startup, and saving; exercise the
-adapter's revision/backup behavior; and check web auth refresh, conflicts, recovery,
-and extracted operations. All stores in tests are temporary.
-
-Required checks: Go suite, vet, race suite, web suite, JavaScript syntax check,
-and release inventory tests. No major release or storage activation is needed to
-ship this extraction on its own.
+Persistence and recovery tests use temporary files and isolated HOME, never real
+tasks or credentials. Exercise revision conflicts, atomic replacement, backup,
+permissions, safe moves and recovery failure paths. Follow the repository test,
+vet and race requirements when making changes.

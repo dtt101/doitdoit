@@ -60,11 +60,12 @@ These instructions apply to the whole repository.
 
 ## Change guidelines
 
-- Follow `plans/cloudflare-task-service.md` for the accepted future architecture:
-  a Cloudflare Worker task API/MCP service, D1, and the existing Go TUI as a client.
-  Implementation and migration are staged and explicit. Until cutover, preserve
+- The experimental service uses a Cloudflare Worker task API/MCP service, D1,
+  and the existing Go TUI as a client. Follow `service/README.md` and
+  `api/README.md` for its current architecture and contract; see `plans/saas.md`
+  for the proposed paid offering. Implementation and migration are staged and explicit. Until cutover, preserve
   the current JSON path and its safety guarantees described in
-  `plans/major-version-storage.md`. The abandoned immutable backend and automatic
+  `docs/storage/0002-storage-boundaries.md`. The abandoned immutable backend and automatic
   migration roadmap remain superseded.
 
 - Add or update tests beside the package or JavaScript module being changed.

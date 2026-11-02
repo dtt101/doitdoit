@@ -4,6 +4,23 @@ The Go TUI and assistant MCP clients share tasks in Cloudflare D1 through a
 Rust/WASM Worker. JSON remains the default until you explicitly select the service;
 there is no automatic import or synchronization with the JSON file.
 
+## Architecture and guarantees
+
+The current deployment is a single-owner service. Rust owns the HTTP and MCP
+endpoints, OAuth, validation and D1 operations; the Go TUI calls the HTTP API.
+The static web companion also uses the service. Node is used for development and
+Cloudflare tooling, not service application code.
+
+Service reads never roll over or prune tasks: overdue is a view of tasks with their
+original dates. Mutations use revision checks; stale writes require visible review.
+Identical operation-ID retries return the original acknowledgement. Task changes,
+history and receipts commit atomically. Do not retry a conflict against a newer
+revision without review. See the [API contract](../api/README.md) for details.
+
+The service is experimental, with no automatic migration or synchronization with
+JSON. The [SaaS plan](../plans/saas.md) describes a possible future multi-user
+paid offering; it is not a description of the current deployment.
+
 ## Use the TUI
 
 From the repository root:
@@ -75,8 +92,10 @@ Find it in the TUI and press `r`. Edit it in the TUI, then ask the assistant to
 fetch it again. Confirm the status, date and note. After 16 minutes idle, fetch
 again without reconnecting to check session continuity.
 
-ChatGPT and Gemini shared-task checks have passed. Claude is deferred; remaining
-checks are listed in the [plan](../plans/cloudflare-task-service.md#remaining-work).
+ChatGPT and Gemini shared-task checks have passed. Remaining checks include fresh
+ChatGPT login and revocation, Gemini completion writes, web create/complete writes
+with TUI read-back, broader TUI conflict/retry checks, and hands-on macOS testing.
+Claude testing remains deferred.
 
 ## Import and export
 
@@ -140,5 +159,5 @@ days; Sunday copies last 35 days. The first hosted export and downloaded-artifac
 recovery passed. The private recovery key stays outside GitHub.
 
 See [Operations](OPERATIONS.md) for deployment, backup controls, recovery and
-cost limits; the [API contract](../api/README.md) for protocol details; and the
-[plan](../plans/cloudflare-task-service.md) for architecture and remaining work.
+cost limits, and the [API contract](../api/README.md) for protocol details.
+Continue to monitor backup runs and retention and repeat recovery drills.
