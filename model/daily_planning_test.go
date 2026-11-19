@@ -1,11 +1,8 @@
 package model
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -21,13 +18,12 @@ func futurePlanningModel(t *testing.T) Model {
 		{ID: "idea-b", Title: "Idea B"},
 		{ID: "done", Title: "Finished idea", Completed: true},
 	}
-	m.persist()
 	return pressRune(m, 'f')
 }
 
-func TestFutureGroupingDoesNotChangeStorage(t *testing.T) {
+func TestFutureGroupingDoesNotChangeOrder(t *testing.T) {
 	m := futurePlanningModel(t)
-	before, _ := os.ReadFile(m.FilePath)
+	before := cloneTodoData(m.Data)
 	m = resizeModel(m, 80, 32)
 	view := ansi.Strip(m.View().Content)
 	if strings.Contains(view, "Ideas (undated)") {
@@ -47,9 +43,8 @@ func TestFutureGroupingDoesNotChangeStorage(t *testing.T) {
 		m = pressRune(m, 'j')
 	}
 	m = pressRune(m, 'c')
-	after, _ := os.ReadFile(m.FilePath)
-	if string(before) != string(after) || m.Data["Future"][0].ID != "scheduled-a" {
-		t.Fatal("presentation changed Future storage order")
+	if !sameJSON(before, m.Data) || m.Data["Future"][0].ID != "scheduled-a" {
+		t.Fatal("presentation changed Future order")
 	}
 }
 
@@ -82,71 +77,8 @@ func TestFutureActionsUseDisplayedTaskAndSection(t *testing.T) {
 	}
 }
 
-func TestRolloverNoticeComesFromActualRollover(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "tasks.json")
-	before := TodoData{
-		dayKey(-1): {{ID: "carry-a", Title: "Carry A"}, {ID: "completed", Title: "Completed", Completed: true}},
-		dayKey(-3): {{ID: "carry-b", Title: "Carry B"}},
-		dayKey(0):  {{ID: "existing", Title: "Already planned", CreatedAt: time.Now().AddDate(0, 0, -10)}},
-		"Future":   {{ID: "idea", Title: "An old idea", CreatedAt: time.Now().AddDate(0, 0, -10)}},
-	}
-	if err := before.Save(path); err != nil {
-		t.Fatal(err)
-	}
-	original, _ := os.ReadFile(path)
-	m, err := NewModel(path, 3)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m = resizeModel(m, 80, 24)
-	if m.carriedForward != 2 || !strings.Contains(ansi.Strip(m.View().Content), "2 tasks carried forward to Today.") {
-		t.Fatalf("incorrect rollover explanation: count=%d", m.carriedForward)
-	}
-	if len(m.Data[dayKey(0)]) != 3 || len(m.Data[dayKey(-1)]) != 1 || !m.Data[dayKey(-1)][0].Completed {
-		t.Fatal("rollover semantics changed")
-	}
-	backup, err := os.ReadFile(path + ".bak")
-	if err != nil || string(backup) != string(original) {
-		t.Fatal("load did not preserve the pre-rollover backup")
-	}
-	saved, _ := os.ReadFile(path)
-	if strings.Contains(string(saved), "carried") {
-		t.Fatal("rollover metadata leaked into task JSON")
-	}
-	second, err := NewModel(path, 3)
-	if err != nil || second.carriedForward != 0 {
-		t.Fatal("already rolled tasks were reported as a fresh rollover")
-	}
-}
-
-func TestRolloverNoticeOnDateTickAndExternalReload(t *testing.T) {
-	m := newFeedbackTestModel(t)
-	m.Data[dayKey(-1)] = []Task{{ID: "carry", Title: "Carry"}}
-	m.todayKey = dayKey(-1)
-	updated, _ := m.Update(dateTickMsg(time.Now()))
-	m = updated.(Model)
-	if m.carriedForward != 1 || !strings.Contains(ansi.Strip(m.View().Content), "1 task carried forward to Today.") {
-		t.Fatal("midnight rollover was not explained")
-	}
-	updated, _ = m.Update(dataFileCheckedMsg{
-		data:    TodoData{dayKey(-2): {{ID: "external", Title: "External"}, {ID: "external-2", Title: "External 2"}}},
-		modTime: m.dataModTime.Add(time.Second),
-	})
-	m = updated.(Model)
-	if m.carriedForward != 2 || len(m.Data[dayKey(0)]) != 2 {
-		t.Fatal("external rollover was not explained")
-	}
-	m.todayKey = dayKey(-1)
-	updated, _ = m.Update(dateTickMsg(time.Now()))
-	m = updated.(Model)
-	if m.carriedForward != 0 {
-		t.Fatal("notice survived into a day with no rollover")
-	}
-}
-
 func TestPlanningGuidanceFitsSmallWindows(t *testing.T) {
 	m := futurePlanningModel(t)
-	m.carriedForward = 3
 	for _, size := range [][2]int{{24, 10}, {24, 16}, {40, 12}, {48, 16}, {80, 24}} {
 		m = resizeModel(m, size[0], size[1])
 		m.feedback = "Moved to " + dayKey(10)
@@ -173,19 +105,15 @@ func TestFutureDateGuidanceLeadsToScheduling(t *testing.T) {
 	m.TextInput.SetValue(date)
 	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(Model)
-	saved, err := Load(m.FilePath, m.RetentionDays)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, task := range saved["Future"] {
+	for _, task := range m.Data["Future"] {
 		if task.ID == "idea-a" {
 			t.Fatal("scheduled idea remained in Future")
 		}
 	}
-	for _, task := range saved[date] {
+	for _, task := range m.Data[date] {
 		if task.ID == "idea-a" && task.DueDate == date {
 			return
 		}
 	}
-	t.Fatal("date entry did not save the selected Future idea's schedule")
+	t.Fatal("date entry did not schedule the selected Future idea")
 }

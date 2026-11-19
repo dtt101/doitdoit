@@ -2,18 +2,27 @@ package config
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
+const DefaultServiceOrigin = "https://doitdoit-service.davidt-91d.workers.dev"
+
 type Config struct {
-	Backend       string `json:"backend,omitempty"`
 	ServiceOrigin string `json:"service_origin,omitempty"`
-	StoragePath   string `json:"storage_path"`
 	Theme         string `json:"theme,omitempty"`
-	RetentionDays *int   `json:"retention_days,omitempty"`
+}
+
+func (c *Config) ResolvedServiceOrigin(override string) string {
+	origin := strings.TrimSpace(override)
+	if origin == "" && c != nil {
+		origin = strings.TrimSpace(c.ServiceOrigin)
+	}
+	if origin == "" {
+		origin = DefaultServiceOrigin
+	}
+	return strings.TrimSuffix(origin, "/")
 }
 
 func GetConfigPath() (string, error) {
@@ -42,33 +51,7 @@ func LoadConfig() (*Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
-	if cfg.Backend != "" && cfg.Backend != "json" && cfg.Backend != "service" {
-		return nil, fmt.Errorf("unknown task backend %q", cfg.Backend)
-	}
-	if cfg.Backend == "service" && cfg.ServiceOrigin == "" {
-		return nil, fmt.Errorf("service backend requires service_origin")
-	}
-	if cfg.RetentionDays != nil && *cfg.RetentionDays < 0 {
-		return nil, fmt.Errorf("retention_days must be zero or a positive integer")
-	}
-
 	return &cfg, nil
-}
-
-// Retention returns the configured retention period. The boolean is false
-// when the user has not made a choice yet. Zero days means keep history
-// forever.
-func (c *Config) Retention() (days int, decided bool) {
-	if c.RetentionDays == nil {
-		return 0, false
-	}
-	return *c.RetentionDays, true
-}
-
-// SetRetention records an explicit retention choice.
-func (c *Config) SetRetention(days int) {
-	c.RetentionDays = new(int)
-	*c.RetentionDays = days
 }
 
 func SaveConfig(cfg *Config) error {
@@ -107,15 +90,4 @@ func SaveConfig(cfg *Config) error {
 		return err
 	}
 	return nil
-}
-
-func ExpandPath(path string) (string, error) {
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("could not expand ~: %w", err)
-		}
-		return filepath.Join(home, path[2:]), nil
-	}
-	return path, nil
 }

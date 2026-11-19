@@ -1,7 +1,6 @@
 package model
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -16,8 +15,6 @@ func (m Model) View() tea.View {
 	content := ""
 	if m.cloud != nil && (m.cloud.conflict != nil || m.cloud.discardReview) {
 		content = m.serviceConflictView()
-	} else if m.review != nil {
-		content = m.conflictOverlay()
 	} else if m.State == EditingNotes {
 		content = m.notesOverlay()
 	} else if m.terminalTooSmall() {
@@ -95,7 +92,6 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 		header = displayDate.Format("Mon, Jan 02")
 		if dateStr == m.serviceNow().Format(dateLayout) {
 			header = "Today"
-			// Without rollover, overdue service tasks only stay visible if Today says so.
 			if m.cloud != nil {
 				overdue = m.serviceOverdueCount()
 			}
@@ -312,9 +308,6 @@ func (m Model) helpView() string {
 		}
 	}
 	footer := wrapFooterItems(prefix, items, m.footerContentWidth())
-	if m.State == Browsing && m.Err == nil && m.carriedForward > 0 && (m.height == 0 || m.height >= 16) {
-		footer += "\n" + lipgloss.Wrap(desc(m.rolloverNotice()), max(1, m.footerContentWidth()), "")
-	}
 	return m.footerStyle().Render(footer)
 }
 
@@ -325,7 +318,7 @@ func (m Model) feedbackView() string {
 		return ""
 	}
 	suffix := ""
-	if m.moveUndo != nil {
+	if m.moveUndo != nil || (m.cloud != nil && m.cloud.undo != nil) {
 		suffix = " · " + styles.KeyStyle.Render("u") + " undo"
 	}
 	message := m.feedback
@@ -394,7 +387,7 @@ func wrapFooterItems(prefix string, items []string, width int) string {
 func (m Model) footerHelpItems() []helpItem {
 	switch m.State {
 	case Browsing:
-		if m.cloud != nil && m.ShowDeleted {
+		if m.ShowDeleted {
 			return []helpItem{{"enter", "restore"}, {"x", "return"}, {"r", "refresh"}, {"?", "help"}}
 		}
 		viewToggle := "future"
@@ -403,16 +396,13 @@ func (m Model) footerHelpItems() []helpItem {
 			viewToggle = "days"
 			moveLabel = "move/date"
 		}
-		items := []helpItem{{"a", "add"}, {"space", "complete"}, {"n", "notes"}, {"m", moveLabel}, {"f", viewToggle}, {"?", "help"}}
-		if m.cloud != nil && m.ShowOverdue {
-			items[0].description = "add to Today"
+		overdueToggle := "overdue"
+		if m.ShowOverdue {
+			overdueToggle = "days"
 		}
-		if m.cloud != nil {
-			overdueToggle := "overdue"
-			if m.ShowOverdue {
-				overdueToggle = "days"
-			}
-			items = append(items, helpItem{"o", overdueToggle})
+		items := []helpItem{{"a", "add"}, {"space", "complete"}, {"n", "notes"}, {"m", moveLabel}, {"f", viewToggle}, {"?", "help"}, {"o", overdueToggle}}
+		if m.ShowOverdue {
+			items[0].description = "add to Today"
 		}
 		if (m.height == 0 || m.height >= 16) && (m.width == 0 || m.width >= 36) {
 			items = append(items, helpItem{"t", "today"})
@@ -508,7 +498,7 @@ func (m Model) moveDestinationHelpItems() []helpItem {
 }
 
 func (m Model) helpItems() []helpItem {
-	if m.cloud != nil && m.ShowDeleted {
+	if m.ShowDeleted {
 		return []helpItem{{"↑/↓ / k/j", "navigate"}, {"enter", "restore task"}, {"c", "show/hide completed"}, {"r", "refresh"}, {"x", "return to active tasks"}, {"q / ctrl+c", "quit"}}
 	}
 	navigation := "arrows / hjkl"
@@ -517,13 +507,24 @@ func (m Model) helpItems() []helpItem {
 		navigation = "↑/↓ / k/j"
 		viewToggle = "main view"
 	}
-	items := []helpItem{
+	if m.ShowOverdue {
+		navigation = "↑/↓ / k/j"
+	}
+	addDesc := "add task"
+	if m.ShowOverdue {
+		addDesc = "add task to Today"
+	}
+	overdueToggle := "Overdue view"
+	if m.ShowOverdue {
+		overdueToggle = "main view"
+	}
+	return []helpItem{
 		{navigation, "navigate"},
-		{"a", "add task"},
+		{"a", addDesc},
 		{"e", "edit task"},
 		{"n", "task notes"},
-		{"space / enter", "toggle task"},
-		{"d", "delete task"},
+		{"space / enter", "complete / reopen task"},
+		{"d", "move to Deleted"},
 		{"y", "copy task"},
 		{"m", "move task"},
 		{"m then d", "set/change date"},
@@ -531,36 +532,14 @@ func (m Model) helpItems() []helpItem {
 		{".", "repeat move"},
 		{"u", "undo last change"},
 		{"c", "show/hide completed"},
-		{"r", "review conflicts / rescan copies"},
+		{"r", "refresh / retry save"},
 		{"f", viewToggle},
+		{"o", overdueToggle},
+		{"x", "Deleted view"},
 		{"t", "return to Today"},
 		{"pgup / pgdown", "scroll list"},
 		{"q / ctrl+c", "quit"},
 	}
-	if m.cloud != nil {
-		for i := range items {
-			switch items[i].key {
-			case "space / enter":
-				items[i].description = "complete / reopen task"
-			case "d":
-				items[i].description = "move to Deleted"
-			case "r":
-				items[i].description = "refresh / retry save"
-			}
-			if items[i].key == "a" && m.ShowOverdue {
-				items[i].description = "add task to Today"
-			}
-		}
-		overdueToggle := "Overdue view"
-		if m.ShowOverdue {
-			overdueToggle = "main view"
-		}
-		items = append(items, helpItem{"o", overdueToggle}, helpItem{"x", "Deleted view"})
-		if m.ShowOverdue || m.ShowDeleted {
-			items[0].key = "↑/↓ / k/j"
-		}
-	}
-	return items
 }
 
 func (m Model) helpModalView() string {
@@ -634,12 +613,7 @@ func (m Model) renderHelpModal(offset int) (string, int) {
 	}
 
 	heading := styles.TitleStyle.Width(innerWidth).Render("Keyboard shortcuts")
-	explanation := "Unfinished tasks from earlier days carry forward to Today automatically."
-	if m.cloud != nil {
-		explanation = "Changes are saved to the service and shared with your other devices and MCP clients. Unfinished tasks stay open in Overdue with their original dates. Deleted tasks can be restored with Enter in Deleted view."
-	} else if m.carriedForward > 0 {
-		explanation = m.rolloverNotice() + " " + explanation
-	}
+	explanation := "Changes are saved to the service and shared with your other devices and MCP clients. Unfinished tasks stay open in Overdue with their original dates. Deleted tasks can be restored with Enter in Deleted view."
 	shortcuts += "\n\n" + lipgloss.NewStyle().Foreground(styles.Subtle).Width(innerWidth).Render(explanation)
 	closeHint := lipgloss.NewStyle().Foreground(styles.Subtle).Width(innerWidth).Render("Press Esc to close")
 	lines := strings.Split(shortcuts, "\n")
@@ -680,30 +654,16 @@ func (m Model) renderHelpOverlay(background string) string {
 }
 
 func (m Model) errorView() string {
-	if m.Err == nil && m.saveErr == nil && m.conflictStatus() == "" {
+	if m.Err == nil && m.saveErr == nil {
 		return ""
 	}
 	message := fmt.Sprintf("Error: %v", m.Err)
 	if m.saveErr != nil {
-		message = "Changes not saved — draft kept only in this session."
-		if m.cloud != nil {
-			message = "Changes not saved — private recovery command retained."
-		}
 		detail := m.Err
 		if detail == nil {
 			detail = m.saveErr
 		}
-		if errors.Is(detail, ErrDataConflict) {
-			message += " File changed externally."
-		} else {
-			message += fmt.Sprintf(" %v", detail)
-		}
-	}
-	if status := m.conflictStatus(); status != "" {
-		message = status
-		if m.Err != nil && !errors.Is(m.Err, ErrDataConflict) {
-			message += " " + m.Err.Error()
-		}
+		message = fmt.Sprintf("Changes not saved — private recovery command retained. %v", detail)
 	}
 	content := lipgloss.NewStyle().Foreground(styles.Warning).Render(message)
 	if m.width <= 0 || m.height <= 0 {
@@ -712,11 +672,4 @@ func (m Model) errorView() string {
 	minimumColumn := m.columnStyle(false).GetVerticalFrameSize() + 3
 	rows := min(3, max(1, m.height-m.appStyle().GetVerticalFrameSize()-lipgloss.Height(m.helpView())-minimumColumn))
 	return fitLines(content, m.width-m.appStyle().GetHorizontalFrameSize(), rows)
-}
-
-func (m Model) rolloverNotice() string {
-	if m.carriedForward == 1 {
-		return "1 task carried forward to Today."
-	}
-	return fmt.Sprintf("%d tasks carried forward to Today.", m.carriedForward)
 }

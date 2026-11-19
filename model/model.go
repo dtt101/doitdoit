@@ -1,8 +1,6 @@
 package model
 
 import (
-	"crypto/sha256"
-	"fmt"
 	"time"
 
 	"charm.land/bubbles/v2/textarea"
@@ -10,7 +8,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/dtt101/doitdoit/styles"
-	"github.com/dtt101/doitdoit/taskstore"
 )
 
 type State int
@@ -44,14 +41,7 @@ type Model struct {
 	ShowOverdue bool
 	ShowDeleted bool
 	Data        TodoData
-	FilePath    string
 	VisibleDays int
-	// RetentionDays is zero for forever and positive for pruning completed
-	// history older than that many days.
-	RetentionDays int
-
-	store     taskstore.Store
-	storePath string
 
 	// Navigation
 	ColIdx int
@@ -70,37 +60,18 @@ type Model struct {
 	dateKeys []string
 	todayKey string
 
-	// Last observed state of the data file, so background reload checks can
-	// tell external writes apart from our own.
-	dataModTime time.Time
-	dataSize    int64
-	dataHash    [sha256.Size]byte
-	dataExists  bool
-
 	// Terminal dimensions
 	width  int
 	height int
 
 	// Error handling
-	Err error
-	// A failed save leaves a draft in memory. Input validation and cancellation
-	// may clear Err, but only a successful save may make this draft reloadable.
-	saveErr        error
-	baseline       taskstore.Data
-	pending        *taskstore.Recovery
-	review         *conflictReview
-	conflictPaths  []string
-	conflictNotice string
-	recoveryErr    error
-	recoveryExport string
+	Err     error
+	saveErr error
 
 	// Last successful move, delete, or undo; cleared when task history changes.
 	feedback string
 
-	// Session-only explanation of the last observed rollover; never stored.
-	carriedForward int
-
-	// Future View
+	// Views
 	ShowFuture    bool
 	ShowHelp      bool
 	HideCompleted bool
@@ -125,56 +96,6 @@ type Model struct {
 	// Session-only move history.
 	lastMoveTarget *moveTarget
 	moveUndo       *moveUndoSnapshot
-}
-
-func NewModel(filePath string, visibleDays int) (Model, error) {
-	return NewModelWithRetention(filePath, visibleDays, 0)
-}
-
-// NewModelWithRetention creates a model after applying the explicit retention
-// period selected by the user. Zero means completed history is kept forever.
-func NewModelWithRetention(filePath string, visibleDays, retentionDays int) (Model, error) {
-	return newModelWithStore(filePath, visibleDays, retentionDays, taskstore.NewJSON(filePath))
-}
-
-func newModelWithStore(filePath string, visibleDays, retentionDays int, store taskstore.Store) (Model, error) {
-	if visibleDays < 1 {
-		return Model{}, fmt.Errorf("visible days must be at least 1")
-	}
-
-	snapshot, err := store.Load()
-	if err != nil {
-		return Model{}, err
-	}
-
-	m := Model{
-		Data:          TodoData(snapshot.Data),
-		store:         store,
-		storePath:     filePath,
-		FilePath:      filePath,
-		VisibleDays:   visibleDays,
-		RetentionDays: retentionDays,
-		State:         Browsing,
-		TextInput:     textinput.New(),
-		todayKey:      time.Now().Format(dateLayout),
-	}
-	m.configureTextInput("New task...")
-	m.updateDateKeys()
-	m.baseline = taskstore.Clone(snapshot.Data)
-	m.dataHash, m.dataExists = snapshot.Revision.Hash, snapshot.Revision.Exists
-	m.dataModTime, m.dataSize = snapshot.ModTime, snapshot.Size
-	if err := m.startRecovery(snapshot); err != nil {
-		return Model{}, err
-	}
-	if m.review == nil && m.pending == nil && m.conflictNotice == "" {
-		snapshot, m.carriedForward, err = taskstore.MaintainSnapshot(store, snapshot, retentionDays)
-		if err != nil {
-			return Model{}, err
-		}
-		m.Data = TodoData(snapshot.Data)
-		m.recordRevision(snapshot.Revision)
-	}
-	return m, nil
 }
 
 func (m *Model) updateDateKeys() {
@@ -217,7 +138,7 @@ func (m Model) Init() tea.Cmd {
 	if m.cloud != nil {
 		return tea.Batch(textinput.Blink, dateTick(), serviceTick(), m.serviceRead(true))
 	}
-	return tea.Batch(textinput.Blink, dateTick(), reloadTick())
+	return tea.Batch(textinput.Blink, dateTick())
 }
 
 func (m Model) getCurrentKey() string {

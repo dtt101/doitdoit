@@ -1,10 +1,8 @@
 package model
 
 import (
-	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -105,8 +103,7 @@ func TestCollapseIsPresentationOnlyAndSkipsHiddenTasks(t *testing.T) {
 		{ID: "done", Title: "Finished", Completed: true},
 		{ID: "b", Title: "Active B"},
 	}
-	m.persist()
-	before, _ := os.ReadFile(m.FilePath)
+	before := cloneTodoData(m.Data)
 	m.RowIdx = 1
 	m = pressRune(m, 'c')
 	if !m.HideCompleted || m.RowIdx != 2 || strings.Contains(m.View().Content, "Finished") {
@@ -124,9 +121,8 @@ func TestCollapseIsPresentationOnlyAndSkipsHiddenTasks(t *testing.T) {
 	if !strings.Contains(ansi.Strip(m.View().Content), "Finished") {
 		t.Fatalf("completed tasks did not expand (hidden=%v):\n%s", m.HideCompleted, ansi.Strip(m.View().Content))
 	}
-	after, _ := os.ReadFile(m.FilePath)
-	if string(before) != string(after) || m.Data[key][1].ID != "done" || m.moveUndo != nil {
-		t.Fatal("collapse changed storage, order, or undo history")
+	if !sameJSON(before, m.Data) || m.Data[key][1].ID != "done" || m.moveUndo != nil {
+		t.Fatal("collapse changed task data, order, or undo history")
 	}
 }
 
@@ -155,7 +151,7 @@ func TestAllCompletedCollapsedTasksCannotBeMutated(t *testing.T) {
 	}
 }
 
-func TestCollapseCompletionUndoAndReloadKeepVisibleSelection(t *testing.T) {
+func TestCollapseCompletionAndUndoKeepVisibleSelection(t *testing.T) {
 	m := newFeedbackTestModel(t)
 	key := m.getCurrentKey()
 	m = pressRune(m, 'c')
@@ -166,14 +162,6 @@ func TestCollapseCompletionUndoAndReloadKeepVisibleSelection(t *testing.T) {
 	m = pressRune(m, 'u')
 	if !m.HideCompleted || m.Data[key][m.RowIdx].ID != "1" {
 		t.Fatal("undo did not restore the task and collapsed view")
-	}
-	updated, _ := m.Update(dataFileCheckedMsg{
-		data:    TodoData{key: {{ID: "done", Title: "Hidden", Completed: true}, {ID: "active", Title: "Visible"}}},
-		modTime: m.dataModTime.Add(time.Second),
-	})
-	m = updated.(Model)
-	if !m.hasSelectedTask() || m.Data[key][m.RowIdx].ID != "active" {
-		t.Fatal("reload selected a hidden task")
 	}
 }
 

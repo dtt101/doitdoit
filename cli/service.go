@@ -10,18 +10,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/dtt101/doitdoit/config"
 	"github.com/dtt101/doitdoit/taskclient"
 )
 
-const productionService = "https://doitdoit-service.davidt-91d.workers.dev"
-
 func RunServiceCommand(args []string, out io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(out, "Usage: doitdoit service login|status|logout|use|use-json|export|import|retry|history|restore [flags]")
+		fmt.Fprintln(out, "Usage: doitdoit service login|status|logout|export|import|retry|history|restore [flags]")
 		return 1
 	}
 	command := args[0]
@@ -30,10 +27,9 @@ func RunServiceCommand(args []string, out io.Writer) int {
 	id := flags.String("id", "", "Task ID for history or restore")
 	revision := flags.Int64("revision", 0, "Reviewed task revision for restore")
 	origin := flags.String("url", "", "Task service origin")
-	source := flags.String("file", "", "Source JSON or portable export for import")
+	source := flags.String("file", "", "Portable service export file for import or retained command for retry")
 	apply := flags.Bool("apply", false, "Publish a validated import; otherwise dry-run only")
 	dryRun := flags.Bool("dry-run", false, "Plan and preserve the source without contacting the service")
-	reviewed := flags.Bool("reviewed-recovery", false, "Recovery artifacts have been explicitly reviewed")
 	output := flags.String("out", "", "Private export destination")
 	if flags.Parse(args[1:]) != nil || flags.NArg() != 0 {
 		return 1
@@ -43,14 +39,8 @@ func RunServiceCommand(args []string, out io.Writer) int {
 		fmt.Fprintln(out, err)
 		return 1
 	}
-	if *origin == "" {
-		*origin = cfg.ServiceOrigin
-	}
-	if *origin == "" {
-		*origin = productionService
-	}
-	*origin = strings.TrimSuffix(*origin, "/")
-	path, err := taskclient.CredentialPath(*origin)
+	resolvedOrigin := cfg.ResolvedServiceOrigin(*origin)
+	path, err := taskclient.CredentialPath(resolvedOrigin)
 	if err != nil {
 		fmt.Fprintln(out, err)
 		return 1
@@ -59,7 +49,7 @@ func RunServiceCommand(args []string, out io.Writer) int {
 	defer cancel()
 	switch command {
 	case "login":
-		c, e := taskclient.Login(ctx, *origin, out, func(location string) error {
+		c, e := taskclient.Login(ctx, resolvedOrigin, out, func(location string) error {
 			name := "xdg-open"
 			if runtime.GOOS == "darwin" {
 				name = "open"
@@ -74,15 +64,19 @@ func RunServiceCommand(args []string, out io.Writer) int {
 		if e == nil {
 			e = taskclient.SaveCredentials(path, c)
 		}
+		if e == nil && cfg.ServiceOrigin != resolvedOrigin {
+			cfg.ServiceOrigin = resolvedOrigin
+			e = config.SaveConfig(cfg)
+		}
 		err = e
 		if err == nil {
-			fmt.Fprintln(out, "Signed in to", *origin, "— credentials saved privately. Run service use to select this backend.")
+			fmt.Fprintln(out, "Signed in to", resolvedOrigin, "— credentials saved privately.")
 		}
 	case "status":
 		c, e := taskclient.LoadCredentials(path)
 		err = e
 		if e == nil {
-			fmt.Fprintf(out, "Service: %s\nBackend: %s\nAccess expires: %s\nRefresh requires login: %t\n", c.Origin, cfg.Backend, c.ExpiresAt.Format(time.RFC3339), c.RefreshUncertain)
+			fmt.Fprintf(out, "Service: %s\nAccess expires: %s\nRefresh requires login: %t\n", c.Origin, c.ExpiresAt.Format(time.RFC3339), c.RefreshUncertain)
 		}
 	case "logout":
 		c, e := taskclient.LoadCredentials(path)
@@ -96,40 +90,23 @@ func RunServiceCommand(args []string, out io.Writer) int {
 		if err == nil {
 			fmt.Fprintln(out, "Service login revoked and local credentials removed.")
 		}
-	case "use":
-		if _, e := taskclient.LoadCredentials(path); e != nil {
-			err = fmt.Errorf("sign in first with service login: %w", e)
-			break
-		}
-		cfg.Backend = "service"
-		cfg.ServiceOrigin = *origin
-		err = config.SaveConfig(cfg)
-		if err == nil {
-			fmt.Fprintln(out, "Service backend selected. Existing JSON and recovery files are untouched.")
-		}
-	case "use-json":
-		cfg.Backend = "json"
-		err = config.SaveConfig(cfg)
-		if err == nil {
-			fmt.Fprintln(out, "JSON backend selected; service data has not been exported or merged.")
-		}
 	case "import":
 		if *apply && *dryRun {
 			err = fmt.Errorf("choose --apply or --dry-run")
 			break
 		}
-		err = runServiceImport(ctx, *origin, path, *source, *apply, *reviewed, out)
+		err = runServiceImport(ctx, resolvedOrigin, path, *source, *apply, out)
 	case "retry":
 		if *source == "" {
 			err = fmt.Errorf("retry requires --file retained-command.json")
 			break
 		}
-		retained, e := taskclient.LoadCommand(*source, *origin)
+		retained, e := taskclient.LoadCommand(*source, resolvedOrigin)
 		if e != nil {
 			err = e
 			break
 		}
-		client, e := taskclient.New(*origin, nil, taskclient.CredentialSource(*origin, path))
+		client, e := taskclient.New(resolvedOrigin, nil, taskclient.CredentialSource(resolvedOrigin, path))
 		if e != nil {
 			err = e
 			break
@@ -159,7 +136,7 @@ func RunServiceCommand(args []string, out io.Writer) int {
 			err = fmt.Errorf("--id is required")
 			break
 		}
-		client, e := taskclient.New(*origin, nil, taskclient.CredentialSource(*origin, path))
+		client, e := taskclient.New(resolvedOrigin, nil, taskclient.CredentialSource(resolvedOrigin, path))
 		if e != nil {
 			err = e
 			break
@@ -170,7 +147,7 @@ func RunServiceCommand(args []string, out io.Writer) int {
 				break
 			}
 			mutation := taskclient.Mutation{OperationID: taskclient.OperationID(), ExpectedRevision: *revision}
-			retained := taskclient.Command{Origin: *origin, Action: "restore", ID: *id, Mutation: &mutation}
+			retained := taskclient.Command{Origin: resolvedOrigin, Action: "restore", ID: *id, Mutation: &mutation}
 			draft := filepath.Join(filepath.Dir(path), "restore-"+mutation.OperationID+".json")
 			data, e := retained.JSON()
 			if e == nil {
@@ -210,7 +187,7 @@ func RunServiceCommand(args []string, out io.Writer) int {
 			err = fmt.Errorf("export requires --out FILE")
 			break
 		}
-		c, e := taskclient.New(*origin, nil, taskclient.CredentialSource(*origin, path))
+		c, e := taskclient.New(resolvedOrigin, nil, taskclient.CredentialSource(resolvedOrigin, path))
 		if e != nil {
 			err = e
 			break

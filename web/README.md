@@ -1,7 +1,7 @@
 # Web companion
 
-Static mobile client for the same service used by the TUI and MCP. No build step,
-framework or Dropbox connection.
+Static mobile client for the same service used by the TUI and MCP. No build step
+or framework.
 
 ## Use
 
@@ -39,9 +39,7 @@ Further edits pause until it is resolved.
 
 Refreshing tasks does not discard retained commands. Disconnect revokes this
 browser's credentials; retained saves/recovery stay on the device. Clearing site
-data removes them. Download recovery first if anything is unresolved. Existing
-Dropbox recovery copies remain downloadable, but are never imported automatically.
-The old Dropbox JSON is no longer updated by this app.
+data removes them. Download recovery first if anything is unresolved.
 
 ## Development and deployment
 

@@ -77,11 +77,6 @@
     }, 3200);
   }
 
-  // ── localStorage helpers ───────────────────────────────────────────
-  const LS = {
-    get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
-  };
-
   async function startOAuth() {
     try { window.location.assign(await auth.start()); }
     catch (err) { toast(err.message, "err"); }
@@ -703,14 +698,12 @@
     connectEl.hidden = false;
     board.hidden = true;
     promptBar.hidden = true;
-    menuBtn.hidden = !LS.get("doitdoit:recovery") && !taskStore.recovery();
+    menuBtn.hidden = !taskStore.recovery();
     emptyState.hidden = true;
   }
 
   function downloadRecovery() {
-    const service = taskStore.recovery();
-    const legacy = LS.get("doitdoit:recovery");
-    const recovery = service || legacy ? { service, legacy } : null;
+    const recovery = taskStore.recovery();
     if (!recovery) {
       toast("no unsaved recovery copy", "err");
       return;

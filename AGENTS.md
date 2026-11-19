@@ -2,10 +2,9 @@
 
 ## Overview
 
-`doitdoit` is a Go 1.27 terminal task manager built with Bubble Tea. It stores
-tasks in a user-owned JSON file by default, with an explicitly selected
-experimental Cloudflare service backend. The repository also contains an experimental,
-fully static service-backed web companion in `web/`.
+`doitdoit` is a Go 1.27 terminal task manager built with Bubble Tea. It uses the
+Cloudflare Worker + D1 task service backend across the Go TUI, non-interactive
+CLI, MCP clients, and the static web companion in `web/`.
 
 Supported desktop platforms are macOS and Linux only (`amd64` and `arm64`).
 Omarchy is a first-class Linux platform: preserve automatic theme detection,
@@ -20,7 +19,7 @@ These instructions apply to the whole repository.
 - Run the Go test suite with `go test -count=1 ./...`.
 - Run web tests with `node --test web/*.test.js`; the web app has no package
   manager, dependency installation, or build step.
-- For the experimental Cloudflare service, use Rust 1.93+ and Node 24+.
+- For the Cloudflare service, use Rust 1.93+ and Node 24+.
   Run one-time `make setup` in `service/`, then `make check` and `make bundle`
   (a deployment dry-run). `make check-rust` runs Cargo checks alone. All service
   application code, including OAuth and MCP, is Rust. Node is used only for
@@ -36,23 +35,24 @@ These instructions apply to the whole repository.
 
 ## Repository map
 
-- `main.go`: command dispatch, startup, and TUI construction.
-- `cli/`: non-interactive commands such as `doitdoit add`.
-- `config/`: configuration, first-run setup, storage moves, retention, and the
-  optional Omarchy theme hook.
-- `taskstore/`: task data/lifecycle, storage interface, legacy JSON persistence,
-  capture, conservative merging, and storage moves; independent of Bubble Tea.
-- `model/`: Bubble Tea state/update logic, storage orchestration, reload/conflict
-  handling, rendering, and compatibility wrappers for the task-data API.
+- `main.go`: command dispatch, startup, and service TUI launch.
+- `service_tui.go`: service TUI startup and lock/credential wiring.
+- `cli/`: non-interactive commands (`doitdoit add`, `doitdoit service ...`).
+- `config/`: configuration (`service_origin`, `theme`), and the optional Omarchy
+  theme hook.
+- `model/`: Bubble Tea state/update logic, rendering, notes, and service command
+  orchestration (`model/service.go`).
 - `styles/`: embedded themes and Omarchy theme resolution.
-- `web/`: independent static companion; `domain.js` holds task behavior and
-  `sync.js` holds snapshot reads and retained revision-guarded commands; `auth.js` owns browser OAuth.
-- `service/`: experimental Rust/WASM Cloudflare task service and D1 migrations,
-  including Rust OAuth/MCP endpoints and local integration tests.
-- `api/`: experimental service contract and shared Go/Rust fixtures.
-- `taskclient/`: HTTP task operations, desktop OAuth, private credentials and retained commands.
-- `tasktransfer/`: strict explicit legacy/portable import planning and field verification.
-- `service_tui.go`: service backend startup; `model/service.go` owns task-command orchestration.
+- `web/`: independent static companion; `domain.js` holds task behavior,
+  `sync.js` holds snapshot reads and retained revision-guarded commands, and
+  `auth.js` owns browser OAuth.
+- `service/`: Rust/WASM Cloudflare task service and D1 migrations, including
+  Rust OAuth/MCP endpoints and local integration tests.
+- `api/`: service contract and shared Go/Rust fixtures.
+- `taskclient/`: HTTP task operations, desktop OAuth, private credentials and
+  retained commands.
+- `tasktransfer/`: strict explicit portable-export import planning and field
+  verification.
 - `devtools/service-smoke/`: browser-login and HTTP/MCP smoke test client
   for the Rust service; invoked by `make smoke` in `service/`.
 - `releasecheck/`: release licence and third-party inventory checks.
@@ -60,29 +60,20 @@ These instructions apply to the whole repository.
 
 ## Change guidelines
 
-- The experimental service uses a Cloudflare Worker task API/MCP service, D1,
-  and the existing Go TUI as a client. Follow `service/README.md` and
-  `api/README.md` for its current architecture and contract; see `plans/saas.md`
-  for the proposed paid offering. Implementation and migration are staged and explicit. Until cutover, preserve
-  the current JSON path and its safety guarantees described in
-  `docs/storage/0002-storage-boundaries.md`. The abandoned immutable backend and automatic
-  migration roadmap remain superseded.
-
+- The task service uses a Cloudflare Worker task API/MCP service, D1, and the
+  Go TUI and static web app as clients. Follow `service/README.md` and
+  `api/README.md` for its architecture and contract.
 - Add or update tests beside the package or JavaScript module being changed.
   Prefer behavior-focused tests and temporary directories.
-- Tests must never read or modify the developer's real task file or
-  `~/.doitdoit_config.json`. Use `t.TempDir()` and isolate `HOME` with
-  `t.Setenv()` when configuration is involved.
-- Treat the task JSON format as a compatibility boundary. Date buckets use
-  local-calendar `YYYY-MM-DD` keys; the undated bucket is exactly `Future`.
-  Preserve existing JSON field names unless a migration and compatibility tests
-  are part of the change.
-- Data safety is core behavior. Do not weaken atomic replacement, `0600` file
-  permissions, `.bak` creation, external-change detection, or the rule that a
-  same-bucket concurrent edit remains a visible conflict.
-- Task lifecycle behavior in the service-mode CLI and web companion must agree:
+- Tests must never read or modify the developer's real credentials or
+  `~/.doitdoit_config.json`. Use `t.TempDir()` and isolate `HOME` and
+  `XDG_CONFIG_HOME` with `t.Setenv()` when configuration or credentials are
+  involved.
+- Data safety is core behavior. Retain private commands with `0600` permissions
+  and `operation_id` before sending mutations, enforce `expected_revision`
+  checks, and keep conflicting edits visible for explicit review.
+- Task lifecycle behavior in the TUI, CLI, and web companion must agree:
   no automatic rollover or pruning, original overdue dates, and service ordering.
-  The legacy JSON CLI intentionally retains its existing lifecycle semantics.
 - Shared Go code may rely on Unix behavior available on both Linux and macOS.
   Keep OS-specific behavior behind build-tagged files; do not add Windows
   compatibility shims. CI and release gates must cover both supported systems.

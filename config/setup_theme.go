@@ -1,12 +1,20 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/dtt101/doitdoit/styles"
 )
+
+func bufferedReader(in io.Reader) *bufio.Reader {
+	if reader, ok := in.(*bufio.Reader); ok {
+		return reader
+	}
+	return bufio.NewReader(in)
+}
 
 // OfferOmarchyHook is called once during initial interactive setup. Installation
 // uses the existing managed-hook command and requires an explicit yes; empty

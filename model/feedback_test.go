@@ -1,12 +1,9 @@
 package model
 
 import (
-	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -18,10 +15,6 @@ func newFeedbackTestModel(t *testing.T) Model {
 	m := newReloadTestModel(t)
 	m.width, m.height = 80, 24
 	m.Data[m.dateKeys[0]] = []Task{{ID: "1", Title: "First task"}, {ID: "2", Title: "Second task"}}
-	m.persist()
-	if m.Err != nil {
-		t.Fatal(m.Err)
-	}
 	return m
 }
 
@@ -85,7 +78,7 @@ func TestEmptyColumnGuidanceMatchesAddDestination(t *testing.T) {
 	}
 }
 
-func TestDeleteFeedbackAndUndoMatchSavedData(t *testing.T) {
+func TestDeleteFeedbackAndUndo(t *testing.T) {
 	m := newFeedbackTestModel(t)
 	today := m.dateKeys[0]
 	m = pressRune(m, 'd')
@@ -93,18 +86,16 @@ func TestDeleteFeedbackAndUndoMatchSavedData(t *testing.T) {
 	if !strings.Contains(footer, "Task deleted") || !strings.Contains(footer, "u undo") {
 		t.Fatalf("missing delete confirmation and recovery: %q", footer)
 	}
-	saved, err := loadRaw(m.FilePath)
-	if err != nil || len(saved[today]) != 1 || saved[today][0].ID != "2" {
-		t.Fatalf("delete not saved: %v, %v", saved, err)
+	if len(m.Data[today]) != 1 || m.Data[today][0].ID != "2" {
+		t.Fatalf("delete not applied: %v", m.Data)
 	}
 	m = pressRune(m, 'u')
 	footer = ansi.Strip(m.feedbackView())
 	if !strings.Contains(footer, "Undid last change") || strings.Contains(footer, "u undo") || strings.Contains(footer, "Task deleted") {
 		t.Fatalf("undo confirmation is stale: %q", footer)
 	}
-	saved, err = loadRaw(m.FilePath)
-	if err != nil || len(saved[today]) != 2 || saved[today][0].ID != "1" {
-		t.Fatalf("undo not saved: %v, %v", saved, err)
+	if len(m.Data[today]) != 2 || m.Data[today][0].ID != "1" {
+		t.Fatalf("undo not applied: %v", m.Data)
 	}
 }
 
@@ -117,7 +108,7 @@ func TestMoveFeedbackUsesActualDestination(t *testing.T) {
 		{name: "future", key: 'f', want: "Future"},
 		{name: "today", key: 't', want: "Today"},
 		{name: "exact date", key: 'd', date: dayKey(10), want: dayKey(10)},
-		{name: "past date", key: 'd', date: dayKey(-1), want: "Today"},
+		{name: "past date preserved", key: 'd', date: dayKey(-1), want: dayKey(-1)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newFeedbackTestModel(t)
@@ -130,10 +121,6 @@ func TestMoveFeedbackUsesActualDestination(t *testing.T) {
 			footer := ansi.Strip(m.feedbackView())
 			if m.Err != nil || !strings.Contains(footer, "Moved to "+tc.want) || !strings.Contains(footer, "u undo") {
 				t.Fatalf("unexpected move result: err=%v footer=%q", m.Err, footer)
-			}
-			saved, err := loadRaw(m.FilePath)
-			if err != nil || !sameJSON(saved, m.Data) {
-				t.Fatalf("move confirmation does not match saved data: %v", err)
 			}
 		})
 	}
@@ -156,50 +143,11 @@ func TestFeedbackFollowsUndoHistory(t *testing.T) {
 	if strings.Contains(m.feedbackView(), "Task deleted") || m.feedback != "" {
 		t.Fatal("a new mutation retained stale delete feedback")
 	}
-	m = pressRune(m, 'd')
-	updated, _ := m.Update(dataFileCheckedMsg{
-		data:    TodoData{m.dateKeys[0]: {{ID: "external", Title: "New task"}}},
-		modTime: m.dataModTime.Add(time.Second),
-	})
-	m = updated.(Model)
-	if m.feedback != "" || strings.Contains(m.feedbackView(), "u undo") {
-		t.Fatal("external reload retained feedback for invalidated undo history")
-	}
-}
-
-func TestFailedActionsDoNotClaimSuccess(t *testing.T) {
-	for _, action := range []rune{'d', 'm', 'u'} {
-		m := newFeedbackTestModel(t)
-		if action == 'u' {
-			m = pressRune(m, 'd')
-		}
-		// A regular file as the parent gives a deterministic save failure.
-		m.FilePath = filepath.Join(m.FilePath, "tasks.json")
-		m.dataExists = false
-		m = pressRune(m, action)
-		if action == 'm' {
-			m = pressRune(m, '1')
-		}
-		if m.Err == nil || m.feedback != "" || strings.Contains(m.feedbackView(), "u undo") || m.errorView() == "" {
-			t.Fatalf("failed %q claimed success: err=%v footer=%q", action, m.Err, m.feedbackView())
-		}
-	}
-	m := newFeedbackTestModel(t)
-	external := cloneTodoData(m.Data)
-	external[m.dateKeys[0]][0].Title = "Edited elsewhere"
-	if err := external.Save(m.FilePath); err != nil {
-		t.Fatal(err)
-	}
-	m = pressRune(m, 'd')
-	if !errors.Is(m.Err, ErrDataConflict) || m.feedback != "" {
-		t.Fatalf("conflict claimed success: err=%v feedback=%q", m.Err, m.feedback)
-	}
 }
 
 func TestNoOpAndCancelledMovesDoNotClaimSuccess(t *testing.T) {
 	m := newFeedbackTestModel(t)
 	m.Data[m.dateKeys[0]][0].DueDate = m.dateKeys[0]
-	m.persist()
 	m = pressRune(pressRune(m, 'm'), 't')
 	if m.feedback != "" {
 		t.Fatal("same destination produced success feedback")

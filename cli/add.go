@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/dtt101/doitdoit/taskclient"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,18 +11,17 @@ import (
 	"time"
 
 	"github.com/dtt101/doitdoit/config"
-	"github.com/dtt101/doitdoit/taskstore"
+	"github.com/dtt101/doitdoit/taskclient"
 )
 
 func RunAddCommand(args []string, out io.Writer) int {
 	flags := flag.NewFlagSet("add", flag.ContinueOnError)
 	flags.SetOutput(out)
-	service := flags.String("service", "", "task service origin (overrides configured backend)")
+	service := flags.String("service", "", "task service origin (overrides configured service)")
 	when := flags.String("when", "today", "today, tomorrow, future, or YYYY-MM-DD")
-	filePath := flags.String("file", "", "task JSON file (overrides config)")
 	notes := flags.String("notes", "", "plain-text notes for the task")
 	flags.Usage = func() {
-		fmt.Fprintln(out, "Usage: doitdoit add [--when <target>] [--file <path>] [--notes <text>] <title>")
+		fmt.Fprintln(out, "Usage: doitdoit add [--when <target>] [--service <origin>] [--notes <text>] <title>")
 		fmt.Fprintln(out, "\nAdd a task without opening the TUI. Put flags before the title.")
 		fmt.Fprintln(out, "Titles can be quoted or supplied as multiple arguments. Notes preserve whitespace and line breaks.")
 		fmt.Fprintln(out, "\nOptions:")
@@ -46,38 +44,7 @@ func RunAddCommand(args []string, out io.Writer) int {
 		fmt.Fprintf(out, "Error loading config: %v\n", err)
 		return 1
 	}
-	if *service != "" || (cfg.Backend == "service" && *filePath == "") {
-		if *filePath != "" {
-			fmt.Fprintln(out, "Choose --file or --service, not both")
-			return 2
-		}
-		origin := *service
-		if origin == "" {
-			origin = cfg.ServiceOrigin
-		}
-		return addServiceTask(origin, title, *notes, *when, out)
-	}
-	path := *filePath
-	if path == "" {
-		path = cfg.StoragePath
-	}
-	if path == "" {
-		fmt.Fprintln(out, "No storage path configured; launch doitdoit once or pass --file")
-		return 1
-	}
-	path, err = config.ExpandPath(path)
-	if err != nil {
-		fmt.Fprintf(out, "Error expanding path: %v\n", err)
-		return 1
-	}
-	retention, _ := cfg.Retention()
-	_, key, err := taskstore.CaptureWithNotes(taskstore.NewJSON(path), title, *when, *notes, retention)
-	if err != nil {
-		fmt.Fprintf(out, "Error adding task: %v\n", err)
-		return 1
-	}
-	fmt.Fprintf(out, "Added to %s: %s\n", key, title)
-	return 0
+	return addServiceTask(cfg.ResolvedServiceOrigin(*service), title, *notes, *when, out)
 }
 
 func addServiceTask(origin, title, notes, when string, out io.Writer) int {

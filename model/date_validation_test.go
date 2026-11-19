@@ -69,8 +69,7 @@ func TestSetTaskDateNormalizesValidDate(t *testing.T) {
 	}
 }
 
-func TestMoveDateNormalizesPastDateToToday(t *testing.T) {
-	today := time.Now().Format(dateLayout)
+func TestMoveDatePreservesPastDate(t *testing.T) {
 	yesterday := time.Now().AddDate(0, 0, -1).Format(dateLayout)
 	m := Model{
 		Data:        TodoData{"Future": {{ID: "1", Title: "Task"}}},
@@ -82,7 +81,7 @@ func TestMoveDateNormalizesPastDateToToday(t *testing.T) {
 	if !m.scheduleTask(moveTarget{Date: yesterday}) {
 		t.Fatal("expected past date to schedule the task")
 	}
-	if got := m.Data[today]; len(got) != 1 || got[0].DueDate != today {
-		t.Fatalf("expected past target normalized to today, got %v", got)
+	if got := m.Data[yesterday]; len(got) != 1 || got[0].DueDate != yesterday {
+		t.Fatalf("expected past target preserved, got %v", got)
 	}
 }
