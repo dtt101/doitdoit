@@ -1,8 +1,7 @@
 # Task service API: v1
 
-This contract is experimental. The Go TUI uses it only with explicit service
-backend selection; JSON remains the default.
-The canonical task types and input validators are in
+The Go TUI, non-interactive CLI, static web companion, and MCP clients all use
+this service contract. The canonical task types and input validators are in
 [service/rust/contracts.rs](../service/rust/contracts.rs). Rust MCP tool schemas describe the same wire inputs. The shared
 [task fixture](fixtures/task.json) is checked by Rust and Go tests.
 

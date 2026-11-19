@@ -192,8 +192,8 @@ Scroll the link view with arrows or Page Up/Page Down.
 
 Inside notes, use your terminal's usual text selection, copy, and paste shortcuts.
 Pasted text is inserted at the cursor, preserving line breaks. Notes are plain
-text, without Markdown. They are saved in the optional JSON `notes` field and
-follow the task through moves and rollover. The web companion opens notes in a scrollable viewer via the note icon and preserves them
+text, without Markdown. They are stored on the task in the service and follow
+it through moves and date changes. The web companion opens notes in a scrollable viewer via the note icon and preserves them
 when editing or syncing tasks. Notes editing is available in the TUI.
 
 After pressing `m`, choose a destination:
@@ -255,14 +255,14 @@ doitdoit add --when tomorrow --notes "Include September expenses" "send the invo
 doitdoit add --notes $'First line\nSecond line' "task with multiline notes"
 ```
 
-Notes preserve whitespace and line breaks and use the same optional JSON `notes`
+Notes preserve whitespace and line breaks and use the same plain-text `notes`
 field as the TUI. The multiline example uses Bash's `$'…'` quoting.
 
 ## Mobile companion
 
 The [`web/`](./web) directory contains an installable static web app for adding,
 editing, scheduling, reordering and completing shared service tasks from a phone.
-Sign in with GitHub; it uses the same backend as the service-mode TUI and MCP.
+Sign in with GitHub; it uses the same backend as the TUI and MCP.
 
 See [web/README.md](./web/README.md) for setup, recovery and deployment.
 

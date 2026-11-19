@@ -155,14 +155,10 @@ History and receipts are retained indefinitely; do not prune without a new contr
 Monitor Worker errors/CPU and D1 usage in the Cloudflare dashboard. Free quotas
 can interrupt service; do not enable a paid plan automatically.
 
-## Cutover
+## Portable import
 
-Real-task import and selecting the service as default require an explicit decision:
+Importing a portable service export (`schema_version: 1`) requires explicit review:
 
-1. Freeze the source JSON and dry-run the import.
-2. Review field mappings, invalid/ambiguous data and all recovery material.
-3. Apply the import and verify every field, count and order through export.
-4. Select the service with `doitdoit service use`.
-
-Keep the original JSON, `.bak` and recovery files. After service edits, the old
-JSON is stale; returning to it requires a reviewed current service export. The web companion uses the service and does not update Dropbox JSON.
+1. Freeze the source export and run `doitdoit service import --file <export.json> --dry-run`.
+2. Review the validation report for any invalid or duplicate task fields.
+3. Run `doitdoit service import --file <export.json> --apply` to stage, commit atomically, and verify every field, count, and order through a follow-up export.
