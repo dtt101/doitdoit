@@ -1,8 +1,6 @@
 package model
 
 import (
-	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -10,20 +8,12 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/dtt101/doitdoit/taskstore"
 )
 
 func notesModel(t *testing.T) Model {
 	t.Helper()
-	m, err := NewModel(filepath.Join(t.TempDir(), "tasks.json"), 3)
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := newReloadTestModel(t)
 	m.addTask("A task")
-	m.persist()
-	if m.Err != nil {
-		t.Fatal(m.Err)
-	}
 	next, _ := m.Update(tea.KeyPressMsg{Code: 'n', Text: "n"})
 	return next.(Model)
 }
@@ -45,49 +35,23 @@ func TestNotesSaveOnClosePasteUndo(t *testing.T) {
 		t.Fatal("draft changed data before save")
 	}
 	m = notesKey(m, tea.KeyEsc, 0)
-	if m.State != Browsing || m.Err != nil {
+	if m.State != Browsing || m.Err != nil || m.Data[m.notesKey][0].Notes != text {
 		t.Fatalf("save: %v %v", m.State, m.Err)
-	}
-	loaded, err := taskstore.NewJSON(m.FilePath).Load()
-	if err != nil || loaded.Data[m.notesKey][0].Notes != text {
-		t.Fatalf("notes not persisted: %v", err)
 	}
 	opened, _ := m.openNotes()
 	m = opened.(Model)
 	m.notesInput.SetValue("updated")
 	m = notesKey(m, tea.KeyTab, 0)
 	m = notesKey(m, tea.KeyEsc, 0)
-	loaded, err = taskstore.NewJSON(m.FilePath).Load()
-	if err != nil || m.State != Browsing || loaded.Data[m.notesKey][0].Notes != "updated" {
-		t.Fatalf("closing link view did not save: %v", err)
+	if m.State != Browsing || m.Data[m.notesKey][0].Notes != "updated" {
+		t.Fatal("closing link view did not save")
 	}
 	if !m.undoMove() || m.Data[m.notesKey][0].Notes != text {
 		t.Fatal("undo did not restore notes")
 	}
 }
 
-func TestNotesConflictKeepsDraft(t *testing.T) {
-	m := notesModel(t)
-	remote := taskstore.Clone(taskstore.Data(m.Data))
-	remote[m.notesKey][0].Notes = "external notes"
-	if _, err := taskstore.NewJSON(m.FilePath).Save(remote, nil); err != nil {
-		t.Fatal(err)
-	}
-	m.notesInput.SetValue("local notes")
-	m = notesKey(m, tea.KeyEsc, 0)
-	if !errors.Is(m.saveErr, ErrDataConflict) || m.State != Browsing || m.pending == nil || m.pending.Draft[m.notesKey][0].Notes != "local notes" {
-		t.Fatalf("lost conflict draft: %v", m.saveErr)
-	}
-	loaded, _ := taskstore.NewJSON(m.FilePath).Load()
-	if loaded.Data[m.notesKey][0].Notes != "external notes" {
-		t.Fatal("overwrote external notes")
-	}
-	if m.canReload() {
-		t.Fatal("conflicting notes allowed reload")
-	}
-}
-
-func TestNotesEmptySaveAndRolloverDeferral(t *testing.T) {
+func TestNotesEmptySaveAndDateTickDeferral(t *testing.T) {
 	m := notesModel(t)
 	m.notesInput.SetValue("old")
 	m = notesKey(m, tea.KeyEsc, 0)
@@ -98,11 +62,10 @@ func TestNotesEmptySaveAndRolloverDeferral(t *testing.T) {
 	next, _ := m.Update(dateTickMsg(time.Now()))
 	m = next.(Model)
 	if m.todayKey == time.Now().Format(dateLayout) {
-		t.Fatal("rollover ran during notes editing")
+		t.Fatal("date tick ran during notes editing")
 	}
 	m = notesKey(m, tea.KeyEsc, 0)
-	loaded, _ := taskstore.NewJSON(m.FilePath).Load()
-	if loaded.Data[m.notesKey][0].Notes != "" {
+	if m.Data[m.notesKey][0].Notes != "" {
 		t.Fatal("could not clear notes")
 	}
 }
@@ -153,51 +116,6 @@ func TestNotesTerminalClipboard(t *testing.T) {
 	}
 	if m.State != EditingNotes || m.Data[m.notesKey][0].Notes != "" {
 		t.Fatal("terminal paste should only change the editor draft")
-	}
-}
-
-func TestNotesCloseUnchangedDoesNotWrite(t *testing.T) {
-	m := notesModel(t)
-	remote := taskstore.Clone(taskstore.Data(m.Data))
-	remote[m.notesKey][0].Notes = "external notes"
-	revision, err := taskstore.NewJSON(m.FilePath).Save(remote, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m = notesKey(m, tea.KeyEsc, 0)
-	if m.State != Browsing || m.Err != nil {
-		t.Fatalf("unchanged notes should close: %v", m.Err)
-	}
-	loaded, err := taskstore.NewJSON(m.FilePath).Load()
-	if err != nil || loaded.Revision != revision {
-		t.Fatalf("closing unchanged notes wrote to disk: %v", err)
-	}
-}
-
-func TestNotesConflictResolvesThroughReview(t *testing.T) {
-	m := notesModel(t)
-	baseline := taskstore.Clone(taskstore.Data(m.Data))
-	remote := taskstore.Clone(baseline)
-	remote[m.notesKey][0].Notes = "external notes"
-	store := taskstore.NewJSON(m.FilePath)
-	if _, err := store.Save(remote, nil); err != nil {
-		t.Fatal(err)
-	}
-	m.notesInput.SetValue("local notes")
-	m = notesKey(m, tea.KeyEsc, 0)
-	if m.State != Browsing || m.saveErr == nil || m.pending == nil {
-		t.Fatal("failed save did not pause editing with recovery")
-	}
-	// Restore the loaded file to resolve the conflict, then retry closing.
-	if _, err := store.Save(baseline, nil); err != nil {
-		t.Fatal(err)
-	}
-	m = pressRune(m, 'r')
-	m = pressRune(m, 'p')
-	m = pressKeyCode(m, tea.KeyEnter)
-	loaded, err := store.Load()
-	if err != nil || m.State != Browsing || m.saveErr != nil || loaded.Data[m.notesKey][0].Notes != "local notes" {
-		t.Fatalf("retry did not save draft and close: %v / %v", err, m.saveErr)
 	}
 }
 

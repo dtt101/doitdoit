@@ -1,56 +1,109 @@
 package model
 
 import (
-	"crypto/sha256"
 	"time"
-
-	"github.com/dtt101/doitdoit/taskstore"
 )
 
-const dateLayout = taskstore.DateLayout
+const dateLayout = "2006-01-02"
 
-var ErrDataConflict = taskstore.ErrDataConflict
+type Task struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Notes     string    `json:"notes,omitempty"`
+	Completed bool      `json:"completed"`
+	CreatedAt time.Time `json:"created_at"`
+	DueDate   string    `json:"due_date,omitempty"`
+}
 
-type Task = taskstore.Task
+// TodoData maps a date string ("YYYY-MM-DD", "Future", "Overdue", "Deleted") to tasks.
+type TodoData map[string][]Task
 
-// TodoData retains the model API while task behavior lives independently of Bubble Tea.
-type TodoData taskstore.Data
+func startOfDay(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+}
 
-func startOfDay(t time.Time) time.Time      { return taskstore.StartOfDay(t) }
-func parseDate(s string) (time.Time, error) { return taskstore.ParseDate(s) }
-func loadRaw(path string) (TodoData, error) {
-	data, _, _, err := loadRawState(path)
-	return data, err
+func parseDate(s string) (time.Time, error) {
+	return time.ParseInLocation(dateLayout, s, time.Local)
 }
-func loadRawState(path string) (TodoData, [sha256.Size]byte, bool, error) {
-	snapshot, err := taskstore.NewJSON(path).Load()
-	return TodoData(snapshot.Data), snapshot.Revision.Hash, snapshot.Revision.Exists, err
-}
-func Load(path string, retentionDays int) (TodoData, error) {
-	data, _, err := loadWithRollover(path, retentionDays)
-	return data, err
-}
-func loadWithRollover(path string, retentionDays int) (TodoData, int, error) {
-	snapshot, count, err := taskstore.LoadStore(taskstore.NewJSON(path), retentionDays)
-	return TodoData(snapshot.Data), count, err
-}
-func (d TodoData) carryForwardCount() int        { return taskstore.Data(d).CarryForwardCount() }
-func (d TodoData) groupTasksByCompletion() bool  { return taskstore.Data(d).GroupTasksByCompletion() }
-func (d TodoData) rollOverIncompleteTasks() bool { return taskstore.Data(d).RollOverIncompleteTasks() }
-func (d TodoData) pruneOldTasks(days int) bool   { return taskstore.Data(d).PruneOldTasks(days) }
-func (d TodoData) migrateDatedFutureTasks() bool {
-	return taskstore.Data(d).MigrateDatedFutureTasks()
-}
-func (d TodoData) SortedKeys() []string { return taskstore.Data(d).SortedKeys() }
-func (d TodoData) Save(path string) error {
-	_, err := taskstore.NewJSON(path).Save(taskstore.Data(d), nil)
-	return err
-}
-func (d TodoData) SaveIfUnchanged(path string, hash *[sha256.Size]byte, exists bool) error {
-	var expected *taskstore.Revision
-	if hash != nil {
-		expected = &taskstore.Revision{Hash: *hash, Exists: exists}
+
+func cloneTodoData(data TodoData) TodoData {
+	if data == nil {
+		return nil
 	}
-	_, err := taskstore.NewJSON(path).Save(taskstore.Data(d), expected)
-	return err
+	copied := make(TodoData, len(data))
+	for k, list := range data {
+		copied[k] = append([]Task(nil), list...)
+	}
+	return copied
+}
+
+func groupTasksByCompletion(tasks []Task) []Task {
+	grouped := make([]Task, 0, len(tasks))
+	for _, task := range tasks {
+		if !task.Completed {
+			grouped = append(grouped, task)
+		}
+	}
+	for _, task := range tasks {
+		if task.Completed {
+			grouped = append(grouped, task)
+		}
+	}
+	return grouped
+}
+
+func (d TodoData) insert(key string, task Task) {
+	tasks := d[key]
+	index := len(tasks)
+	for i, existing := range tasks {
+		if existing.Completed {
+			index = i
+			break
+		}
+	}
+	if index == len(tasks) {
+		d[key] = append(tasks, task)
+		return
+	}
+	updated := make([]Task, 0, len(tasks)+1)
+	updated = append(updated, tasks[:index]...)
+	updated = append(updated, task)
+	updated = append(updated, tasks[index:]...)
+	d[key] = updated
+}
+
+func (d TodoData) remove(key string, index int) {
+	tasks := d[key]
+	d[key] = append(tasks[:index], tasks[index+1:]...)
+}
+
+func (d TodoData) toggle(key string, index int) {
+	task := d[key][index]
+	task.Completed = !task.Completed
+	d.remove(key, index)
+	d[key] = groupTasksByCompletion(d[key])
+	if task.Completed {
+		d[key] = append(d[key], task)
+	} else {
+		d.insert(key, task)
+	}
+}
+
+func (d TodoData) edit(key string, index int, title string) {
+	d[key][index].Title = title
+}
+
+func (d TodoData) reorder(key string, from, to int) {
+	d[key][from], d[key][to] = d[key][to], d[key][from]
+}
+
+func (d TodoData) move(source string, index int, target, dueDate string) {
+	task := d[source][index]
+	task.DueDate = dueDate
+	if source == target {
+		d[source][index] = task
+		return
+	}
+	d.remove(source, index)
+	d.insert(target, task)
 }

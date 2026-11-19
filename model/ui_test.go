@@ -1,7 +1,6 @@
 package model
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -111,7 +110,6 @@ func TestRepeatMoveUsesAbsoluteDestination(t *testing.T) {
 	today := time.Now().Format(dateLayout)
 	target := time.Now().AddDate(0, 0, 2).Format(dateLayout)
 	m := Model{
-		FilePath: filepath.Join(t.TempDir(), "tasks.json"),
 		Data: TodoData{today: {
 			{ID: "1", Title: "Task 1"},
 			{ID: "2", Title: "Task 2"},
@@ -133,7 +131,6 @@ func TestUndoRestoresLastMoveAndFocus(t *testing.T) {
 	today := time.Now().Format(dateLayout)
 	tomorrow := time.Now().AddDate(0, 0, 1).Format(dateLayout)
 	m := Model{
-		FilePath: filepath.Join(t.TempDir(), "tasks.json"),
 		Data: TodoData{today: {
 			{ID: "1", Title: "Task 1"},
 			{ID: "2", Title: "Task 2"},
@@ -161,7 +158,6 @@ func TestUndoRestoresLastMoveAndFocus(t *testing.T) {
 func TestReorderAndUndo(t *testing.T) {
 	today := time.Now().Format(dateLayout)
 	m := Model{
-		FilePath: filepath.Join(t.TempDir(), "tasks.json"),
 		Data: TodoData{today: {
 			{ID: "1", Title: "Task 1"},
 			{ID: "2", Title: "Task 2"},
@@ -319,7 +315,6 @@ func TestMoveDateInputSchedulesExactDate(t *testing.T) {
 	target := time.Now().AddDate(0, 0, 10).Format(dateLayout)
 	m := Model{
 		Data:        TodoData{today: {{ID: "1", Title: "Task 1"}}},
-		FilePath:    filepath.Join(t.TempDir(), "tasks.json"),
 		VisibleDays: 3,
 		State:       Browsing,
 		TextInput:   textinput.New(),
@@ -365,7 +360,7 @@ func TestNonMoveMutationReplacesUndo(t *testing.T) {
 
 func TestEditTaskAndUndo(t *testing.T) {
 	today := time.Now().Format(dateLayout)
-	m := Model{Data: TodoData{today: {{ID: "1", Title: "Before"}}}, FilePath: filepath.Join(t.TempDir(), "tasks.json"), VisibleDays: 1, State: Browsing, dateKeys: []string{today}}
+	m := Model{Data: TodoData{today: {{ID: "1", Title: "Before"}}}, VisibleDays: 1, State: Browsing, dateKeys: []string{today}}
 	m = pressRune(m, 'e')
 	if m.State != Editing || m.TextInput.Value() != "Before" {
 		t.Fatalf("expected populated editor, state=%v value=%q", m.State, m.TextInput.Value())

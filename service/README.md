@@ -1,8 +1,7 @@
 # Cloudflare task service
 
-The Go TUI and assistant MCP clients share tasks in Cloudflare D1 through a
-Rust/WASM Worker. JSON remains the default until you explicitly select the service;
-there is no automatic import or synchronization with the JSON file.
+The Go TUI, CLI, static web companion, and assistant MCP clients share tasks in
+Cloudflare D1 through a Rust/WASM Worker.
 
 ## Architecture and guarantees
 
@@ -17,27 +16,22 @@ Identical operation-ID retries return the original acknowledgement. Task changes
 history and receipts commit atomically. Do not retry a conflict against a newer
 revision without review. See the [API contract](../api/README.md) for details.
 
-The service is experimental, with no automatic migration or synchronization with
-JSON. The [SaaS plan](../plans/saas.md) describes a possible future multi-user
-paid offering; it is not a description of the current deployment.
-
 ## Use the TUI
 
 From the repository root:
 
 ```sh
 go run . service login
-go run . --service https://doitdoit-service.davidt-91d.workers.dev
+go run .
 ```
 
-Login uses GitHub. Credentials and retained commands are stored privately under
-your OS configuration directory in `doitdoit/services/`.
+Login uses GitHub and saves your `service_origin` in `~/.doitdoit_config.json`.
+Credentials and retained commands are stored privately under your OS
+configuration directory in `doitdoit/services/`.
 
 | Action | Command / key |
 | --- | --- |
-| Use the service on future launches | `go run . service use` |
-| Return to JSON | `go run . service use-json` |
-| Open an explicit JSON file | `go run . --file PATH` |
+| Override service URL for one session | `go run . --service ORIGIN` |
 | Show overdue tasks | `o` |
 | Show deleted tasks / restore selected | `x` / `enter` |
 | Refresh or retry a retained write | `r` |
@@ -49,9 +43,8 @@ command does not cancel a possible server write: check its outcome before
 recreating it. CLI captures can be resumed with
 `go run . service retry --file RETAINED_COMMAND`.
 
-After service edits, the old JSON file is stale. Export current service data
-before switching back. The [mobile web companion](../web/README.md) uses the same
-service as the TUI and MCP; sign in with GitHub.
+The [mobile web companion](../web/README.md) uses the same service as the TUI
+and MCP; sign in with GitHub.
 
 ## Connect an assistant
 
@@ -103,19 +96,18 @@ From the repository root:
 
 ```sh
 go run . service export --out /path/to/new-private-export.json
-go run . service import --file /path/to/tasks.json --dry-run
+go run . service import --file /path/to/export.json --dry-run
 ```
 
-Review the frozen source, mappings, issues and recovery material before applying:
+Review the frozen source and validation report before applying:
 
 ```sh
-go run . service import --file /path/to/tasks.json --apply --reviewed-recovery
+go run . service import --file /path/to/export.json --apply
 ```
 
-Export refuses to overwrite files. Import preserves source bytes and task fields,
-resumes repeated sources, publishes atomically, and verifies the result against
-an export. Import does not select the TUI backend. Real-task import and backend
-cutover require an explicit decision; see the [cutover steps](OPERATIONS.md#cutover).
+Export refuses to overwrite files. Import accepts portable service exports
+(`schema_version: 1`), preserves source bytes and task fields, resumes repeated
+sources, publishes atomically, and verifies the result against an export.
 
 ## Develop locally
 

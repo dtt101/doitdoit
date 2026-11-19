@@ -48,8 +48,10 @@ type serviceResult struct {
 	draft                         *taskclient.Command
 }
 
+type serviceTickMsg time.Time
+
 func serviceTick() tea.Cmd {
-	return tea.Tick(15*time.Second, func(t time.Time) tea.Msg { return reloadTickMsg(t) })
+	return tea.Tick(15*time.Second, func(t time.Time) tea.Msg { return serviceTickMsg(t) })
 }
 
 func (m Model) servicePoll() tea.Cmd {
@@ -476,7 +478,7 @@ func (m Model) updateService(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.servicePoll()
 		}
 		return m, nil
-	case reloadTickMsg:
+	case serviceTickMsg:
 		if !m.cloud.busy && m.cloud.pending == nil && m.State == Browsing {
 			m.cloud.sequence++
 			m.cloud.busy = true

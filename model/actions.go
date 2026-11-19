@@ -6,11 +6,16 @@ import (
 	"time"
 
 	"github.com/atotto/clipboard"
-	"github.com/dtt101/doitdoit/taskstore"
 )
 
+func (m *Model) persist() {
+	if m.cloud != nil {
+		m.persistService()
+	}
+}
+
 func (m *Model) addTask(title string) {
-	if m.cloud != nil && m.ShowOverdue {
+	if m.ShowOverdue {
 		m.returnToToday()
 	}
 	m.captureMoveUndo()
@@ -23,7 +28,7 @@ func (m *Model) addTask(title string) {
 		Completed: false,
 	}
 
-	taskstore.Data(m.Data).Insert(currentDate, newTask)
+	m.Data.insert(currentDate, newTask)
 }
 
 func (m *Model) deleteTask() bool {
@@ -33,7 +38,7 @@ func (m *Model) deleteTask() bool {
 	}
 
 	m.captureMoveUndo()
-	taskstore.Data(m.Data).Delete(currentDate, m.RowIdx)
+	m.Data.remove(currentDate, m.RowIdx)
 	m.clampRow()
 	return true
 }
@@ -43,7 +48,7 @@ func (m *Model) toggleTask() bool {
 		return false
 	}
 	m.captureMoveUndo()
-	taskstore.Data(m.Data).Toggle(m.getCurrentKey(), m.RowIdx)
+	m.Data.toggle(m.getCurrentKey(), m.RowIdx)
 	return true
 }
 
@@ -55,11 +60,9 @@ func (m *Model) editTask(title string) bool {
 		return false
 	}
 	m.captureMoveUndo()
-	taskstore.Data(m.Data).Edit(currentDate, m.RowIdx, title)
+	m.Data.edit(currentDate, m.RowIdx, title)
 	return true
 }
-
-func cloneTodoData(data TodoData) TodoData { return TodoData(taskstore.Clone(taskstore.Data(data))) }
 
 func (m *Model) captureMoveUndo() {
 	m.feedback = ""
@@ -116,14 +119,13 @@ func (m *Model) reorderTask(direction int) bool {
 			}
 		}
 	}
-	// Reordering stays within the displayed section, including Ideas and
-	// invalid-date recovery rows in Future. Completion grouping remains intact.
-	if newRowIdx < 0 || tasks[m.RowIdx].Completed != tasks[newRowIdx].Completed || (m.cloud != nil && tasks[m.RowIdx].DueDate != tasks[newRowIdx].DueDate) {
+	// Reordering stays within the displayed section and completion/date group.
+	if newRowIdx < 0 || tasks[m.RowIdx].Completed != tasks[newRowIdx].Completed || tasks[m.RowIdx].DueDate != tasks[newRowIdx].DueDate {
 		return false
 	}
 
 	m.captureMoveUndo()
-	taskstore.Data(m.Data).Reorder(currentDate, m.RowIdx, newRowIdx)
+	m.Data.reorder(currentDate, m.RowIdx, newRowIdx)
 	m.RowIdx = newRowIdx
 	return true
 }
@@ -156,10 +158,6 @@ func (m *Model) scheduleTask(target moveTarget) bool {
 		if err != nil {
 			return false
 		}
-		today := startOfDay(m.serviceNow())
-		if m.cloud == nil && parsed.Before(today) {
-			parsed = today
-		}
 		dueDate = parsed.Format(dateLayout)
 		target = moveTarget{Date: dueDate}
 
@@ -171,7 +169,7 @@ func (m *Model) scheduleTask(target moveTarget) bool {
 	}
 
 	m.captureMoveUndo()
-	taskstore.Data(m.Data).Move(sourceKey, m.RowIdx, targetKey, dueDate)
+	m.Data.move(sourceKey, m.RowIdx, targetKey, dueDate)
 
 	m.lastMoveTarget = &target
 	m.clampRow()

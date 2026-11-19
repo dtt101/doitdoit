@@ -6,7 +6,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/dtt101/doitdoit/taskstore"
 )
 
 type copyFlashDoneMsg struct{}
@@ -47,7 +46,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) updateShared(msg tea.Msg) (tea.Model, tea.Cmd) {
 	beforeKey, beforeRow := "", m.RowIdx
 	before := Task{}
-	validSelection := m.ShowFuture || (m.ColIdx >= 0 && m.ColIdx < len(m.dateKeys))
+	validSelection := m.ShowFuture || m.ShowOverdue || m.ShowDeleted || (m.ColIdx >= 0 && m.ColIdx < len(m.dateKeys))
 	if validSelection {
 		beforeKey = m.getCurrentKey()
 	}
@@ -60,7 +59,7 @@ func (m Model) updateShared(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if next.State != Browsing || next.ShowHelp || next.Err != nil {
 			next.taskAnimationID++
 			next.taskFrame = 0
-		} else if (next.ShowFuture || (next.ColIdx >= 0 && next.ColIdx < len(next.dateKeys))) && next.hasSelectedTask() {
+		} else if (next.ShowFuture || next.ShowOverdue || next.ShowDeleted || (next.ColIdx >= 0 && next.ColIdx < len(next.dateKeys))) && next.hasSelectedTask() {
 			after := next.Data[next.getCurrentKey()][next.RowIdx]
 			changed := beforeKey != next.getCurrentKey() || beforeRow != next.RowIdx || before.ID != after.ID
 			completed := false
@@ -89,7 +88,7 @@ func (m Model) updateShared(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.State == EditingNotes {
 		switch msg.(type) {
-		case tea.WindowSizeMsg, dateTickMsg, reloadTickMsg, dataFileCheckedMsg, ThemeReloadMsg,
+		case tea.WindowSizeMsg, dateTickMsg, serviceTickMsg, ThemeReloadMsg,
 			taskAnimationMsg, copyFlashDoneMsg, brandAnimationMsg:
 		default:
 			return m.updateNotes(msg)
@@ -123,10 +122,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, brandAnimationTick(msg.id, msg.frame+1)
 	case dateTickMsg:
 		return m.handleDateTick()
-	case reloadTickMsg:
-		return m.handleReloadTick()
-	case dataFileCheckedMsg:
-		return m.handleDataFileChecked(msg)
 	case ThemeReloadMsg:
 		return m.handleThemeReload(msg)
 	case tea.KeyPressMsg:
@@ -164,40 +159,20 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDateTick() (tea.Model, tea.Cmd) {
-	if m.State == EditingNotes || m.review != nil || m.pending != nil {
+	if m.State == EditingNotes {
 		return m, dateTick()
 	}
-	todayKey := m.serviceNow().Format(dateLayout)
-	dayChanged := m.todayKey != "" && m.todayKey != todayKey
-	if m.todayKey == "" && (len(m.dateKeys) == 0 || m.firstVisibleDate().Before(startOfDay(m.serviceNow()))) {
-		dayChanged = true
+	now := m.serviceNow()
+	todayKey := now.Format(dateLayout)
+	if m.todayKey == todayKey {
+		return m, dateTick()
 	}
-	if dayChanged {
-		focusedDate := ""
-		if !m.ShowFuture && m.ColIdx >= 0 && m.ColIdx < len(m.dateKeys) {
-			focusedDate = m.dateKeys[m.ColIdx]
-		}
-
-		m.carriedForward = m.Data.carryForwardCount()
-		m.Data.rollOverIncompleteTasks()
-		m.Data.pruneOldTasks(m.RetentionDays)
-		m.clearMoveUndo()
-		firstDay := m.firstVisibleDate()
-		if firstDay.Before(startOfDay(m.serviceNow())) {
-			firstDay = startOfDay(m.serviceNow())
-		}
-		m.updateDateKeysFrom(firstDay)
-		m.todayKey = todayKey
-		m.ColIdx = 0
-		for i, dateKey := range m.dateKeys {
-			if dateKey == focusedDate {
-				m.ColIdx = i
-				break
-			}
-		}
-		m.clampRow()
-		m.persist()
+	m.todayKey = todayKey
+	first := m.firstVisibleDate()
+	if first.Before(startOfDay(now)) {
+		m.updateDateKeysFrom(startOfDay(now))
 	}
+	m.clampRow()
 	return m, dateTick()
 }
 
@@ -211,19 +186,6 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	if m.review != nil {
-		return m.handleReviewKey(msg)
-	}
-	if m.pending != nil && !m.pendingKeyAllowed(msg.String()) && !m.ShowHelp {
-		return m, nil
-	}
-	if (msg.String() == "q" || msg.String() == "ctrl+c") && m.pending != nil {
-		_, m.recoveryErr = taskstore.WriteRecovery(m.pending.StorePath, *m.pending, true)
-		if m.recoveryErr != nil && m.recoveryExport == "" {
-			m.openConflictReview()
-			return m, nil
-		}
-	}
 	if m.terminalTooSmall() {
 		if msg.String() == "q" || msg.String() == "ctrl+c" {
 			return m, tea.Quit
@@ -321,9 +283,6 @@ func (m Model) handleEditingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "r":
-		m.openConflictReview()
-		return m, nil
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "right", "l":
@@ -358,7 +317,7 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "t":
 		m.returnToToday()
 	case "a":
-		if m.cloud != nil && m.ShowOverdue {
+		if m.ShowOverdue {
 			m.returnToToday()
 		}
 		m.State = Adding
@@ -455,7 +414,7 @@ func (m Model) handleSettingMoveDateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 	switch msg.Code {
 	case tea.KeyEnter:
 		input := strings.TrimSpace(m.TextInput.Value())
-		if m.cloud != nil && len(strings.Split(input, "-")) == 2 {
+		if len(strings.Split(input, "-")) == 2 {
 			input = fmt.Sprintf("%d-%s", m.serviceNow().Year(), input)
 		}
 		normalizedDate, err := normalizeDueDateInput(input)
@@ -494,7 +453,6 @@ func (m *Model) persistWithFeedback(message string) {
 }
 
 func (m *Model) persistMoveWithFeedback() {
-	// scheduleTask records the actual destination after normalising past dates.
 	destination := m.lastMoveTarget.Date
 	switch {
 	case m.lastMoveTarget.Future:

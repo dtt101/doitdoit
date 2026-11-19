@@ -2,31 +2,12 @@ package tasktransfer
 
 import (
 	"encoding/json"
-	"github.com/dtt101/doitdoit/taskclient"
-	"github.com/dtt101/doitdoit/taskstore"
 	"strings"
 	"testing"
 	"time"
-)
 
-func TestLegacyPlanPreservesPastDatesNotesAndUnknownCompletionTime(t *testing.T) {
-	data := taskstore.Data{"2020-02-29": {{ID: "123", Title: "Keep", Notes: "  ☕\n", CreatedAt: time.Date(2019, 1, 1, 0, 0, 0, 0, time.UTC), Completed: true}}, "Future": {{ID: "456", Title: "Dated", DueDate: "2030-01-02", CreatedAt: time.Date(2019, 1, 1, 0, 0, 0, 0, time.UTC)}}}
-	raw, _ := json.Marshal(data)
-	a, err := Build(raw)
-	if err != nil || len(a.Report.Issues) > 0 {
-		t.Fatalf("plan failed: %v %v", err, a.Report.Issues)
-	}
-	b, _ := Build(raw)
-	if a.Tasks[0].ID != b.Tasks[0].ID {
-		t.Fatal("mapping unstable")
-	}
-	if *a.Tasks[0].ScheduledDate != "2020-02-29" || a.Tasks[0].Notes != "  ☕\n" || a.Tasks[0].CompletedAt != nil {
-		t.Fatal("legacy fields invented or changed")
-	}
-	if *a.Tasks[1].ScheduledDate != "2030-01-02" {
-		t.Fatal("Future date lost")
-	}
-}
+	"github.com/dtt101/doitdoit/taskclient"
+)
 
 func TestPortableImportDryRunMatchesServicePositionAndCompletionValidation(t *testing.T) {
 	now := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -58,15 +39,23 @@ func TestPortableImportDryRunMatchesServicePositionAndCompletionValidation(t *te
 		})
 	}
 }
-func TestPlanRefusesUnknownDuplicateAndConflictingSourceData(t *testing.T) {
-	for _, raw := range []string{`{"Future":[],"Future":[]}`, `{"Future":[{"id":"x","title":"T","secret":1}]}`, `{"Future":[null]}`} {
+
+func TestPlanRejectsLegacyUnknownDuplicateAndConflictingSourceData(t *testing.T) {
+	for _, raw := range []string{
+		`{"Future":[]}`,
+		`{"schema_version":1,"schema_version":1,"timezone":"Europe/London","tasks":[]}`,
+		`{"schema_version":1,"timezone":"Europe/London","tasks":[],"secret":1}`,
+		`{"schema_version":2,"timezone":"Europe/London","tasks":[]}`,
+	} {
 		if _, err := Build([]byte(raw)); err == nil {
-			t.Fatal("ambiguous JSON accepted")
+			t.Fatalf("expected error for %s", raw)
 		}
 	}
-	raw := []byte(`{"2020-02-29":[{"id":"same","title":"One","created_at":"2019-01-01T00:00:00Z","completed":false,"due_date":"2030-01-02"},{"id":"same","title":"Two","created_at":"2019-01-01T00:00:00Z","completed":false}]}`)
+	now := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	dup := taskclient.Task{ID: "11111111-1111-4111-8111-111111111111", Title: "One", Status: "open", Position: "a", Revision: 1, CreatedAt: now, UpdatedAt: now}
+	raw, _ := json.Marshal(taskclient.Export{SchemaVersion: 1, Board: taskclient.Board{Timezone: "Europe/London", Tasks: []taskclient.Task{dup, dup}}})
 	p, err := Build(raw)
-	if err != nil || len(p.Report.Issues) < 2 {
-		t.Fatal("date/ID conflicts not reported")
+	if err != nil || len(p.Report.Issues) == 0 {
+		t.Fatalf("duplicate task ID not reported: %v %v", err, p.Report.Issues)
 	}
 }

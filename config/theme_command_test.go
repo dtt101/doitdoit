@@ -79,9 +79,9 @@ func TestRunCommandThemeSet(t *testing.T) {
 	}
 }
 
-func TestRunCommandThemeSetPreservesStoragePath(t *testing.T) {
+func TestRunCommandThemeSetPreservesServiceOrigin(t *testing.T) {
 	withTempHome(t)
-	if err := SaveConfig(&Config{StoragePath: "/tmp/tasks.json"}); err != nil {
+	if err := SaveConfig(&Config{ServiceOrigin: "https://tasks.example.com"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -94,8 +94,8 @@ func TestRunCommandThemeSetPreservesStoragePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.StoragePath != "/tmp/tasks.json" {
-		t.Errorf("storage path = %q, want it preserved", cfg.StoragePath)
+	if cfg.ServiceOrigin != "https://tasks.example.com" {
+		t.Errorf("service origin = %q, want it preserved", cfg.ServiceOrigin)
 	}
 	if cfg.Theme != "gruvbox" {
 		t.Errorf("theme = %q, want gruvbox", cfg.Theme)

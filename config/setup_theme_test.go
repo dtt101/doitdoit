@@ -44,23 +44,23 @@ func TestThemeSetupRequiresExplicitOptIn(t *testing.T) {
 	}
 }
 
-func TestThemeSetupSharesInputAndInstallsManagedHook(t *testing.T) {
+func TestThemeSetupInstallsManagedHook(t *testing.T) {
 	target := setupFakeOmarchy(t, true)
 	fakeActiveTheme(t)
-	input := bufio.NewReader(strings.NewReader("forever\nyes\n"))
-	cfg := &Config{}
-	var out bytes.Buffer
-	if _, err := ResolveRetention(cfg, input, &out); err != nil {
+	input := bufio.NewReader(strings.NewReader("yes\n"))
+	cfg := &Config{ServiceOrigin: "https://tasks.example.com"}
+	if err := SaveConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
+	var out bytes.Buffer
 	OfferOmarchyHook(cfg, input, &out)
 	contents, err := os.ReadFile(target)
 	if err != nil || string(contents) != managedOmarchyHook || !strings.Contains(out.String(), "omarchy-hook remove") {
 		t.Fatalf("explicit opt-in failed: %v, %q", err, out.String())
 	}
 	loaded, err := LoadConfig()
-	if err != nil || loaded.RetentionDays == nil || *loaded.RetentionDays != 0 {
-		t.Fatal("hook setup disturbed retention settings")
+	if err != nil || loaded.ServiceOrigin != "https://tasks.example.com" {
+		t.Fatal("hook setup disturbed service settings")
 	}
 }
 

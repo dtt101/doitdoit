@@ -9,11 +9,10 @@ import (
 	"path/filepath"
 
 	"github.com/dtt101/doitdoit/taskclient"
-	"github.com/dtt101/doitdoit/taskstore"
 	"github.com/dtt101/doitdoit/tasktransfer"
 )
 
-func runServiceImport(ctx context.Context, origin, credentialPath, source string, apply, reviewed bool, out io.Writer) error {
+func runServiceImport(ctx context.Context, origin, credentialPath, source string, apply bool, out io.Writer) error {
 	if source == "" {
 		return fmt.Errorf("import requires --file SOURCE; defaults to dry-run, --apply publishes only after validation")
 	}
@@ -40,43 +39,6 @@ func runServiceImport(ctx context.Context, origin, credentialPath, source string
 	if err := taskclient.WritePrivate(frozen, data); err != nil {
 		return err
 	}
-	artifacts := []string{}
-	if _, e := os.Stat(source + ".bak"); e == nil {
-		artifacts = append(artifacts, source+".bak")
-	}
-	conflicts, e := taskstore.ConflictPaths(source)
-	if e != nil {
-		return e
-	}
-	artifacts = append(artifacts, conflicts...)
-	if directory, e := taskstore.RecoveryDirectory(source); e == nil {
-		entries, _ := os.ReadDir(directory)
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				artifacts = append(artifacts, filepath.Join(directory, entry.Name()))
-			}
-		}
-	}
-	needsReview := len(artifacts) > 0
-	for i, path := range artifacts {
-		f, e := os.Open(path)
-		if e != nil {
-			return e
-		}
-		raw, e := io.ReadAll(io.LimitReader(f, 64<<20+1))
-		f.Close()
-		if e != nil {
-			return e
-		}
-		if len(raw) > 64<<20 {
-			return fmt.Errorf("recovery artifact too large: %s", path)
-		}
-		destination := filepath.Join(work, fmt.Sprintf("recovery-%03d-%s", i, filepath.Base(path)))
-		if e := taskclient.WritePrivate(destination, raw); e != nil {
-			return e
-		}
-		plan.Report.RecoveryPaths = append(plan.Report.RecoveryPaths, path)
-	}
 	report, err := json.MarshalIndent(plan.Report, "", "  ")
 	if err != nil {
 		return err
@@ -90,11 +52,8 @@ func runServiceImport(ctx context.Context, origin, credentialPath, source string
 		return fmt.Errorf("import blocked by %d source issues; review a copy of the source without changing the original", len(plan.Report.Issues))
 	}
 	if !apply {
-		fmt.Fprintln(out, "Dry-run only. No requests sent and no task/configuration files changed.")
+		fmt.Fprintln(out, "Dry-run only. No requests sent and no configuration files changed.")
 		return nil
-	}
-	if needsReview && !reviewed {
-		return fmt.Errorf("recovery material was preserved; review it and pass --reviewed-recovery only after resolving which tasks to import")
 	}
 	client, err := taskclient.New(origin, nil, taskclient.CredentialSource(origin, credentialPath))
 	if err != nil {
@@ -163,6 +122,6 @@ func runServiceImport(ctx context.Context, origin, credentialPath, source string
 	if err := taskclient.WritePrivate(filepath.Join(work, "verified.json"), result); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "Imported and field-verified %d tasks. Source and recovery artifacts retained; backend selection unchanged.\n", len(actual))
+	fmt.Fprintf(out, "Imported and field-verified %d tasks.\n", len(actual))
 	return nil
 }

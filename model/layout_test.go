@@ -2,7 +2,6 @@ package model
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
@@ -36,11 +35,7 @@ func TestResponsiveColumnsPreserveSelectionAndStorage(t *testing.T) {
 	m.ColIdx = 5
 	m.Data[m.dateKeys[5]] = []Task{{ID: "selected", Title: "Keep me selected"}}
 	m.Data["Future"] = []Task{{ID: "later", Title: "Later", DueDate: dayKey(8)}}
-	m.persist()
-	before, err := os.ReadFile(m.FilePath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	before := cloneTodoData(m.Data)
 	for _, tc := range []struct{ width, count int }{{240, 7}, {100, 3}, {80, 2}, {48, 1}, {24, 1}, {240, 7}} {
 		m = resizeModel(m, tc.width, 24)
 		if len(m.visibleKeys()) != tc.count || len(m.dateKeys) != 7 || m.VisibleDays != 7 {
@@ -54,9 +49,8 @@ func TestResponsiveColumnsPreserveSelectionAndStorage(t *testing.T) {
 		}
 		assertFitsTerminal(t, m)
 	}
-	after, err := os.ReadFile(m.FilePath)
-	if err != nil || string(before) != string(after) || len(m.Data["Future"]) != 1 {
-		t.Fatalf("resizing changed storage: %v", err)
+	if !sameJSON(before, m.Data) || len(m.Data["Future"]) != 1 {
+		t.Fatal("resizing changed task data")
 	}
 }
 

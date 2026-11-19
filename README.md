@@ -1,24 +1,22 @@
 # doitdoit
 
-**A fast, keyboard-first task manager for your terminal — with your tasks kept in a file you own.**
+**A fast, keyboard-first task manager for your terminal — synced across your terminal, phone, and MCP assistants.**
 
-`doitdoit` gives you a calm, multi-day view of what is in front of you, gets out of the way when you are working, and makes sure unfinished tasks do not disappear into yesterday. By default, the backend is one readable JSON file with no account required. An experimental, explicitly selected [Cloudflare backend](#experimental-cloudflare-backend) also connects the TUI, web companion and MCP clients.
+`doitdoit` gives you a calm, multi-day view of what is in front of you, gets out of the way when you are working, and keeps unfinished tasks visible in Overdue with their original dates. Tasks live in the [Cloudflare task service](#cloudflare-task-service) shared by the TUI, CLI, static web companion, and MCP clients.
 
 Supported desktop platforms are **macOS and Linux**, with **Omarchy as a first-class Linux platform**. Windows is no longer supported. Release archives cover Intel/AMD 64-bit (`amd64`) and ARM64 (`arm64`) on both supported operating systems.
-
-Put that file in Dropbox, iCloud Drive, or Google Drive and your task list can travel with you.
 
 <img width="1467" height="799" alt="Screenshot 2026-08-20 at 16 50 28" src="https://github.com/user-attachments/assets/e374314c-424e-460c-ae8e-fa3ee19d9dd5" />
 
 ## Why doitdoit?
 
 - **See the days ahead.** Work from a clean, scrolling multi-day view instead of a long, undifferentiated list. Every day has its own column.
-- **Keep your data yours.** The default backend is a single portable, human-readable JSON file. Back it up, inspect it, script against it, or sync it with the service you already use. The optional service provides explicit export.
-- **Never lose an unfinished task.** In JSON mode, anything incomplete automatically rolls forward to Today. You choose whether completed history is kept forever or pruned after a positive number of days. Service mode keeps the original date and shows unfinished past tasks as overdue, with history retained.
+- **One shared task service.** Terminal, mobile web companion, and MCP assistants all work against the same revision-guarded task API, with explicit portable export and import.
+- **Never lose an unfinished task.** Unfinished past tasks keep their original dates and stay visible in Overdue, with full history retained and recoverable soft deletes.
 - **Plan quickly from the keyboard.** Add, edit, complete, delete, copy, reorder, schedule, repeat a move, and undo without leaving the terminal.
 - **Capture now, decide later.** Drop ideas into Future, then schedule them for tomorrow, the next seven days, or an exact date when you are ready.
 - **Looks at home on Omarchy.** `doitdoit` follows your active Omarchy theme and includes every stock Omarchy 4 (Quattro) palette.
-- **Take it to your phone.** The static [web companion](./web) uses the shared service backend.
+- **Take it to your phone.** The static [web companion](./web) connects to the same service backend.
 
 ## Omarchy
 
@@ -94,19 +92,16 @@ mise use -g github:dtt101/doitdoit
 doitdoit
 ```
 
-On first launch, choose where `doitdoit.json` should live and how long completed history should be retained. The retention prompt defaults to keeping history forever, including when input reaches EOF. Accept a normal local path, or point it straight at a synced folder:
+Sign in once, then launch `doitdoit`:
 
-```text
-~/Dropbox/doitdoit/doitdoit.json
+```bash
+doitdoit service login
+doitdoit
 ```
 
-On Omarchy, setup also offers live theme updates when following the system
-theme. Press Enter to leave them disabled, or answer `yes` to install the
-managed hook. Existing custom hooks are preserved.
+Start adding tasks with `a`, move with `m`, complete with `Space`, open Future with `f`, Overdue with `o`, and Deleted with `x`.
 
-Start adding tasks with `a`, move with `m`, complete with `Space`, and open Future with `f`.
-
-You can also download a prebuilt archive from [GitHub Releases](https://github.com/dtt101/doitdoit/releases), install with Go 1.27.3 or later, or build from source. The repository's `mise.toml` pins the development toolchain:
+You can also download a prebuilt archive from [GitHub Releases](https://github.com/dtt101/doitdoit/releases), install with Go 1.27.4 or later, or build from source. The repository's `mise.toml` pins the development toolchain:
 
 ```bash
 go install github.com/dtt101/doitdoit@latest
@@ -117,49 +112,6 @@ mise install
 go build -o doitdoit
 ./doitdoit
 ```
-
-## JSON file storage
-
-In the default JSON mode there is no server to maintain or account required. Task data is saved atomically to one `doitdoit.json` file with owner-only permissions, while machine-specific settings such as the file location and theme stay separately in `~/.doitdoit_config.json`.
-
-In JSON mode, the terminal application has no ads or telemetry and sends no task data to the maintainer. A third-party sync provider may access the file if you put it in a synced folder. Service mode sends task data to the configured service.
-
-This makes a few useful workflows almost effortless:
-
-- Put the data file in a Dropbox, iCloud Drive, or Google Drive folder to sync it between machines.
-- Keep different machine-specific themes while sharing exactly the same tasks.
-- Back up or version the file using ordinary file tools.
-- Create tasks from another script or tool using a simple, open JSON format.
-- Use `-file` to open a different task list for a project or a one-off session.
-
-The TUI checks for external changes every few seconds and reloads them without disturbing you while you are typing. Before every save it verifies that the file still matches the version it loaded. Independent date-list changes can merge; competing changes within a list require review. Each replacement keeps the previous valid contents in the task file's `.bak` sibling.
-
-### Recover tasks from Dropbox copies
-
-On startup, the terminal checks for Dropbox “conflicted copy” files beside your configured task file, including conflicted `.bak` files. It leaves ordinary `.bak` files, historical backups, and subdirectories alone. Copies whose tasks already match the current file are silently deleted; additional tasks in the current file are kept. Copies with missing or duplicate task IDs are never automatically deleted.
-
-Saved copies produce an optional recovery notice; they do not open a review on startup or block normal rollover and retention. Press **`r`** to recover tasks or rescan. The compact panel shows one unfinished task at a time and defaults to keeping your current file. Old copies can contain tasks you deliberately deleted or changed later: absence alone cannot distinguish a deletion from an unsynced addition. Completed tasks on either side are excluded, including old unfinished versions of tasks now marked done. Copies containing only excluded differences are preserved without prompting. Recover from one copy at a time:
-
-1. Use **arrows / `j` / `k`** to select a task. The screen offers task actions: **Delete / Restore**, **Keep as is / Update task**, or **Keep task / Delete task**. Press **`1`** or **`2`** to choose. Enter toggles the choice. Restoring a task is always an explicit choice.
-2. Choose ordering separately when lists differ. Moves are shown as one task decision. Ambiguous IDs require choosing connected whole lists. List and ordering choices containing completed work are excluded from saved-copy recovery. The app will not guess task identity from titles or introduce duplicate IDs.
-3. **`K`** explicitly keeps the current version for every difference. **`p`** summarizes what will be added, updated, or deleted, including any rollover or retention effects. Press **`v`** to see unfinished tasks after saving. **Page Up / Page Down** scroll long notes and lists.
-4. **Enter — Save & finish** applies the choices to your main task list and removes the resolved copies in the background. **Esc** returns to choices, then defers review without changing anything. If a file changes during review, the app requires fresh choices.
-
-Task timestamps record creation, not the last edit. They never automatically decide which status is newer. Selecting a changed task chooses its complete version, including notes, completion, and date.
-
-Before removing a reviewed, nonredundant copy, the app exports both alternatives to a local, owner-only recovery directory. Press **`?`** for additional controls, including **`x`** to export explicitly; the screen shows the export path. Recovery lives under `os.UserConfigDir()/doitdoit/recovery/`, in a directory scoped to the resolved task-file path (normally `~/.config` on Linux and `~/Library/Application Support` on macOS). Exports remain there until you remove them; regular synced backups remain separate.
-
-### Recover an unsaved terminal edit
-
-A failed save pauses editing and automatic writes and displays **“Your changes need review before they can be saved.”** Press **`r`** to review the suggested task changes; **`b`** shows the original values. Noncompeting changes are proposed in the preview, but conflicting decisions require your choice. This does not change the conservative automatic merge policy.
-
-The draft and its baseline are saved in local recovery storage and reopened on the next launch. **`q`** safely quits when recovery succeeds. If recovery storage fails, normal quit is blocked: use **`x`** to export/retry recovery, or **`D`**, then **`y`**, to explicitly discard the draft. Cancelling review preserves pending edits. Recovery is cleared only after successful resolution or explicit discard.
-
-This JSON conflict review is available in the terminal; the service-backed web app uses revision-guarded commands, and noninteractive CLI commands do not open a resolver. Folder sync still has a narrow race between verification and replacement or cleanup. Review can recover versions it has observed; it cannot guarantee Dropbox has uploaded a local save or recover an unseen offline version. Let Dropbox finish syncing when switching machines.
-
-Back up both the task JSON file and `~/.doitdoit_config.json` before migrations or major upgrades, and test that the backup can be read. Need to relocate an existing task file later? `doitdoit config move <new_path>` moves it and updates your configuration, but refuses any existing file, directory, or symlink at the destination so it cannot overwrite data.
-
-In JSON mode, completed history is preserved forever by default. Choose a positive pruning period during first-run setup or change it later with `doitdoit config retention <days>`. Pruning never occurs until that choice has been saved. `doitdoit config retention forever` returns to non-pruning mode.
 
 ## Daily workflow
 
@@ -182,24 +134,14 @@ the selection marker visible. Completed tasks appear in a separate section;
 press `c` to collapse or expand it across the current session. Collapsing only
 changes the display and navigation, preserving the task file and stored order.
 
-In JSON mode, when unfinished tasks carry forward, a session notice reports how many moved
-to Today. It appears in the footer when space allows; `?` also explains rollover.
-The count reflects rollover observed during this session and is never stored.
-
-Press `f` for the separate Future list. Completed tasks appear in a **Completed**
+Press `f` for the separate Future list, `o` for Overdue, and `x` for Deleted. Completed tasks appear in a **Completed**
 section. `J`/`K` reorder within the displayed section.
 To set or change a date, select a task, press `m` then `d`, enter `YYYY-MM-DD`
-or `MM-DD`, and press Enter. `MM-DD` uses the current year. In JSON mode, past dates move the task to Today; service mode preserves the chosen date.
+or `MM-DD`, and press Enter. `MM-DD` uses the current year. Chosen dates are preserved as entered.
 
 Setting a date immediately moves a task out of Future into that date's calendar
 bucket, however far away. Moving a task to Future clears its date. Navigation
 and resizing only change the display; they never move or save tasks.
-
-In JSON mode, on load, legacy tasks in Future with valid dates move to their recorded date
-buckets before normal rollover and retention run. Overdue incomplete tasks roll
-to Today; completed tasks keep their historical dates, subject to retention.
-The migration uses the normal revision-checked save and backup. Malformed dates
-stay untouched in Future under **Invalid dates** so you can correct them.
 
 ### Keybindings
 
@@ -231,11 +173,13 @@ it. Save errors appear instead of a success confirmation.
 | `u` | Undo the most recent task change |
 | `c` | Collapse or expand completed tasks (session only) |
 | `y` | Copy the task text to the clipboard |
-| `d` | Delete the selected task |
+| `d` | Move the selected task to Deleted |
 | `f` | Toggle the Future view |
+| `o` | Toggle the Overdue view |
+| `x` | Toggle the Deleted view (`Enter` restores) |
 | `?` | Open keyboard shortcuts |
 | `q` or `Ctrl+c` | Quit |
-| `r` | Review conflicts / rescan Dropbox copies |
+| `r` | Refresh / retry retained save |
 
 Press `n` on a highlighted task to edit its notes. Enter inserts a new line;
 `Esc` closes the editor and automatically saves your changes. If saving fails,
@@ -248,8 +192,8 @@ Scroll the link view with arrows or Page Up/Page Down.
 
 Inside notes, use your terminal's usual text selection, copy, and paste shortcuts.
 Pasted text is inserted at the cursor, preserving line breaks. Notes are plain
-text, without Markdown. They are saved in the optional JSON `notes` field and
-follow the task through moves and rollover. The web companion opens notes in a scrollable viewer via the note icon and preserves them
+text, without Markdown. They are stored on the task in the service and follow
+it through moves and date changes. The web companion opens notes in a scrollable viewer via the note icon and preserves them
 when editing or syncing tasks. Notes editing is available in the TUI.
 
 After pressing `m`, choose a destination:
@@ -284,20 +228,22 @@ Bundled themes:
 
 ```text
 doitdoit                         Launch the TUI
-doitdoit -file <path>            Use a different data file for this session
+doitdoit --service <origin>      Use a specific task service for this session
 doitdoit add <title>             Add a task to Today without opening the TUI
 doitdoit add --when <target> <title>
                                  Target today, tomorrow, future, or YYYY-MM-DD
-doitdoit add --file <path> <title>
-                                 Capture into a one-off task file
-doitdoit config show             Show the data file, theme, and retention
-doitdoit config move <new_path>  Move the data file and update the config
+doitdoit add --service <origin> <title>
+                                 Capture into a specific task service
+doitdoit config show             Show the service origin and theme
 doitdoit config theme            Show the current and available themes
 doitdoit config theme <name>     Select a theme
-doitdoit config retention        Show the completed-history retention
-doitdoit config retention forever
-doitdoit config retention <days> Set a positive retention period
 doitdoit config omarchy-hook install|status|remove
+doitdoit service login|status|logout [--url <origin>]
+doitdoit service export --out <file> [--url <origin>]
+doitdoit service import --file <file> [--dry-run | --apply]
+doitdoit service retry --file <retained-command>
+doitdoit service history --id <id>
+doitdoit service restore --id <id> --revision <reviewed-revision>
 ```
 
 For example, `doitdoit add --when tomorrow "send the invoice"` is suitable for shell aliases, launchers, and scripts. Titles can be quoted or supplied as multiple arguments. Put flags before the title.
@@ -309,14 +255,14 @@ doitdoit add --when tomorrow --notes "Include September expenses" "send the invo
 doitdoit add --notes $'First line\nSecond line' "task with multiline notes"
 ```
 
-Notes preserve whitespace and line breaks and use the same optional JSON `notes`
+Notes preserve whitespace and line breaks and use the same plain-text `notes`
 field as the TUI. The multiline example uses Bash's `$'…'` quoting.
 
 ## Mobile companion
 
 The [`web/`](./web) directory contains an installable static web app for adding,
 editing, scheduling, reordering and completing shared service tasks from a phone.
-Sign in with GitHub; it uses the same backend as the service-mode TUI and MCP.
+Sign in with GitHub; it uses the same backend as the TUI and MCP.
 
 See [web/README.md](./web/README.md) for setup, recovery and deployment.
 
@@ -359,28 +305,20 @@ On Omarchy, `omarchy update` also updates globally configured mise tools. Merely
 
 This software is licensed under the [MIT License](./LICENSE). Third-party attributions and licence terms are in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
 
-Uninstalling intentionally leaves your task JSON file and `~/.doitdoit_config.json` in place; back them up and remove them manually only if you no longer want the data.
+Uninstalling intentionally leaves `~/.doitdoit_config.json` and your local service credentials in place; remove them manually if you no longer need them.
 
+### Cloudflare task service
 
-### Experimental Cloudflare backend
-
-The TUI, web companion and assistant MCP clients can share tasks through a Rust/WASM Cloudflare
-Worker backed by D1. JSON remains the default; there is no automatic migration
-or synchronization between backends.
+The TUI, web companion, and assistant MCP clients share tasks through a Rust/WASM Cloudflare Worker backed by D1.
 
 From this checkout:
 
 ```sh
 go run . service login
-go run . --service https://doitdoit-service.davidt-91d.workers.dev
+go run .
 ```
-
-Use `service use` to select the signed-in service for future launches, or
-`service use-json` to return to JSON. `--file PATH` selects JSON explicitly.
-The web companion uses the service backend. After service edits,
-export current data before returning to an old JSON file.
 
 See the [service guide](service/README.md) for TUI controls, ChatGPT/Gemini setup
 and reviewed import/export; [Operations](service/OPERATIONS.md) for encrypted
-backups, deployment and recovery; the [API contract](api/README.md) for protocol
-details; and the [SaaS plan](plans/saas.md) for the proposed paid offering. The hosted service is experimental; paid subscriptions are not yet available.
+backups, deployment and recovery; and the [API contract](api/README.md) for protocol
+details.
