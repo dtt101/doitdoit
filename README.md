@@ -101,7 +101,7 @@ doitdoit
 
 Start adding tasks with `a`, move with `m`, complete with `Space`, open Future with `f`, Overdue with `o`, and Deleted with `x`.
 
-You can also download a prebuilt archive from [GitHub Releases](https://github.com/dtt101/doitdoit/releases), install with Go 1.27.3 or later, or build from source. The repository's `mise.toml` pins the development toolchain:
+You can also download a prebuilt archive from [GitHub Releases](https://github.com/dtt101/doitdoit/releases), install with Go 1.27.4 or later, or build from source. The repository's `mise.toml` pins the development toolchain:
 
 ```bash
 go install github.com/dtt101/doitdoit@latest
