@@ -34,12 +34,16 @@
   const editDate = $("edit-date");
   const editDateLabel = $("edit-date-label");
   const dragStatus = $("drag-status");
+  let hdrEl = null;
+  const getHdr = () => (hdrEl ||= document.querySelector(".hdr"));
 
   metaPath.textContent = "Shared tasks";
 
   // ── State ──────────────────────────────────────────────────────────
   const state = {
     data: null,         // TodoData = { "YYYY-MM-DD" | "Future": Task[] }
+    tasks: null,        // raw service Task[] for incremental /v1/changes updates
+    cursor: null,       // last applied snapshot/change cursor
     accessToken: auth.connected(),
     timezone: "Europe/London",
     showHistory: false,
@@ -89,14 +93,22 @@
       reloadGeneration++;
       state.accessToken = false;
       state.data = null;
+      state.tasks = null;
+      state.cursor = null;
       showConnect();
     } catch (err) { toast("Disconnect failed: " + err.message, "err"); }
   }
 
   const Domain = window.DoitdoitDomain;
   const { todayStr, parseDay, addDays } = Domain;
+  let ownerTodayFormat = null;
+  let ownerTodayZone = null;
   function ownerToday() {
-    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: state.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+    if (!ownerTodayFormat || ownerTodayZone !== state.timezone) {
+      ownerTodayZone = state.timezone;
+      ownerTodayFormat = new Intl.DateTimeFormat("en-CA", { timeZone: state.timezone, year: "numeric", month: "2-digit", day: "2-digit" });
+    }
+    const parts = ownerTodayFormat.formatToParts(new Date());
     const part = type => parts.find(p => p.type === type).value;
     return parseDay(`${part("year")}-${part("month")}-${part("day")}`);
   }
@@ -107,6 +119,7 @@
   // ── View model + render ───────────────────────────────────────────
   const weekdayFormat = new Intl.DateTimeFormat(undefined, { weekday: "long" });
   const dayDateFormat = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
+  const fullDateFormat = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" });
 
   function buildView(data) {
     const today = ownerToday();
@@ -125,7 +138,7 @@
       days.push({
         key,
         label,
-        date: key < todayKey ? new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" }).format(d) : dayDateFormat.format(d),
+        date: key < todayKey ? fullDateFormat.format(d) : dayDateFormat.format(d),
         tasks,
         hasTasks: tasks.length > 0,
         count: tasks.length || "",
@@ -205,9 +218,7 @@
         if (task.due) {
           const due = document.createElement("span");
           due.className = "task__due";
-          const dateText = new Intl.DateTimeFormat(undefined, {
-            day: "numeric", month: "short", year: "numeric",
-          }).format(parseDay(task.due));
+          const dateText = fullDateFormat.format(parseDay(task.due));
           due.textContent = dateText;
           title.append(due);
           title.setAttribute("aria-label", `edit ${task.title}, scheduled for ${dateText}`);
@@ -271,31 +282,26 @@
     if (preserveScroll) requestAnimationFrame(() => window.scrollTo(0, scrollY));
   }
 
-  function daySection(dayKey) {
-    return Array.from(board.querySelectorAll(".day")).find((el) => el.dataset.key === dayKey) || null;
-  }
-
-  function updateDayChrome(dayKey) {
-    const section = daySection(dayKey);
-    if (!section) return;
-    const count = (state.data[dayKey] || []).length;
-    section.querySelector(".day__count").textContent = count || "";
-    section.querySelector(".day__empty").classList.toggle("is-hidden", count > 0);
-    const total = buildView(state.data).days.reduce((n, d) => n + d.tasks.length, 0);
-    emptyState.hidden = total > 0;
-  }
-
   // ── Mutations ─────────────────────────────────────────────────────
   let reloadGeneration = 0;
   let sessionGeneration = 0;
   let lastMove = null;
 
+  function readPendingSafe() {
+    try { return { pending: taskStore.pending(), error: null }; }
+    catch (err) { return { pending: null, error: err }; }
+  }
   function canEdit() {
     if (!state.accessToken || !state.data || !state.online) {
       toast("Refresh the service connection before editing.", "err");
       return false;
     }
-    if (state.saving || taskStore.pending()) {
+    const { pending, error } = readPendingSafe();
+    if (error) {
+      toast(error.message, "err");
+      return false;
+    }
+    if (state.saving || pending) {
       toast("Finish or retry the retained save from the menu before editing.", "err");
       return false;
     }
@@ -303,7 +309,13 @@
     return true;
   }
   function pendingStatus() {
-    const pending = taskStore.pending();
+    const { pending, error } = readPendingSafe();
+    if (error) {
+      state.dirty = true;
+      state.conflict = true;
+      setSync("error", "Retained save invalid · download recovery");
+      return;
+    }
     state.dirty = !!pending;
     state.conflict = !!pending?.rejected;
     setSync(pending ? "error" : "idle", pending ? (pending.rejected ? "Save rejected · menu to review" : "Save retained · menu to retry") : undefined);
@@ -334,10 +346,22 @@
     const found = findTask(dayKey, id);
     if (found) return saveCommand("DELETE", "/v1/tasks/" + id, { expected_revision: found.task.revision });
   }
+  function groupNeighbors(dayKey, id) {
+    const found = findTask(dayKey, id);
+    if (!found) return null;
+    const group = found.list.filter(t => t.completed === found.task.completed);
+    const index = group.findIndex(t => t.id === id);
+    return { afterId: group[index - 1]?.id || null, beforeId: group[index + 1]?.id || null };
+  }
   // Dragging is a preview. Only the final reviewed task and neighbors are sent.
   function moveTask(dayKey, id, destinationKey, destinationIndex) {
     if (!findTask(dayKey, id)) return false;
-    lastMove = { sourceKey: lastMove?.sourceKey || dayKey, id, destinationKey };
+    if (!lastMove) {
+      const initial = groupNeighbors(dayKey, id);
+      lastMove = { sourceKey: dayKey, id, destinationKey, initialAfterId: initial?.afterId ?? null, initialBeforeId: initial?.beforeId ?? null };
+    } else {
+      lastMove = { ...lastMove, destinationKey };
+    }
     return Domain.moveTask(state.data, dayKey, id, destinationKey, destinationIndex);
   }
   async function queueSave() {
@@ -350,9 +374,9 @@
     if (move.sourceKey !== move.destinationKey) {
       await saveCommand("PATCH", "/v1/tasks/" + move.id, { expected_revision: task.revision, changes: { scheduled_date: move.destinationKey === "Future" ? null : move.destinationKey } });
     } else {
-      const group = found.list.filter(t => t.completed === task.completed);
-      const index = group.findIndex(t => t.id === move.id);
-      await saveCommand("POST", "/v1/tasks/" + move.id + "/reorder", { expected_revision: task.revision, after_id: group[index - 1]?.id || null, before_id: group[index + 1]?.id || null });
+      const next = groupNeighbors(move.destinationKey, move.id);
+      if (next && next.afterId === move.initialAfterId && next.beforeId === move.initialBeforeId) return;
+      await saveCommand("POST", "/v1/tasks/" + move.id + "/reorder", { expected_revision: task.revision, after_id: next?.afterId ?? null, before_id: next?.beforeId ?? null });
     }
   }
   async function retrySave() {
@@ -376,11 +400,26 @@
     if (state.interactionActive || !state.accessToken || state.saving) return;
     const request = ++reloadGeneration;
     const session = sessionGeneration;
-    setSync("syncing");
+    const useChanges = !!opts.incremental && state.cursor !== null && state.tasks !== null && state.online;
+    if (!useChanges) setSync("syncing");
     try {
-      const { data, timezone } = await taskStore.load();
+      if (useChanges) {
+        const { events, cursor } = await taskStore.changes(state.cursor);
+        if (request !== reloadGeneration || session !== sessionGeneration || state.saving || state.interactionActive) return;
+        state.cursor = cursor;
+        if (events.length > 0) {
+          state.tasks = window.DoitdoitSync.applyEvents(state.tasks, events);
+          state.data = window.DoitdoitSync.toData(state.tasks);
+          render({ preserveScroll: true });
+        }
+        pendingStatus();
+        return;
+      }
+      const { data, tasks, cursor, timezone } = await taskStore.load();
       if (request !== reloadGeneration || session !== sessionGeneration || state.saving || state.interactionActive) return;
       state.data = data;
+      state.tasks = tasks;
+      state.cursor = cursor;
       state.online = true;
       state.timezone = timezone;
       render({ animate: !state.rendered, preserveScroll: state.rendered });
@@ -398,7 +437,7 @@
   function shortDateLabel(value) {
     const date = parseDay(value);
     if (!date) return "Date…";
-    return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" }).format(date);
+    return dayDateFormat.format(date);
   }
 
   function paintSchedule(root, attribute, target, dateInput, dateLabel) {
@@ -532,7 +571,7 @@
     drag.ghost.style.left = (clientX - drag.offsetX) + "px";
     drag.ghost.style.top = (clientY - drag.offsetY) + "px";
 
-    const contentTop = document.querySelector(".hdr").getBoundingClientRect().bottom + 8;
+    const contentTop = getHdr().getBoundingClientRect().bottom + 8;
     const contentBottom = (promptBar.hidden ? window.innerHeight : promptBar.getBoundingClientRect().top) - 8;
     const hitY = Math.max(contentTop, Math.min(clientY, contentBottom));
     const under = document.elementFromPoint(clientX, hitY);
@@ -543,14 +582,17 @@
       (candidate) => candidate !== drag.row && candidate !== drag.placeholder
     );
     const before = rows.find((candidate) => hitY < candidate.getBoundingClientRect().top + candidate.offsetHeight / 2);
-    if (before) list.insertBefore(drag.placeholder, before);
-    else list.appendChild(drag.placeholder);
+    if (before) {
+      if (drag.placeholder.nextSibling !== before) list.insertBefore(drag.placeholder, before);
+    } else if (list.lastElementChild !== drag.placeholder) {
+      list.appendChild(drag.placeholder);
+    }
   }
 
   function scrollWhileDragging() {
     if (!pointerDrag) return;
     const edge = 88;
-    const contentTop = document.querySelector(".hdr").getBoundingClientRect().bottom;
+    const contentTop = getHdr().getBoundingClientRect().bottom;
     const contentBottom = promptBar.hidden ? window.innerHeight : promptBar.getBoundingClientRect().top;
     let delta = 0;
     if (pointerDrag.lastY < contentTop + edge) delta = -12;
@@ -654,7 +696,11 @@
       destinationKey = keys[sectionIndex];
       destinationIndex = Math.min(found.idx, (state.data[destinationKey] || []).length);
     }
-    if (destinationKey === drag.dayKey && (destinationIndex < 0 || destinationIndex >= found.list.length)) return;
+    if (destinationKey === drag.dayKey) {
+      const visibleCount = found.list.filter(t => t.completed === found.task.completed).length;
+      const groupStart = found.list.findIndex(t => t.completed === found.task.completed);
+      if (destinationIndex < groupStart || destinationIndex >= groupStart + visibleCount) return;
+    }
     if (!moveTask(drag.dayKey, drag.id, destinationKey, destinationIndex)) return;
     drag.dayKey = destinationKey;
     render({ preserveScroll: true });
@@ -728,11 +774,13 @@
     $("notes-task-title").textContent = found.task.title;
     notesContent.textContent = found.task.notes;
     notesTrigger = trigger;
+    state.interactionActive = true;
     notesDialog.showModal();
     notesContent.scrollTop = 0;
   }
   $("notes-close").addEventListener("click", () => notesDialog.close());
   notesDialog.addEventListener("close", () => {
+    state.interactionActive = false;
     notesContent.textContent = "";
     $("notes-task-title").textContent = "";
     if (notesTrigger?.isConnected) notesTrigger.focus({ preventScroll: true });
@@ -750,11 +798,6 @@
     if (action === "toggle") toggleTask(dayKey, id);
     else if (action === "edit") openEditor(dayKey, id);
     else if (action === "notes") openNotes(dayKey, id, btn);
-    else if (action === "delete") {
-      li.classList.add("task--exit");
-      // wait for exit animation, then mutate
-      setTimeout(() => deleteTask(dayKey, id), 200);
-    }
   });
 
   board.addEventListener("pointerdown", (e) => {
@@ -890,15 +933,15 @@
     }
   });
 
-  // Background sync — pick up CLI changes
+  // Background sync — pick up CLI changes incrementally
   window.addEventListener("focus", () => {
     if (state.accessToken && !state.dirty && document.visibilityState === "visible") {
-      reload({ silent: true });
+      reload({ silent: true, incremental: true });
     }
   });
   setInterval(() => {
     if (state.accessToken && !state.dirty && document.visibilityState === "visible") {
-      reload({ silent: true });
+      reload({ silent: true, incremental: true });
     }
   }, 15_000);
 

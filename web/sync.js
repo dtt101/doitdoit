@@ -18,6 +18,17 @@
     return data;
   }
 
+  function applyEvents(tasks, events) {
+    const byId = new Map(tasks.map(t => [t.id, t]));
+    for (const event of events) {
+      const next = event?.after;
+      if (!next?.id) continue;
+      const existing = byId.get(next.id);
+      if (!existing || next.revision >= existing.revision) byId.set(next.id, next);
+    }
+    return [...byId.values()];
+  }
+
   function createServiceStore({ origin, request, storage, locks = globalThis.navigator?.locks, uuid = () => crypto.randomUUID() }) {
     const key = "doitdoit:service:pending:" + origin;
     function read() {
@@ -49,7 +60,26 @@
         if (after && seen.has(after)) throw new Error("repeated service snapshot page");
         seen.add(after);
       } while (after);
-      return { data: toData(tasks), timezone };
+      return { data: toData(tasks), tasks, cursor, timezone };
+    }
+    async function changes(after) {
+      const events = [];
+      let cursor = after;
+      let next;
+      do {
+        const query = new URLSearchParams({ after: String(cursor), limit: "100" });
+        const page = await request("/v1/changes?" + query);
+        if (!Array.isArray(page.events) || !Number.isSafeInteger(page.cursor) || page.cursor < cursor) {
+          throw new Error("invalid service changes page");
+        }
+        next = page.next_cursor;
+        if (next !== null && (!Number.isSafeInteger(next) || next <= cursor || page.events.length === 0)) {
+          throw new Error("invalid service changes cursor");
+        }
+        events.push(...page.events);
+        cursor = next !== null ? next : page.cursor;
+      } while (next !== null);
+      return { events, cursor };
     }
     async function retryCommand() {
       const command = read();
@@ -89,13 +119,33 @@
       storage.removeItem(key);
     }
     const locked = fn => locks?.request ? locks.request(key, fn) : fn();
-    return { load, mutate: (...args) => locked(() => mutate(...args)), retry: () => locked(retryCommand), pending: read,
+    return { load, changes, mutate: (...args) => locked(() => mutate(...args)), retry: () => locked(retryCommand), pending: read,
       reviewRejected: () => locked(reviewRejected),
       recovery: () => {
-        const pending = read();
-        const rejected = JSON.parse(storage.getItem(key + ":recovery") || "[]");
-        return pending || rejected.length ? { pending, rejected } : null;
+        let pending = null;
+        let corruptedPending = null;
+        try { pending = read(); }
+        catch (err) { corruptedPending = { raw: storage.getItem(key), error: err.message }; }
+        let rejected = [];
+        let corruptedArchive = null;
+        const archiveRaw = storage.getItem(key + ":recovery");
+        if (archiveRaw) {
+          try {
+            const parsed = JSON.parse(archiveRaw);
+            if (Array.isArray(parsed)) rejected = parsed;
+            else corruptedArchive = { raw: archiveRaw, error: "invalid recovery archive" };
+          } catch (err) {
+            corruptedArchive = { raw: archiveRaw, error: err.message };
+          }
+        }
+        if (!pending && !corruptedPending && !rejected.length && !corruptedArchive) return null;
+        return {
+          ...(pending ? { pending } : {}),
+          ...(corruptedPending ? { corruptedPending } : {}),
+          rejected,
+          ...(corruptedArchive ? { corruptedArchive } : {}),
+        };
       } };
   }
-  return { toData, createServiceStore };
+  return { toData, applyEvents, createServiceStore };
 });

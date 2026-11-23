@@ -187,3 +187,32 @@ test("completion sends the reviewed revision and leaves notes/date untouched", a
   a.reply(0, { task: { id: "a", revision: 8 } }); await tick();
   a.reply(1, { tasks: [], snapshot_cursor: 1, timezone: "Europe/London", next_cursor: null }); await tick();
 });
+
+test("incremental background sync polls /v1/changes and skips re-render when idle", async () => {
+  const a = app();
+  const initial = a.reload(); await tick();
+  a.reply(0, { tasks: [{ id: "a", title: "Initial", status: "open", revision: 1, scheduled_date: null, position: "a" }], snapshot_cursor: 5, timezone: "Europe/London", next_cursor: null });
+  await initial;
+  const boardChildren = a.get("board").children;
+  const idle = a.reload({ silent: true, incremental: true }); await tick();
+  assert.match(a.requests[1].url, /\/v1\/changes\?after=5/);
+  a.reply(1, { events: [], cursor: 5, next_cursor: null });
+  await idle;
+  assert.equal(a.get("board").children, boardChildren, "idle poll must not replace board DOM");
+  const changed = a.reload({ silent: true, incremental: true }); await tick();
+  a.reply(2, { events: [{ cursor: 6, after: { id: "a", title: "Remote Edit", status: "open", revision: 2, scheduled_date: null, position: "a" } }], cursor: 6, next_cursor: null });
+  await changed;
+  assert.equal(a.state.data.Future[0].title, "Remote Edit");
+  assert.equal(a.state.cursor, 6);
+});
+
+test("openNotes sets interactionActive while open and clears it on close", async () => {
+  const a = app();
+  a.state.data = { Future: [{ id: "idea", title: "Idea", notes: "Some notes" }] };
+  const row = { dataset: { key: "Future", id: "idea" } };
+  const button = { dataset: { action: "notes" }, closest: () => row };
+  await a.get("board").emit("click", { target: { closest: () => button } });
+  assert.equal(a.state.interactionActive, true);
+  await a.get("notes-dialog").emit("close");
+  assert.equal(a.state.interactionActive, false);
+});

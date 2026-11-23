@@ -1,7 +1,7 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createServiceStore, toData } = require("./sync.js");
+const { createServiceStore, toData, applyEvents } = require("./sync.js");
 const origin = "https://service.example";
 const task = (extra = {}) => ({ id: "a", title: "Task", status: "open", scheduled_date: "2000-01-01", revision: 1, position: "a", notes: "café\nDetails", ...extra });
 function fixture(request, storage = new Map()) {
@@ -68,4 +68,32 @@ test("a changed snapshot cursor is rejected instead of mixing pages", async () =
   let calls = 0;
   const a = fixture(async () => ({ tasks: [task()], snapshot_cursor: ++calls, timezone: "Europe/London", next_cursor: calls === 1 ? "a" : null }));
   await assert.rejects(a.store.load(), /snapshot/);
+});
+
+test("recovery exports raw data when retained command JSON is corrupted", () => {
+  const a = fixture(async () => ({}));
+  a.storage.set("doitdoit:service:pending:" + origin, "{not valid json");
+  const recovery = a.store.recovery();
+  assert.ok(recovery);
+  assert.equal(recovery.corruptedPending.raw, "{not valid json");
+  assert.ok(recovery.corruptedPending.error);
+});
+
+test("changes pages incrementally and applyEvents updates tasks by revision", async () => {
+  const urls = [];
+  const a = fixture(async url => {
+    urls.push(url);
+    if (urls.length === 1) {
+      return { events: [{ cursor: 8, after: task({ revision: 2, title: "Updated" }) }], cursor: 8, next_cursor: 8 };
+    }
+    return { events: [{ cursor: 9, after: task({ id: "b", title: "Added" }) }], cursor: 9, next_cursor: null };
+  });
+  const res = await a.store.changes(7);
+  assert.equal(res.cursor, 9);
+  assert.equal(res.events.length, 2);
+  assert.match(urls[0], /\/v1\/changes\?after=7/);
+  assert.match(urls[1], /\/v1\/changes\?after=8/);
+  const updated = applyEvents([task({ revision: 1 })], res.events);
+  assert.equal(updated.find(t => t.id === "a").title, "Updated");
+  assert.equal(updated.find(t => t.id === "b").title, "Added");
 });
