@@ -93,3 +93,40 @@ func TestPortableExportNeverOverwritesExistingFile(t *testing.T) {
 		t.Fatal("original export changed")
 	}
 }
+
+func TestWritePrivateDoesNotChmodExistingParentDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "shared")
+	if err := os.Mkdir(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := WritePrivate(filepath.Join(dir, "cmd.json"), []byte("{}")); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0755 {
+		t.Fatalf("WritePrivate mutated parent directory permissions: got %o", info.Mode().Perm())
+	}
+}
+
+func TestHistoryAndBeginImportValidateResponses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/tasks/t1/history":
+			cursor := int64(5)
+			json.NewEncoder(w).Encode(EventPage{Events: []Event{}, NextCursor: &cursor})
+		case "/v1/imports":
+			json.NewEncoder(w).Encode(map[string]any{"run": map[string]any{}})
+		}
+	}))
+	defer server.Close()
+	c, _ := New(server.URL, nil, func(context.Context) (string, error) { return "tok", nil })
+	if _, err := c.History(context.Background(), "t1", 5); err == nil {
+		t.Fatal("non-advancing history page accepted")
+	}
+	if _, err := c.BeginImport(context.Background(), "abc", 1); err == nil {
+		t.Fatal("malformed import run accepted")
+	}
+}

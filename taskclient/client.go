@@ -116,36 +116,15 @@ func (c *Client) List(ctx context.Context) ([]Task, error) {
 }
 
 func (c *Client) Get(ctx context.Context, id string) (Task, error) {
-	var result struct {
-		Task Task `json:"task"`
-	}
-	err := c.do(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(id), nil, &result)
-	if err == nil {
-		err = result.Task.validate()
-	}
-	return result.Task, err
+	return c.mutate(ctx, "/v1/tasks/"+url.PathEscape(id), http.MethodGet, nil)
 }
 
 func (c *Client) Create(ctx context.Context, input CreateRequest) (Task, error) {
-	var result struct {
-		Task Task `json:"task"`
-	}
-	err := c.do(ctx, http.MethodPost, "/v1/tasks", input, &result)
-	if err == nil {
-		err = result.Task.validate()
-	}
-	return result.Task, err
+	return c.mutate(ctx, "/v1/tasks", http.MethodPost, input)
 }
 
 func (c *Client) Update(ctx context.Context, id string, input UpdateRequest) (Task, error) {
-	var result struct {
-		Task Task `json:"task"`
-	}
-	err := c.do(ctx, http.MethodPatch, "/v1/tasks/"+url.PathEscape(id), input, &result)
-	if err == nil {
-		err = result.Task.validate()
-	}
-	return result.Task, err
+	return c.mutate(ctx, "/v1/tasks/"+url.PathEscape(id), http.MethodPatch, input)
 }
 
 func (t Task) validate() error {

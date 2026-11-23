@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"sort"
 	"strconv"
 	"time"
@@ -97,7 +96,24 @@ func (c *Client) mutate(ctx context.Context, path, method string, input any) (Ta
 func (c *Client) History(ctx context.Context, id string, after int64) (EventPage, error) {
 	var p EventPage
 	err := c.do(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(id)+"/history?after="+strconv.FormatInt(after, 10), nil, &p)
-	return p, err
+	if err != nil {
+		return p, err
+	}
+	previous := after
+	invalid := false
+	for _, event := range p.Events {
+		if event.Cursor <= previous || event.After == nil || event.TaskID != event.After.ID || event.After.validate() != nil {
+			invalid = true
+		}
+		previous = event.Cursor
+	}
+	if p.NextCursor != nil && (*p.NextCursor <= after || len(p.Events) == 0 || *p.NextCursor != previous) {
+		invalid = true
+	}
+	if invalid {
+		return EventPage{}, fmt.Errorf("task service: invalid history page")
+	}
+	return p, nil
 }
 func (c *Client) Changes(ctx context.Context, after int64) (EventPage, error) {
 	var p EventPage
@@ -262,19 +278,9 @@ func (c Command) JSON() ([]byte, error) { return json.MarshalIndent(c, "", "  ")
 
 func LoadCommand(path, origin string) (Command, error) {
 	var command Command
-	info, err := os.Lstat(path)
+	data, err := readPrivateFile(path, 1<<20, "retained command must be a private regular file", "retained command exceeds size limit")
 	if err != nil {
 		return command, err
-	}
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
-		return command, fmt.Errorf("retained command must be a private regular file")
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return command, err
-	}
-	if len(data) > 1<<20 {
-		return command, fmt.Errorf("retained command exceeds size limit")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()

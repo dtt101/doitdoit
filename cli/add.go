@@ -87,16 +87,18 @@ func addServiceTask(origin, title, notes, when string, out io.Writer) int {
 		fmt.Fprintln(out, "Request not sent; cannot retain command:", err)
 		return 1
 	}
-	command, err = client.ResolveCommand(ctx, command)
-	if err == nil {
-		data, err = command.JSON()
+	if command.RelativeDate != "" {
+		command, err = client.ResolveCommand(ctx, command)
 		if err == nil {
-			err = taskclient.WritePrivate(draft, data)
+			data, err = command.JSON()
+			if err == nil {
+				err = taskclient.WritePrivate(draft, data)
+			}
 		}
-	}
-	if err != nil {
-		fmt.Fprintf(out, "Request not sent: %v. Capture retained at %s; use service retry --file to resume.\n", err, draft)
-		return 1
+		if err != nil {
+			fmt.Fprintf(out, "Request not sent: %v. Capture retained at %s; use service retry --file to resume.\n", err, draft)
+			return 1
+		}
 	}
 	task, err := client.Execute(ctx, command)
 	if err != nil {

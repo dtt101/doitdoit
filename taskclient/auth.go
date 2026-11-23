@@ -43,35 +43,38 @@ func CredentialPath(origin string) (string, error) {
 	return filepath.Join(dir, "doitdoit", "services", hex.EncodeToString(sum[:16]), "credentials.json"), nil
 }
 
-// WritePrivate atomically replaces a private file, syncing bytes before rename.
-func WritePrivate(path string, data []byte) error {
-	dir := filepath.Dir(path)
+// EnsurePrivateDir creates dir (and parents) and enforces 0700 permissions on dir.
+func EnsurePrivateDir(dir string) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	if err := os.Chmod(dir, 0700); err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(dir, ".doitdoit-*")
+	return os.Chmod(dir, 0700)
+}
+
+func writePrivateTemp(dir, pattern string, data []byte) (string, error) {
+	f, err := os.CreateTemp(dir, pattern)
 	if err != nil {
-		return err
+		return "", err
 	}
 	temp := f.Name()
-	defer os.Remove(temp)
 	if _, err = f.Write(data); err != nil {
 		f.Close()
-		return err
+		os.Remove(temp)
+		return "", err
 	}
 	if err = f.Sync(); err != nil {
 		f.Close()
-		return err
+		os.Remove(temp)
+		return "", err
 	}
 	if err = f.Close(); err != nil {
-		return err
+		os.Remove(temp)
+		return "", err
 	}
-	if err = os.Rename(temp, path); err != nil {
-		return err
-	}
+	return temp, nil
+}
+
+func syncDir(dir string) error {
 	d, err := os.Open(dir)
 	if err != nil {
 		return err
@@ -79,28 +82,121 @@ func WritePrivate(path string, data []byte) error {
 	defer d.Close()
 	return d.Sync()
 }
-func SaveCredentials(path string, c Credentials) error {
+
+func readPrivateFile(path string, limit int64, permErr, sizeErr string) ([]byte, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		if errors.Is(err, syscall.ELOOP) {
+			return nil, errors.New(permErr)
+		}
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
+		return nil, errors.New(permErr)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, errors.New(sizeErr)
+	}
+	return data, nil
+}
+
+// WritePrivate atomically replaces a private file, syncing bytes before rename.
+func WritePrivate(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	temp, err := writePrivateTemp(dir, ".doitdoit-*", data)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(temp)
+	if err = os.Rename(temp, path); err != nil {
+		return err
+	}
+	return syncDir(dir)
+}
+
+func lockCredentials(ctx context.Context, path string, mode int) (func(), error) {
+	lockPath := path + ".lock"
+	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
+	if errors.Is(err, os.ErrNotExist) {
+		if err = EnsurePrivateDir(filepath.Dir(path)); err != nil {
+			return nil, err
+		}
+		lock, err = os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
+	}
+	if err != nil {
+		return nil, err
+	}
+	for {
+		err = syscall.Flock(int(lock.Fd()), mode|syscall.LOCK_NB)
+		if err == nil {
+			break
+		}
+		if err != syscall.EWOULDBLOCK && err != syscall.EAGAIN {
+			lock.Close()
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			lock.Close()
+			return nil, ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	return func() {
+		syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+		lock.Close()
+	}, nil
+}
+
+func saveCredentialsUnlocked(path string, c Credentials) error {
 	c.Origin = strings.TrimSuffix(c.Origin, "/")
 	data, err := json.Marshal(c)
 	if err != nil {
 		return err
 	}
+	if err := EnsurePrivateDir(filepath.Dir(path)); err != nil {
+		return err
+	}
 	return WritePrivate(path, data)
 }
+
+func SaveCredentials(path string, c Credentials) error {
+	unlock, err := lockCredentials(context.Background(), path, syscall.LOCK_EX)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return saveCredentialsUnlocked(path, c)
+}
+
+func RemoveCredentials(path string) error {
+	unlock, err := lockCredentials(context.Background(), path, syscall.LOCK_EX)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return os.Remove(path)
+}
+
 func LoadCredentials(path string) (Credentials, error) {
 	var c Credentials
-	info, err := os.Lstat(path)
+	data, err := readPrivateFile(path, 32768, "credentials must be a private regular file (0600)", "invalid credentials; sign in again")
 	if err != nil {
 		return c, err
 	}
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
-		return c, errors.New("credentials must be a private regular file (0600)")
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return c, err
-	}
-	if len(data) > 32768 || json.Unmarshal(data, &c) != nil || c.ClientID == "" || c.AccessToken == "" {
+	if json.Unmarshal(data, &c) != nil || c.ClientID == "" || c.AccessToken == "" {
 		return c, errors.New("invalid credentials; sign in again")
 	}
 	return c, nil
@@ -180,30 +276,28 @@ func (t authTokens) credentials(origin, client string) (Credentials, error) {
 func CredentialSource(origin, path string) TokenSource {
 	origin = strings.TrimSuffix(origin, "/")
 	return func(ctx context.Context) (string, error) {
-		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-			return "", err
-		}
-		lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0600)
+		unlockShared, err := lockCredentials(ctx, path, syscall.LOCK_SH)
 		if err != nil {
 			return "", err
 		}
-		defer lock.Close()
-		for {
-			err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-			if err == nil {
-				break
-			}
-			if err != syscall.EWOULDBLOCK && err != syscall.EAGAIN {
-				return "", err
-			}
-			select {
-			case <-ctx.Done():
-				return "", ctx.Err()
-			case <-time.After(50 * time.Millisecond):
-			}
-		}
-		defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
 		c, err := LoadCredentials(path)
+		unlockShared()
+		if err != nil {
+			return "", err
+		}
+		if c.Origin != origin || c.RefreshUncertain {
+			return "", errors.New("sign in again for this service")
+		}
+		if time.Until(c.ExpiresAt) > time.Minute {
+			return c.AccessToken, nil
+		}
+
+		unlock, err := lockCredentials(ctx, path, syscall.LOCK_EX)
+		if err != nil {
+			return "", err
+		}
+		defer unlock()
+		c, err = LoadCredentials(path)
 		if err != nil {
 			return "", err
 		}
@@ -216,7 +310,7 @@ func CredentialSource(origin, path string) TokenSource {
 		// Persist uncertainty before sending the one-time refresh credential. A crash
 		// before the replacement is durable must require login instead of token replay.
 		c.RefreshUncertain = true
-		if err := SaveCredentials(path, c); err != nil {
+		if err := saveCredentialsUnlocked(path, c); err != nil {
 			return "", err
 		}
 		var tokens authTokens
@@ -225,7 +319,7 @@ func CredentialSource(origin, path string) TokenSource {
 			// Nothing was sent (e.g. the network is still down after sleep), so the
 			// refresh token is unspent and a later reconnect may safely use it.
 			c.RefreshUncertain = false
-			if saveErr := SaveCredentials(path, c); saveErr != nil {
+			if saveErr := saveCredentialsUnlocked(path, c); saveErr != nil {
 				return "", saveErr
 			}
 			return "", err
@@ -237,7 +331,7 @@ func CredentialSource(origin, path string) TokenSource {
 		if err != nil {
 			return "", err
 		}
-		if err = SaveCredentials(path, next); err != nil {
+		if err = saveCredentialsUnlocked(path, next); err != nil {
 			return "", err
 		}
 		return next.AccessToken, nil
@@ -279,26 +373,36 @@ func Login(ctx context.Context, origin string, out io.Writer, openBrowser func(s
 			return
 		}
 		if q.Get("error") != "" {
+			http.Error(w, "Login denied", 400)
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
 			select {
 			case result <- "":
 			default:
 			}
-			http.Error(w, "Login denied", 400)
 			return
 		}
 		if len(q["code"]) != 1 || q.Get("code") == "" {
 			http.Error(w, "Missing login code", 400)
 			return
 		}
+		fmt.Fprintln(w, "Signed in. Return to the terminal.")
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
 		select {
 		case result <- q.Get("code"):
 		default:
 		}
-		fmt.Fprintln(w, "Signed in. Return to the terminal.")
 	})
 	server := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go server.Serve(listener)
-	defer server.Close()
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
 	params := url.Values{"response_type": {"code"}, "client_id": {registration.ClientID}, "redirect_uri": {redirect}, "resource": {origin}, "scope": {"tasks:read tasks:write offline_access"}, "state": {state}, "code_challenge": {base64.RawURLEncoding.EncodeToString(sum[:])}, "code_challenge_method": {"S256"}}
 	location := origin + "/authorize?" + params.Encode()
 	fmt.Fprintln(out, "Approve ‘doitdoit terminal’ in the browser, then sign in with GitHub.")
@@ -330,30 +434,13 @@ func Logout(ctx context.Context, c Credentials) error {
 // WritePrivateExclusive publishes a complete private export without replacing an existing file.
 func WritePrivateExclusive(path string, data []byte) error {
 	dir := filepath.Dir(path)
-	f, err := os.CreateTemp(dir, ".doitdoit-export-*")
+	temp, err := writePrivateTemp(dir, ".doitdoit-export-*", data)
 	if err != nil {
 		return err
 	}
-	temp := f.Name()
 	defer os.Remove(temp)
-	if _, err = f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
 	if err = os.Link(temp, path); err != nil {
 		return err
 	}
-	directory, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
+	return syncDir(dir)
 }

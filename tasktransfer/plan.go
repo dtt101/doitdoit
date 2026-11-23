@@ -56,7 +56,10 @@ func DecodeStrict(data []byte, target any) error {
 		if !ok {
 			return nil
 		}
-		seen := map[string]bool{}
+		var seen map[string]bool
+		if delimiter == '{' {
+			seen = map[string]bool{}
+		}
 		for decoder.More() {
 			if delimiter == '{' {
 				key, e := decoder.Token()
@@ -64,10 +67,11 @@ func DecodeStrict(data []byte, target any) error {
 					return e
 				}
 				name, ok := key.(string)
-				if !ok || seen[name] {
+				folded := strings.ToLower(name)
+				if !ok || seen[folded] {
 					return fmt.Errorf("duplicate JSON key")
 				}
-				seen[name] = true
+				seen[folded] = true
 			}
 			if err := walk(depth + 1); err != nil {
 				return err
@@ -87,29 +91,38 @@ func DecodeStrict(data []byte, target any) error {
 	return decoder.Decode(target)
 }
 
+func utf16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		n += utf16.RuneLen(r)
+	}
+	return n
+}
+
 func Build(data []byte) (Plan, error) {
 	p := Plan{Report: Report{SourceSHA256: fingerprint(data), Issues: []string{}}, Tasks: []taskclient.Task{}}
 	if len(data) > 64<<20 {
 		return p, fmt.Errorf("source exceeds 64 MiB")
 	}
-	var root map[string]json.RawMessage
-	if err := json.Unmarshal(data, &root); err != nil || root == nil {
-		return p, fmt.Errorf("source must be a JSON object")
+	var exported struct {
+		SchemaVersion *int `json:"schema_version"`
+		taskclient.Board
 	}
-	if _, ok := root["schema_version"]; !ok {
-		return p, fmt.Errorf("source must be a portable service export (missing schema_version)")
-	}
-	var exported taskclient.Export
 	if err := DecodeStrict(data, &exported); err != nil {
 		return p, err
 	}
-	if exported.SchemaVersion != 1 {
+	if exported.SchemaVersion == nil {
+		return p, fmt.Errorf("source must be a portable service export (missing schema_version)")
+	}
+	if *exported.SchemaVersion != 1 {
 		return p, fmt.Errorf("unsupported export version")
 	}
 	p.Report.Format = "service-export-v1"
 	p.Timezone = exported.Timezone
 	p.Tasks = exported.Tasks
-	if _, err := time.LoadLocation(p.Timezone); err != nil {
+	if p.Timezone == "" || p.Timezone == "Local" {
+		p.Report.Issues = append(p.Report.Issues, "Export has an unknown owner timezone")
+	} else if _, err := time.LoadLocation(p.Timezone); err != nil {
 		p.Report.Issues = append(p.Report.Issues, "Export has an unknown owner timezone")
 	}
 	seen := map[string]bool{}
@@ -118,7 +131,7 @@ func Build(data []byte) (Plan, error) {
 			p.Report.Issues = append(p.Report.Issues, fmt.Sprintf("Invalid/duplicate task ID at task %d", i))
 		}
 		seen[strings.ToLower(t.ID)] = true
-		if strings.TrimSpace(t.Title) == "" || len(utf16.Encode([]rune(t.Title))) > 500 || len(utf16.Encode([]rune(t.Notes))) > 32000 || (t.Status != "open" && t.Status != "completed") || t.Revision < 1 || t.Revision > 9_007_199_254_740_991 || t.CreatedAt.IsZero() || t.UpdatedAt.IsZero() || !validPosition(t.Position) || (t.Status == "open" && t.CompletedAt != nil) || (t.ScheduledDate != nil && !validDate(*t.ScheduledDate)) {
+		if strings.TrimSpace(t.Title) == "" || utf16Len(t.Title) > 500 || utf16Len(t.Notes) > 32000 || (t.Status != "open" && t.Status != "completed") || t.Revision < 1 || t.Revision > 9_007_199_254_740_991 || t.CreatedAt.IsZero() || t.UpdatedAt.IsZero() || !validPosition(t.Position) || (t.Status == "open" && t.CompletedAt != nil) || (t.ScheduledDate != nil && !validDate(*t.ScheduledDate)) {
 			p.Report.Issues = append(p.Report.Issues, fmt.Sprintf("Invalid task fields at task %d", i))
 		}
 		if t.Status == "completed" {
@@ -144,6 +157,34 @@ func validPosition(position string) bool {
 	return true
 }
 
+func equalStringPtr(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+func equalTimePtr(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(*b)
+}
+
+func equalTask(a, b taskclient.Task) bool {
+	return a.ID == b.ID &&
+		a.Title == b.Title &&
+		a.Notes == b.Notes &&
+		a.Status == b.Status &&
+		equalStringPtr(a.ScheduledDate, b.ScheduledDate) &&
+		a.Position == b.Position &&
+		a.Revision == b.Revision &&
+		a.CreatedAt.Equal(b.CreatedAt) &&
+		a.UpdatedAt.Equal(b.UpdatedAt) &&
+		equalTimePtr(a.CompletedAt, b.CompletedAt) &&
+		equalTimePtr(a.DeletedAt, b.DeletedAt)
+}
+
 // Verify compares every portable task field; server acknowledgement alone is not verification.
 func Verify(expected, actual []taskclient.Task) error {
 	if len(expected) != len(actual) {
@@ -153,10 +194,10 @@ func Verify(expected, actual []taskclient.Task) error {
 	b := append([]taskclient.Task(nil), actual...)
 	sort.Slice(a, func(i, j int) bool { return a[i].ID < a[j].ID })
 	sort.Slice(b, func(i, j int) bool { return b[i].ID < b[j].ID })
-	left, _ := json.Marshal(a)
-	right, _ := json.Marshal(b)
-	if !bytes.Equal(left, right) {
-		return fmt.Errorf("export differs from the planned fields, dates, ordering or timestamps")
+	for i := range a {
+		if !equalTask(a[i], b[i]) {
+			return fmt.Errorf("export differs from the planned fields, dates, ordering or timestamps")
+		}
 	}
 	return nil
 }

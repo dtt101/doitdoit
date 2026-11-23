@@ -59,3 +59,27 @@ func TestPlanRejectsLegacyUnknownDuplicateAndConflictingSourceData(t *testing.T)
 		t.Fatalf("duplicate task ID not reported: %v %v", err, p.Report.Issues)
 	}
 }
+
+func TestDecodeStrictRejectsCaseFoldedDuplicateKeysAndInvalidTimezones(t *testing.T) {
+	if _, err := Build([]byte(`{"schema_version":1,"timezone":"Europe/London","Timezone":"UTC","tasks":[]}`)); err == nil {
+		t.Fatal("case-folded duplicate key accepted")
+	}
+	for _, tz := range []string{"", "Local"} {
+		raw, _ := json.Marshal(taskclient.Export{SchemaVersion: 1, Board: taskclient.Board{Timezone: tz, Tasks: []taskclient.Task{}}})
+		p, err := Build(raw)
+		if err != nil || len(p.Report.Issues) == 0 {
+			t.Fatalf("expected timezone issue for %q: err=%v issues=%v", tz, err, p.Report.Issues)
+		}
+	}
+}
+
+func TestVerifyTreatsEquivalentTimestampsWithDifferentOffsetsAsEqual(t *testing.T) {
+	plusTwo := time.FixedZone("UTC+2", 2*3600)
+	t1 := time.Date(2026, 1, 2, 12, 0, 0, 0, plusTwo)
+	t2 := time.Date(2026, 1, 2, 10, 0, 0, 0, time.UTC)
+	expected := []taskclient.Task{{ID: "1", Title: "A", Status: "open", Position: "a", Revision: 1, CreatedAt: t1, UpdatedAt: t1}}
+	actual := []taskclient.Task{{ID: "1", Title: "A", Status: "open", Position: "a", Revision: 1, CreatedAt: t2, UpdatedAt: t2}}
+	if err := Verify(expected, actual); err != nil {
+		t.Fatalf("equivalent instants rejected: %v", err)
+	}
+}

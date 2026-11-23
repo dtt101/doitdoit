@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -31,7 +32,14 @@ func RunServiceCommand(args []string, out io.Writer) int {
 	apply := flags.Bool("apply", false, "Publish a validated import; otherwise dry-run only")
 	dryRun := flags.Bool("dry-run", false, "Plan and preserve the source without contacting the service")
 	output := flags.String("out", "", "Private export destination")
-	if flags.Parse(args[1:]) != nil || flags.NArg() != 0 {
+	if err := flags.Parse(args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 1
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintf(out, "Unexpected arguments: %v\n", flags.Args())
 		return 1
 	}
 	cfg, err := config.LoadConfig()
@@ -84,7 +92,7 @@ func RunServiceCommand(args []string, out io.Writer) int {
 			e = taskclient.Logout(ctx, c)
 		}
 		if e == nil {
-			e = os.Remove(path)
+			e = taskclient.RemoveCredentials(path)
 		}
 		err = e
 		if err == nil {
@@ -111,16 +119,18 @@ func RunServiceCommand(args []string, out io.Writer) int {
 			err = e
 			break
 		}
-		retained, err = client.ResolveCommand(ctx, retained)
-		if err == nil {
-			var data []byte
-			data, err = retained.JSON()
+		if retained.RelativeDate != "" {
+			retained, err = client.ResolveCommand(ctx, retained)
 			if err == nil {
-				err = taskclient.WritePrivate(*source, data)
+				var data []byte
+				data, err = retained.JSON()
+				if err == nil {
+					err = taskclient.WritePrivate(*source, data)
+				}
 			}
-		}
-		if err != nil {
-			break
+			if err != nil {
+				break
+			}
 		}
 		_, err = client.Execute(ctx, retained)
 		if err == nil {
@@ -168,7 +178,12 @@ func RunServiceCommand(args []string, out io.Writer) int {
 			}
 		} else {
 			cursor := int64(0)
-			for {
+			const maxPages = 10000
+			for pageNum := 0; ; pageNum++ {
+				if pageNum >= maxPages {
+					err = fmt.Errorf("task service: history page limit exceeded")
+					break
+				}
 				page, e := client.History(ctx, *id, cursor)
 				if e != nil {
 					err = e

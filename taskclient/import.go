@@ -2,6 +2,7 @@ package taskclient
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 )
@@ -19,7 +20,13 @@ func (c *Client) BeginImport(ctx context.Context, hash string, count int) (Impor
 		Run ImportRun `json:"run"`
 	}
 	err := c.do(ctx, http.MethodPost, "/v1/imports", map[string]any{"operation_id": OperationID(), "source_sha256": hash, "expected_count": count}, &out)
-	return out.Run, err
+	if err != nil {
+		return ImportRun{}, err
+	}
+	if out.Run.ID == "" || out.Run.SourceSHA256 != hash || out.Run.ExpectedCount != count {
+		return ImportRun{}, errors.New("task service: invalid import run response")
+	}
+	return out.Run, nil
 }
 func (c *Client) StageImport(ctx context.Context, id string, tasks []Task) error {
 	var out struct {

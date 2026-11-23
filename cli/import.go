@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -31,13 +32,24 @@ func runServiceImport(ctx context.Context, origin, credentialPath, source string
 	}
 	work := filepath.Join(filepath.Dir(credentialPath), "imports", plan.Report.SourceSHA256)
 	frozen := filepath.Join(work, "source.snapshot.json")
-	if previous, e := os.ReadFile(frozen); e == nil && string(previous) != string(data) {
-		return fmt.Errorf("frozen snapshot differs; preserve and review %s", frozen)
-	} else if e != nil && !os.IsNotExist(e) {
+	alreadyFrozen := false
+	if existing, e := os.Open(frozen); e == nil {
+		previous, readErr := io.ReadAll(io.LimitReader(existing, 64<<20+1))
+		existing.Close()
+		if readErr != nil {
+			return readErr
+		}
+		if !bytes.Equal(previous, data) {
+			return fmt.Errorf("frozen snapshot differs; preserve and review %s", frozen)
+		}
+		alreadyFrozen = true
+	} else if !os.IsNotExist(e) {
 		return e
 	}
-	if err := taskclient.WritePrivate(frozen, data); err != nil {
-		return err
+	if !alreadyFrozen {
+		if err := taskclient.WritePrivate(frozen, data); err != nil {
+			return err
+		}
 	}
 	report, err := json.MarshalIndent(plan.Report, "", "  ")
 	if err != nil {
@@ -60,12 +72,12 @@ func runServiceImport(ctx context.Context, origin, credentialPath, source string
 		return err
 	}
 	if plan.Timezone != "" {
-		board, e := client.Board(ctx)
+		ownerLoc, e := client.OwnerTimezone(ctx)
 		if e != nil {
 			return e
 		}
-		if board.Timezone != plan.Timezone {
-			return fmt.Errorf("export timezone %s differs from owner timezone %s", plan.Timezone, board.Timezone)
+		if ownerLoc.String() != plan.Timezone {
+			return fmt.Errorf("export timezone %s differs from owner timezone %s", plan.Timezone, ownerLoc.String())
 		}
 	}
 	run, err := client.BeginImport(ctx, plan.Report.SourceSHA256, len(plan.Tasks))
