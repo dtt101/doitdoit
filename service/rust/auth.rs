@@ -75,11 +75,13 @@ pub async fn cleanup(env: &Env) -> ApiResult<()> {
     let db = db(env)?;
     let now = now();
     // Keep spent credentials while a grant is live, so replay still revokes
-    // its successors. Task history and operation receipts are never cleaned here.
+    // its successors. Prune expired access tokens and revoked or fully expired
+    // grants. Task history and operation receipts are never cleaned here.
     let statements = [
         "DELETE FROM oauth_pending WHERE digest IN (SELECT digest FROM oauth_pending WHERE expires<=? LIMIT 1000)",
         "DELETE FROM oauth_clients WHERE id IN (SELECT id FROM oauth_clients WHERE expires<=? LIMIT 1000)",
-        "DELETE FROM oauth_credentials WHERE grant_id IN (SELECT g.id FROM oauth_grants g WHERE NOT EXISTS (SELECT 1 FROM oauth_credentials c WHERE c.grant_id=g.id AND c.kind IN ('code','access','refresh') AND c.expires>?) LIMIT 1000)",
+        "DELETE FROM oauth_credentials WHERE digest IN (SELECT digest FROM oauth_credentials WHERE kind='access' AND expires<=? LIMIT 1000)",
+        "DELETE FROM oauth_credentials WHERE grant_id IN (SELECT g.id FROM oauth_grants g WHERE g.revoked=1 OR NOT EXISTS (SELECT 1 FROM oauth_credentials c WHERE c.grant_id=g.id AND c.kind IN ('code','access','refresh') AND c.expires>?) LIMIT 1000)",
         "DELETE FROM oauth_grants WHERE id IN (SELECT g.id FROM oauth_grants g WHERE NOT EXISTS (SELECT 1 FROM oauth_credentials c WHERE c.grant_id=g.id) AND ? IS NOT NULL LIMIT 1000)",
     ].into_iter().map(|sql| db.prepare(sql).bind(&[now.into()]))
         .collect::<worker::Result<Vec<_>>>().map_err(|_| ServiceError::internal())?;

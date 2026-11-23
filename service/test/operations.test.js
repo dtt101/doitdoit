@@ -28,6 +28,9 @@ it("hourly cleanup expires login state but preserves live grants and replay evid
     await env.DB.prepare("INSERT INTO oauth_credentials(digest,kind,grant_id,expires) VALUES(?,'access',?,?)").bind(id, id, expiry).run();
     await env.DB.prepare("INSERT INTO oauth_credentials(digest,kind,grant_id,expires) VALUES(?,'used_refresh',?,?)").bind(id + '-spent', id, now - 60).run();
   }
+  await env.DB.prepare("INSERT INTO oauth_credentials(digest,kind,grant_id,expires) VALUES('live-old-access','access','live',?)").bind(now - 60).run();
+  await env.DB.prepare("INSERT INTO oauth_grants VALUES('revoked','owner','client','tasks:read','http://localhost:8787',1)").run();
+  await env.DB.prepare("INSERT INTO oauth_credentials(digest,kind,grant_id,expires) VALUES('revoked-refresh','refresh','revoked',?)").bind(now + 600).run();
   const ctx = createExecutionContext();
   await scheduled({ cron: "17 * * * *", scheduledTime: Date.now(), type: "scheduled" }, env, ctx);
   await waitOnExecutionContext(ctx);

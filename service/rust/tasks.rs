@@ -1,8 +1,8 @@
 use crate::contracts::{
     Create, Mutation, Reorder, ServiceError, SnapshotQuery, Task, TaskQuery, Update, canonical,
 };
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json, value::RawValue};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use worker::{D1Database, Date, js_sys::Date as JsDate, wasm_bindgen::JsValue};
@@ -27,9 +27,47 @@ struct Row {
     value: String,
 }
 #[derive(Deserialize)]
+struct CursorRow<C> {
+    cursor: C,
+    value: String,
+}
+#[derive(Deserialize)]
 struct Receipt {
     request_hash: String,
     result_json: String,
+}
+#[derive(Deserialize)]
+struct SnapshotMeta {
+    highwater: u64,
+    timezone: String,
+}
+#[derive(Deserialize)]
+struct Position {
+    id: String,
+    position: String,
+}
+
+pub fn to_raw<T: Serialize + ?Sized>(value: &T) -> Result<Box<RawValue>, ServiceError> {
+    serde_json::to_string(value)
+        .and_then(RawValue::from_string)
+        .map_err(|_| ServiceError::internal())
+}
+
+fn check_revision(current: &Task, expected: u64, restore: bool) -> Result<(), ServiceError> {
+    let deleted_ok = if restore {
+        current.deleted_at.is_some()
+    } else {
+        current.deleted_at.is_none()
+    };
+    if current.revision != expected || !deleted_ok {
+        return Err(ServiceError {
+            status: 409,
+            code: "revision_conflict",
+            message: "This task changed. Review the current version before retrying.",
+            current: Some(Box::new(current.clone())),
+        });
+    }
+    Ok(())
 }
 
 impl Tasks {
@@ -59,7 +97,7 @@ impl Tasks {
         serde_json::from_str(&row.value).map_err(|_| ServiceError::internal())
     }
 
-    pub async fn list(&self) -> Result<Vec<Task>, ServiceError> {
+    pub async fn list(&self) -> Result<Box<RawValue>, ServiceError> {
         self.require("tasks:read")?;
         let result = self.db.prepare(
             "SELECT j.value FROM task_json j JOIN tasks t ON t.owner_id=j.owner_id AND t.id=j.id WHERE t.owner_id=? AND t.deleted_at IS NULL ORDER BY t.position,t.id LIMIT 501"
@@ -75,27 +113,37 @@ impl Tasks {
                 "The prototype task list limit was exceeded.",
             ));
         }
-        rows.into_iter()
-            .map(|r| serde_json::from_str(&r.value).map_err(|_| ServiceError::internal()))
-            .collect()
+        let tasks = rows
+            .into_iter()
+            .map(|r| RawValue::from_string(r.value).map_err(|_| ServiceError::internal()))
+            .collect::<Result<Vec<_>, _>>()?;
+        #[derive(Serialize)]
+        struct ListResponse {
+            tasks: Vec<Box<RawValue>>,
+        }
+        to_raw(&ListResponse { tasks })
     }
 
-    pub async fn scan(&self, input: Value) -> Result<Value, ServiceError> {
+    pub async fn scan(&self, input: Value) -> Result<Box<RawValue>, ServiceError> {
         self.require("tasks:read")?;
         let q = TaskQuery::parse(input)?;
-        let rows=self.db.prepare("SELECT j.value FROM task_json j JOIN tasks t ON t.owner_id=j.owner_id AND t.id=j.id WHERE t.owner_id=? AND (? OR t.deleted_at IS NULL) AND (? IS NULL OR t.status=?) AND (? IS NULL OR t.scheduled_date=?) AND (NOT ? OR t.scheduled_date IS NULL) AND instr(lower(t.title || char(10) || t.notes),lower(?))>0 AND t.id>? ORDER BY t.id LIMIT ?")
+        let rows=self.db.prepare("SELECT t.id AS cursor, j.value FROM task_json j JOIN tasks t ON t.owner_id=j.owner_id AND t.id=j.id WHERE t.owner_id=? AND (? OR t.deleted_at IS NULL) AND (? IS NULL OR t.status=?) AND (? IS NULL OR t.scheduled_date=?) AND (NOT ? OR t.scheduled_date IS NULL) AND (?='' OR instr(lower(t.title || char(10) || t.notes),lower(?))>0) AND t.id>? ORDER BY t.id LIMIT ?")
             .bind(&[self.principal.owner_id.clone().into(), q.include_deleted.into(),
                 q.status.clone().map(JsValue::from).unwrap_or(JsValue::NULL),q.status.map(JsValue::from).unwrap_or(JsValue::NULL),
                 q.scheduled_date.clone().map(JsValue::from).unwrap_or(JsValue::NULL),q.scheduled_date.map(JsValue::from).unwrap_or(JsValue::NULL),
-                q.undated.into(),q.search.into(),q.after.into(),(q.limit+1).into()])
+                q.undated.into(),q.search.clone().into(),q.search.into(),q.after.into(),(q.limit+1).into()])
             .map_err(|_|ServiceError::internal())?.all().await.map_err(|_|ServiceError::internal())?;
-        Self::page(
-            rows.results::<Row>()
+        let (tasks, next_cursor) = Self::raw_page(
+            rows.results::<CursorRow<String>>()
                 .map_err(|_| ServiceError::internal())?,
             q.limit,
-            "tasks",
-            "id",
-        )
+        )?;
+        #[derive(Serialize)]
+        struct TaskPage {
+            tasks: Vec<Box<RawValue>>,
+            next_cursor: Option<String>,
+        }
+        to_raw(&TaskPage { tasks, next_cursor })
     }
 
     async fn highwater(&self) -> Result<u64, ServiceError> {
@@ -110,63 +158,82 @@ impl Tasks {
             .ok_or_else(ServiceError::internal)
     }
 
-    pub async fn snapshot(&self, input: Value, export: bool) -> Result<Value, ServiceError> {
+    pub async fn snapshot(
+        &self,
+        input: Value,
+        export: bool,
+    ) -> Result<Box<RawValue>, ServiceError> {
+        self.require("tasks:read")?;
         let q = SnapshotQuery::parse(input)?;
-        let highwater = self.highwater().await?;
-        let cursor = q.snapshot_cursor.unwrap_or(highwater);
-        if cursor > highwater || (!q.after.is_empty() && q.snapshot_cursor.is_none()) {
+        let meta = self
+            .db
+            .prepare("SELECT COALESCE((SELECT MAX(cursor) FROM task_events WHERE owner_id=?),0) AS highwater, timezone FROM owners WHERE id=?")
+            .bind(&[
+                self.principal.owner_id.clone().into(),
+                self.principal.owner_id.clone().into(),
+            ])
+            .map_err(|_| ServiceError::internal())?
+            .first::<SnapshotMeta>(None)
+            .await
+            .map_err(|_| ServiceError::internal())?
+            .ok_or_else(ServiceError::internal)?;
+        let cursor = q.snapshot_cursor.unwrap_or(meta.highwater);
+        if cursor > meta.highwater || (!q.after.is_empty() && q.snapshot_cursor.is_none()) {
             return Err(ServiceError::invalid());
         }
         // Every task version is retained. Paging at a fixed cursor reconstructs
         // one immutable board even while edits/deletes are accepted between pages.
-        let rows=self.db.prepare("SELECT e.after_json AS value FROM task_events e WHERE e.owner_id=? AND e.task_id>? AND e.cursor=(SELECT MAX(v.cursor) FROM task_events v WHERE v.owner_id=e.owner_id AND v.task_id=e.task_id AND v.cursor<=?) AND (? OR json_extract(e.after_json,'$.deleted_at') IS NULL) ORDER BY e.task_id LIMIT ?")
+        let rows=self.db.prepare("SELECT m.task_id AS cursor, e.after_json AS value FROM (SELECT task_id, MAX(cursor) AS max_cursor FROM task_events WHERE owner_id=? AND task_id>? AND cursor<=? GROUP BY task_id) m JOIN task_events e ON e.cursor=m.max_cursor WHERE (? OR json_extract(e.after_json,'$.deleted_at') IS NULL) ORDER BY m.task_id LIMIT ?")
             .bind(&[self.principal.owner_id.clone().into(),q.after.into(),(cursor as f64).into(),export.into(),(q.limit+1).into()])
             .map_err(|_|ServiceError::internal())?.all().await.map_err(|_|ServiceError::internal())?;
-        let mut page = Self::page(
-            rows.results::<Row>()
+        let (tasks, next_cursor) = Self::raw_page(
+            rows.results::<CursorRow<String>>()
                 .map_err(|_| ServiceError::internal())?,
             q.limit,
-            "tasks",
-            "id",
         )?;
-        page["snapshot_cursor"] = json!(cursor);
-        page["timezone"] = json!(
-            self.db
-                .prepare("SELECT timezone FROM owners WHERE id=?")
-                .bind(&[self.principal.owner_id.clone().into()])
-                .map_err(|_| ServiceError::internal())?
-                .first::<String>(Some("timezone"))
-                .await
-                .map_err(|_| ServiceError::internal())?
-                .ok_or_else(ServiceError::internal)?
-        );
-        if export {
-            page["schema_version"] = json!(1);
+        #[derive(Serialize)]
+        struct SnapshotPage {
+            tasks: Vec<Box<RawValue>>,
+            next_cursor: Option<String>,
+            snapshot_cursor: u64,
+            timezone: String,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            schema_version: Option<u32>,
         }
-        Ok(page)
+        to_raw(&SnapshotPage {
+            tasks,
+            next_cursor,
+            snapshot_cursor: cursor,
+            timezone: meta.timezone,
+            schema_version: export.then_some(1),
+        })
     }
 
-    pub async fn changes(&self, after: u64, limit: u32) -> Result<Value, ServiceError> {
+    pub async fn changes(&self, after: u64, limit: u32) -> Result<Box<RawValue>, ServiceError> {
         let highwater = self.highwater().await?;
         if after > highwater {
             return Err(ServiceError::invalid());
         }
-        let rows=self.db.prepare("SELECT json_object('cursor',e.cursor,'task_id',e.task_id,'operation_id',e.operation_id,'actor',e.actor,'occurred_at',e.occurred_at,'action',r.action,'before',json(e.before_json),'after',json(e.after_json)) AS value FROM task_events e JOIN operation_receipts r ON r.owner_id=e.owner_id AND r.operation_id=e.operation_id WHERE e.owner_id=? AND e.cursor>? AND e.cursor<=? ORDER BY e.cursor LIMIT ?")
+        let rows=self.db.prepare("SELECT e.cursor AS cursor, json_object('cursor',e.cursor,'task_id',e.task_id,'operation_id',e.operation_id,'actor',e.actor,'occurred_at',e.occurred_at,'action',r.action,'before',json(e.before_json),'after',json(e.after_json)) AS value FROM task_events e JOIN operation_receipts r ON r.owner_id=e.owner_id AND r.operation_id=e.operation_id WHERE e.owner_id=? AND e.cursor>? AND e.cursor<=? ORDER BY e.cursor LIMIT ?")
             .bind(&[self.principal.owner_id.clone().into(),(after as f64).into(),(highwater as f64).into(),(limit+1).into()]).map_err(|_|ServiceError::internal())?.all().await.map_err(|_|ServiceError::internal())?;
-        let mut page = Self::page(
-            rows.results::<Row>()
+        let (events, next_cursor) = Self::raw_page(
+            rows.results::<CursorRow<u64>>()
                 .map_err(|_| ServiceError::internal())?,
             limit,
-            "events",
-            "cursor",
         )?;
-        page["cursor"] = if page["next_cursor"].is_null() {
-            json!(highwater)
-        } else {
-            page["next_cursor"].clone()
-        };
-        page["highwater"] = json!(highwater);
-        Ok(page)
+        #[derive(Serialize)]
+        struct ChangesPage {
+            events: Vec<Box<RawValue>>,
+            next_cursor: Option<u64>,
+            cursor: u64,
+            highwater: u64,
+        }
+        to_raw(&ChangesPage {
+            events,
+            cursor: next_cursor.unwrap_or(highwater),
+            next_cursor,
+            highwater,
+        })
     }
 
     pub async fn create(&self, input: Value) -> Result<Task, ServiceError> {
@@ -181,6 +248,7 @@ impl Tasks {
             command.scheduled_date.as_deref(),
             "open",
             None,
+            None,
         )
         .await
     }
@@ -190,31 +258,36 @@ impl Tasks {
         let command = Update::parse(input)?;
         let mut value = serde_json::to_value(&command).map_err(|_| ServiceError::internal())?;
         value["task_id"] = json!(id);
-        let current = self.get(id).await?;
-        let date = if let Some(date) = command.changes.0.get("scheduled_date") {
-            date.as_str().map(str::to_owned)
-        } else {
-            current.scheduled_date.clone()
-        };
-        let status = command
-            .changes
-            .0
-            .get("status")
-            .and_then(Value::as_str)
-            .unwrap_or(&current.status);
-        if date != current.scheduled_date || status != current.status {
-            return self
-                .ordered(
-                    "update",
-                    id,
-                    Some(command.expected_revision),
-                    &command.operation_id,
-                    value,
-                    date.as_deref(),
-                    status,
-                    None,
-                )
-                .await;
+        let touches_group = command.changes.0.contains_key("scheduled_date")
+            || command.changes.0.contains_key("status");
+        if touches_group {
+            let current = self.get(id).await?;
+            let date = if let Some(date) = command.changes.0.get("scheduled_date") {
+                date.as_str().map(str::to_owned)
+            } else {
+                current.scheduled_date.clone()
+            };
+            let status = command
+                .changes
+                .0
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or(&current.status);
+            if date != current.scheduled_date || status != current.status {
+                return self
+                    .ordered(
+                        "update",
+                        id,
+                        Some(command.expected_revision),
+                        &command.operation_id,
+                        value,
+                        date.as_deref(),
+                        status,
+                        None,
+                        Some(&current),
+                    )
+                    .await;
+            }
         }
         self.execute(
             "update",
@@ -247,6 +320,7 @@ impl Tasks {
                 current.scheduled_date.as_deref(),
                 &current.status,
                 None,
+                Some(&current),
             )
             .await
         } else {
@@ -261,49 +335,51 @@ impl Tasks {
         }
     }
 
-    pub async fn history(&self, id: &str, after: u64, limit: u32) -> Result<Value, ServiceError> {
+    pub async fn history(
+        &self,
+        id: &str,
+        after: u64,
+        limit: u32,
+    ) -> Result<Box<RawValue>, ServiceError> {
         self.get(id).await?;
-        let result = self.db.prepare("SELECT json_object('cursor',e.cursor,'task_id',e.task_id,'operation_id',e.operation_id,'actor',e.actor,'occurred_at',e.occurred_at,'action',r.action,'before',json(e.before_json),'after',json(e.after_json)) AS value FROM task_events e JOIN operation_receipts r ON r.owner_id=e.owner_id AND r.operation_id=e.operation_id WHERE e.owner_id=? AND e.task_id=? AND e.cursor>? ORDER BY e.cursor LIMIT ?")
+        let result = self.db.prepare("SELECT e.cursor AS cursor, json_object('cursor',e.cursor,'task_id',e.task_id,'operation_id',e.operation_id,'actor',e.actor,'occurred_at',e.occurred_at,'action',r.action,'before',json(e.before_json),'after',json(e.after_json)) AS value FROM task_events e JOIN operation_receipts r ON r.owner_id=e.owner_id AND r.operation_id=e.operation_id WHERE e.owner_id=? AND e.task_id=? AND e.cursor>? ORDER BY e.cursor LIMIT ?")
             .bind(&[self.principal.owner_id.clone().into(), id.into(), (after as f64).into(), (limit+1).into()])
             .map_err(|_| ServiceError::internal())?.all().await.map_err(|_| ServiceError::internal())?;
-        Self::page(
+        let (events, next_cursor) = Self::raw_page(
             result
-                .results::<Row>()
+                .results::<CursorRow<u64>>()
                 .map_err(|_| ServiceError::internal())?,
             limit,
-            "events",
-            "cursor",
-        )
+        )?;
+        #[derive(Serialize)]
+        struct HistoryPage {
+            events: Vec<Box<RawValue>>,
+            next_cursor: Option<u64>,
+        }
+        to_raw(&HistoryPage {
+            events,
+            next_cursor,
+        })
     }
 
-    fn page(
-        rows: Vec<Row>,
+    fn raw_page<C>(
+        rows: Vec<CursorRow<C>>,
         limit: u32,
-        field: &str,
-        cursor_field: &str,
-    ) -> Result<Value, ServiceError> {
-        let mut items = Vec::new();
+    ) -> Result<(Vec<Box<RawValue>>, Option<C>), ServiceError> {
+        let mut items = Vec::with_capacity(rows.len().min(limit as usize));
         let mut size = 0;
         let mut more = false;
+        let mut last_cursor = None;
         for row in rows {
             if items.len() >= limit as usize || size + row.value.len() > 900_000 {
                 more = true;
                 break;
             }
             size += row.value.len();
-            items.push(
-                serde_json::from_str::<Value>(&row.value).map_err(|_| ServiceError::internal())?,
-            );
+            items.push(RawValue::from_string(row.value).map_err(|_| ServiceError::internal())?);
+            last_cursor = Some(row.cursor);
         }
-        let next = if more {
-            items
-                .last()
-                .map(|v| v[cursor_field].clone())
-                .unwrap_or(Value::Null)
-        } else {
-            Value::Null
-        };
-        Ok(json!({field:items,"next_cursor":next}))
+        Ok((items, if more { last_cursor } else { None }))
     }
 
     pub async fn reorder(&self, id: &str, input: Value) -> Result<Task, ServiceError> {
@@ -324,6 +400,7 @@ impl Tasks {
             current.scheduled_date.as_deref(),
             &current.status,
             Some((c.after_id.as_deref(), c.before_id.as_deref())),
+            Some(&current),
         )
         .await
     }
@@ -339,42 +416,64 @@ impl Tasks {
         date: Option<&str>,
         status: &str,
         neighbors: Option<(Option<&str>, Option<&str>)>,
+        current: Option<&Task>,
     ) -> Result<Task, ServiceError> {
         // Check the acknowledgement before reading a newer scope or compacting.
-        if self.receipt(op).await?.is_some() {
-            return serde_json::from_value(
-                self.submit(action, id, revision, op, value.clone(), value)
-                    .await?,
-            )
-            .map_err(|_| ServiceError::internal());
+        if let Some(receipt) = self.receipt(op).await? {
+            let hash = format!(
+                "{:x}",
+                Sha256::digest(canonical(action, &value)?.as_bytes())
+            );
+            return serde_json::from_value(Self::resolve_receipt(receipt, &hash)?)
+                .map_err(|_| ServiceError::internal());
+        }
+        if let (Some(current), Some(expected)) = (current, revision) {
+            check_revision(current, expected, action == "restore")?;
         }
         #[derive(Deserialize)]
-        struct Position {
-            id: String,
+        struct BoardRev {
+            board_revision: u64,
+        }
+        #[derive(Deserialize)]
+        struct LastPosition {
             position: String,
         }
         for _ in 0..8 {
-            let board = self
+            let date_val = date.map(JsValue::from).unwrap_or(JsValue::NULL);
+            let board_stmt = self
                 .db
                 .prepare("SELECT board_revision FROM owners WHERE id=?")
                 .bind(&[self.principal.owner_id.clone().into()])
-                .map_err(|_| ServiceError::internal())?
-                .first::<u64>(Some("board_revision"))
-                .await
-                .map_err(|_| ServiceError::internal())?
-                .ok_or_else(ServiceError::internal)?;
-            let scope=self.db.prepare("SELECT id,position FROM tasks WHERE owner_id=? AND deleted_at IS NULL AND status=? AND scheduled_date IS ? ORDER BY position,id LIMIT 10001")
-                .bind(&[self.principal.owner_id.clone().into(),status.into(),date.map(JsValue::from).unwrap_or(JsValue::NULL)])
-                .map_err(|_|ServiceError::internal())?.all().await.map_err(|_|ServiceError::internal())?.results::<Position>().map_err(|_|ServiceError::internal())?;
-            if scope.len() > 10000 {
-                return Err(ServiceError::new(
-                    422,
-                    "result_limit",
-                    "Ordering scope exceeds the supported limit.",
-                ));
-            }
-            let others: Vec<_> = scope.iter().filter(|p| p.id != id).collect();
-            let (lower, upper) = if let Some((after, before)) = neighbors {
+                .map_err(|_| ServiceError::internal())?;
+            let (board, position) = if let Some((after, before)) = neighbors {
+                let scope_stmt = self
+                    .db
+                    .prepare("SELECT id,position FROM tasks WHERE owner_id=? AND deleted_at IS NULL AND status=? AND scheduled_date IS ? ORDER BY position,id LIMIT 10001")
+                    .bind(&[self.principal.owner_id.clone().into(), status.into(), date_val.clone()])
+                    .map_err(|_| ServiceError::internal())?;
+                let results = self
+                    .db
+                    .batch(vec![board_stmt, scope_stmt])
+                    .await
+                    .map_err(|_| ServiceError::internal())?;
+                let board = results[0]
+                    .results::<BoardRev>()
+                    .map_err(|_| ServiceError::internal())?
+                    .into_iter()
+                    .next()
+                    .ok_or_else(ServiceError::internal)?
+                    .board_revision;
+                let scope = results[1]
+                    .results::<Position>()
+                    .map_err(|_| ServiceError::internal())?;
+                if scope.len() > 10000 {
+                    return Err(ServiceError::new(
+                        422,
+                        "result_limit",
+                        "Ordering scope exceeds the supported limit.",
+                    ));
+                }
+                let others: Vec<_> = scope.iter().filter(|p| p.id != id).collect();
                 let index = match after {
                     Some(a) => others.iter().position(|p| p.id == a).map(|i| i + 1),
                     None => Some(0),
@@ -393,37 +492,68 @@ impl Tasks {
                         "The reviewed neighbors are no longer adjacent.",
                     ));
                 }
-                (
-                    index.checked_sub(1).map(|i| others[i].position.as_str()),
-                    others.get(index).map(|p| p.position.as_str()),
-                )
+                let lower = index.checked_sub(1).map(|i| others[i].position.as_str());
+                let upper = others.get(index).map(|p| p.position.as_str());
+                let Some(position) = crate::ordering::between(lower, upper) else {
+                    if self.compact_others(id, board, &others).await? {
+                        continue;
+                    }
+                    continue;
+                };
+                (board, position)
             } else {
-                (others.last().map(|p| p.position.as_str()), None)
-            };
-            let Some(position) = crate::ordering::between(lower, upper) else {
-                let positions:Vec<_>=scope.iter().enumerate().map(|(i,p)|json!({"id":p.id,"position":format!("{:016x}i",(i as u64+1)*1_048_576)})).collect();
-                let compact = json!({"positions":positions,"_board_revision":board});
-                match self
-                    .submit(
-                        "compact",
-                        id,
-                        None,
-                        &Uuid::new_v4().to_string(),
-                        compact.clone(),
-                        compact,
-                    )
+                let last_stmt = self
+                    .db
+                    .prepare("SELECT position FROM tasks WHERE owner_id=? AND deleted_at IS NULL AND status=? AND scheduled_date IS ? ORDER BY position DESC,id DESC LIMIT 1")
+                    .bind(&[self.principal.owner_id.clone().into(), status.into(), date_val.clone()])
+                    .map_err(|_| ServiceError::internal())?;
+                let results = self
+                    .db
+                    .batch(vec![board_stmt, last_stmt])
                     .await
-                {
-                    Ok(_) => continue,
-                    Err(e) if e.code == "ordering_conflict" => continue,
-                    Err(e) => return Err(e),
-                }
+                    .map_err(|_| ServiceError::internal())?;
+                let board = results[0]
+                    .results::<BoardRev>()
+                    .map_err(|_| ServiceError::internal())?
+                    .into_iter()
+                    .next()
+                    .ok_or_else(ServiceError::internal)?
+                    .board_revision;
+                let last = results[1]
+                    .results::<LastPosition>()
+                    .map_err(|_| ServiceError::internal())?
+                    .into_iter()
+                    .next();
+                let lower = last.as_ref().map(|p| p.position.as_str());
+                let Some(position) = crate::ordering::between(lower, None) else {
+                    let scope = self
+                        .db
+                        .prepare("SELECT id,position FROM tasks WHERE owner_id=? AND deleted_at IS NULL AND status=? AND scheduled_date IS ? ORDER BY position,id LIMIT 10001")
+                        .bind(&[self.principal.owner_id.clone().into(), status.into(), date_val])
+                        .map_err(|_| ServiceError::internal())?
+                        .all()
+                        .await
+                        .map_err(|_| ServiceError::internal())?
+                        .results::<Position>()
+                        .map_err(|_| ServiceError::internal())?;
+                    if scope.len() > 10000 {
+                        return Err(ServiceError::new(
+                            422,
+                            "result_limit",
+                            "Ordering scope exceeds the supported limit.",
+                        ));
+                    }
+                    let others: Vec<_> = scope.iter().filter(|p| p.id != id).collect();
+                    let _ = self.compact_others(id, board, &others).await?;
+                    continue;
+                };
+                (board, position)
             };
             let mut stored = value.clone();
             stored["_position"] = json!(position);
             stored["_board_revision"] = json!(board);
             match self
-                .submit(action, id, revision, op, value.clone(), stored)
+                .submit_inner(action, id, revision, op, value.clone(), stored, false)
                 .await
             {
                 Ok(result) => {
@@ -440,10 +570,51 @@ impl Tasks {
         ))
     }
 
+    async fn compact_others(
+        &self,
+        id: &str,
+        board: u64,
+        others: &[&Position],
+    ) -> Result<bool, ServiceError> {
+        let positions: Vec<_> = others
+            .iter()
+            .enumerate()
+            .map(|(i, p)| json!({"id": p.id, "position": format!("{:016x}i", (i as u64 + 1) * 1_048_576)}))
+            .collect();
+        let compact = json!({"positions": positions, "_board_revision": board});
+        match self
+            .submit_inner(
+                "compact",
+                id,
+                None,
+                &Uuid::new_v4().to_string(),
+                compact.clone(),
+                compact,
+                false,
+            )
+            .await
+        {
+            Ok(_) => Ok(true),
+            Err(e) if e.code == "ordering_conflict" => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+
     async fn receipt(&self, operation_id: &str) -> Result<Option<Receipt>, ServiceError> {
         self.db.prepare("SELECT request_hash,result_json FROM operation_receipts WHERE owner_id=? AND operation_id=?")
             .bind(&[self.principal.owner_id.clone().into(), operation_id.into()]).map_err(|_| ServiceError::internal())?
             .first::<Receipt>(None).await.map_err(|_| ServiceError::internal())
+    }
+
+    fn resolve_receipt(receipt: Receipt, hash: &str) -> Result<Value, ServiceError> {
+        if receipt.request_hash != hash {
+            return Err(ServiceError::new(
+                409,
+                "operation_id_reused",
+                "Use a new operation ID for a different request.",
+            ));
+        }
+        serde_json::from_str(&receipt.result_json).map_err(|_| ServiceError::internal())
     }
 
     async fn execute(
@@ -469,22 +640,35 @@ impl Tasks {
         command: Value,
         stored_command: Value,
     ) -> Result<Value, ServiceError> {
+        self.submit_inner(
+            action,
+            id,
+            revision,
+            operation_id,
+            command,
+            stored_command,
+            true,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn submit_inner(
+        &self,
+        action: &str,
+        id: &str,
+        revision: Option<u64>,
+        operation_id: &str,
+        command: Value,
+        stored_command: Value,
+        check_receipt: bool,
+    ) -> Result<Value, ServiceError> {
         let hash = format!(
             "{:x}",
             Sha256::digest(canonical(action, &command)?.as_bytes())
         );
-        let resolve = |receipt: Receipt| -> Result<Value, ServiceError> {
-            if receipt.request_hash != hash {
-                return Err(ServiceError::new(
-                    409,
-                    "operation_id_reused",
-                    "Use a new operation ID for a different request.",
-                ));
-            }
-            serde_json::from_str(&receipt.result_json).map_err(|_| ServiceError::internal())
-        };
-        if let Some(receipt) = self.receipt(operation_id).await? {
-            return resolve(receipt);
+        if check_receipt && let Some(receipt) = self.receipt(operation_id).await? {
+            return Self::resolve_receipt(receipt, &hash);
         }
         let timestamp: JsDate = Date::now().into();
         let timestamp: String = timestamp.to_iso_string().into();
@@ -531,10 +715,11 @@ impl Tasks {
             }
             return Err(ServiceError::internal());
         }
-        resolve(
+        Self::resolve_receipt(
             self.receipt(operation_id)
                 .await?
                 .ok_or_else(ServiceError::internal)?,
+            &hash,
         )
     }
 }

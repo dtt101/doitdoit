@@ -94,7 +94,7 @@ impl Mutation {
 #[serde(transparent)]
 pub struct Changes(pub serde_json::Map<String, Value>);
 
-fn valid_id(id: &str) -> bool {
+pub fn valid_id(id: &str) -> bool {
     Uuid::parse_str(id).is_ok_and(|uuid| uuid.hyphenated().to_string().eq_ignore_ascii_case(id))
 }
 
@@ -290,6 +290,24 @@ impl TaskQuery {
         Ok(query)
     }
 }
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PageQuery {
+    #[serde(default)]
+    pub after: u64,
+    #[serde(default = "page_limit")]
+    pub limit: u32,
+}
+impl PageQuery {
+    pub fn parse(value: Value) -> Result<Self, ServiceError> {
+        let q: Self = serde_json::from_value(value).map_err(|_| ServiceError::invalid())?;
+        if q.after > 9_007_199_254_740_991 || !(1..=100).contains(&q.limit) {
+            return Err(ServiceError::invalid());
+        }
+        Ok(q)
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SnapshotQuery {

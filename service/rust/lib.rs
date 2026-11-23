@@ -6,10 +6,10 @@ mod ordering;
 mod tasks;
 mod transfer;
 
-use contracts::ServiceError;
+use contracts::{ServiceError, valid_id};
 use http::ApiResult;
-use serde_json::{Value, json};
-use tasks::Tasks;
+use serde_json::{Value, json, value::RawValue};
+use tasks::{Tasks, to_raw};
 use worker::{Context, Env, Method, Request, Response, Result, event};
 
 #[event(scheduled)]
@@ -24,7 +24,8 @@ pub async fn scheduled(_event: worker::ScheduledEvent, env: Env, context: worker
 #[event(fetch)]
 pub async fn fetch(mut request: Request, env: Env, _context: Context) -> Result<Response> {
     let origin = auth::var(&env, "SERVICE_ORIGIN").unwrap_or_default();
-    let mut response = match handle(&mut request, &env, &origin).await {
+    let cors_origin = browser_origin(&request, &env, &origin);
+    let mut response = match handle(&mut request, &env, &origin, cors_origin.as_deref()).await {
         Ok(response) => response,
         Err(error) => {
             // OAuth endpoints use RFC 6749's string error field; task endpoints
@@ -43,11 +44,10 @@ pub async fn fetch(mut request: Request, env: Env, _context: Context) -> Result<
             response
         }
     };
-    if browser_origin(&request, &env, &origin).is_some() {
-        response.headers_mut().set(
-            "Access-Control-Allow-Origin",
-            &auth::var(&env, "BROWSER_ORIGIN").unwrap_or_default(),
-        )?;
+    if let Some(allowed) = cors_origin {
+        response
+            .headers_mut()
+            .set("Access-Control-Allow-Origin", &allowed)?;
         response.headers_mut().set(
             "Access-Control-Allow-Methods",
             "GET, POST, PATCH, DELETE, OPTIONS",
@@ -110,7 +110,12 @@ fn browser_origin(request: &Request, env: &Env, service_origin: &str) -> Option<
         None
     }
 }
-async fn handle(request: &mut Request, env: &Env, origin: &str) -> ApiResult<Response> {
+async fn handle(
+    request: &mut Request,
+    env: &Env,
+    origin: &str,
+    cors_origin: Option<&str>,
+) -> ApiResult<Response> {
     let config = worker::Url::parse(origin).map_err(|_| ServiceError::internal())?;
     if config.origin().ascii_serialization() != origin
         || !(config.scheme() == "https"
@@ -137,7 +142,7 @@ async fn handle(request: &mut Request, env: &Env, origin: &str) -> ApiResult<Res
         .headers()
         .get("Origin")
         .map_err(|_| ServiceError::invalid())?
-        .is_some_and(|o| o != origin && browser_origin(request, env, origin).is_none())
+        .is_some_and(|o| o != origin && cors_origin.is_none())
     {
         return Err(ServiceError::new(
             403,
@@ -145,7 +150,7 @@ async fn handle(request: &mut Request, env: &Env, origin: &str) -> ApiResult<Res
             "Cross-origin browser requests are not allowed.",
         ));
     }
-    if request.method() == Method::Options && browser_origin(request, env, origin).is_some() {
+    if request.method() == Method::Options && cors_origin.is_some() {
         let method = request
             .headers()
             .get("Access-Control-Request-Method")
@@ -208,9 +213,9 @@ async fn handle(request: &mut Request, env: &Env, origin: &str) -> ApiResult<Res
     let (value, status) = task_route(request, &tasks).await?;
     http::json(&value, status)
 }
-async fn task_route(request: &mut Request, tasks: &Tasks) -> ApiResult<(Value, u16)> {
+async fn task_route(request: &mut Request, tasks: &Tasks) -> ApiResult<(Box<RawValue>, u16)> {
     if request.path() == "/v1/imports" || request.path().starts_with("/v1/imports/") {
-        return Ok((transfer::handle(request, tasks).await?, 200));
+        return Ok((to_raw(&transfer::handle(request, tasks).await?)?, 200));
     }
     let path = request.path();
     let method = request.method();
@@ -221,7 +226,7 @@ async fn task_route(request: &mut Request, tasks: &Tasks) -> ApiResult<(Value, u
             .query()
             .is_none()
         {
-            return Ok((json!({"tasks":tasks.list().await?}), 200));
+            return Ok((tasks.list().await?, 200));
         }
         return Ok((tasks.scan(query_value(request)?).await?, 200));
     }
@@ -245,19 +250,23 @@ async fn task_route(request: &mut Request, tasks: &Tasks) -> ApiResult<(Value, u
     if let Some(tail) = path.strip_prefix("/v1/tasks/")
         && let Some((id, action)) = tail.split_once('/')
     {
-        if uuid::Uuid::parse_str(id).is_err() {
+        if !valid_id(id) {
             return Err(ServiceError::invalid());
         }
         match (action, method.clone()) {
             ("reorder", Method::Post) => {
+                tasks.require("tasks:write")?;
                 return Ok((
-                    json!({"task":tasks.reorder(id,http::body(request).await?).await?}),
+                    to_raw(&json!({"task":tasks.reorder(id,http::body(request).await?).await?}))?,
                     200,
                 ));
             }
             ("restore", Method::Post) => {
+                tasks.require("tasks:write")?;
                 return Ok((
-                    json!({"task":tasks.lifecycle(id,http::body(request).await?,true).await?}),
+                    to_raw(
+                        &json!({"task":tasks.lifecycle(id,http::body(request).await?,true).await?}),
+                    )?,
                     200,
                 ));
             }
@@ -268,26 +277,29 @@ async fn task_route(request: &mut Request, tasks: &Tasks) -> ApiResult<(Value, u
             _ => return Err(ServiceError::new(404, "not_found", "Endpoint not found.")),
         }
     }
-    let id = path
-        .strip_prefix("/v1/tasks/")
-        .filter(|id| uuid::Uuid::parse_str(id).is_ok());
+    let id = path.strip_prefix("/v1/tasks/").filter(|id| valid_id(id));
     match (path.as_str(), id, method) {
         ("/v1/tasks", _, Method::Post) => {
             tasks.require("tasks:write")?;
             Ok((
-                json!({"task":tasks.create(http::body(request).await?).await?}),
+                to_raw(&json!({"task":tasks.create(http::body(request).await?).await?}))?,
                 201,
             ))
         }
-        (_, Some(id), Method::Get) => Ok((json!({"task":tasks.get(id).await?}), 200)),
-        (_, Some(id), Method::Delete) => Ok((
-            json!({"task":tasks.lifecycle(id,http::body(request).await?,false).await?}),
-            200,
-        )),
+        (_, Some(id), Method::Get) => Ok((to_raw(&json!({"task":tasks.get(id).await?}))?, 200)),
+        (_, Some(id), Method::Delete) => {
+            tasks.require("tasks:write")?;
+            Ok((
+                to_raw(
+                    &json!({"task":tasks.lifecycle(id,http::body(request).await?,false).await?}),
+                )?,
+                200,
+            ))
+        }
         (_, Some(id), Method::Patch) => {
             tasks.require("tasks:write")?;
             Ok((
-                json!({"task":tasks.update(id,http::body(request).await?).await?}),
+                to_raw(&json!({"task":tasks.update(id,http::body(request).await?).await?}))?,
                 200,
             ))
         }

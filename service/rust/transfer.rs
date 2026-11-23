@@ -1,7 +1,7 @@
 //! Explicit HTTP-only administrative import. Staging is invisible to readers;
 //! publication, history and the commit acknowledgement are one atomic command.
 use crate::{
-    contracts::{ServiceError, Task},
+    contracts::{ServiceError, Task, valid_id},
     http::{self, ApiResult},
     tasks::Tasks,
 };
@@ -49,7 +49,7 @@ pub async fn handle(request: &mut Request, tasks: &Tasks) -> ApiResult<Value> {
         }
         let c: Begin = serde_json::from_value(http::body(request).await?)
             .map_err(|_| ServiceError::invalid())?;
-        if uuid::Uuid::parse_str(&c.operation_id).is_err()
+        if !valid_id(&c.operation_id)
             || c.source_sha256.len() != 64
             || !c.source_sha256.bytes().all(|b| b.is_ascii_hexdigit())
             || c.expected_count > 10000
@@ -60,19 +60,18 @@ pub async fn handle(request: &mut Request, tasks: &Tasks) -> ApiResult<Value> {
         let now: String = now.to_iso_string().into();
         tasks.db.prepare("INSERT INTO import_runs(owner_id,id,source_sha256,expected_count,created_at) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING")
    .bind(&[tasks.principal.owner_id.clone().into(),c.operation_id.clone().into(),c.source_sha256.clone().into(),c.expected_count.into(),now.into()]).map_err(|_|ServiceError::internal())?.run().await.map_err(map_error)?;
-        let id = tasks
+        let r: Run = tasks
             .db
-            .prepare("SELECT id FROM import_runs WHERE owner_id=? AND source_sha256=?")
+            .prepare("SELECT r.id,r.source_sha256,r.expected_count,r.committed_at,(SELECT count(*) FROM import_items i WHERE i.owner_id=r.owner_id AND i.run_id=r.id) AS staged_count FROM import_runs r WHERE r.owner_id=? AND r.source_sha256=?")
             .bind(&[
                 tasks.principal.owner_id.clone().into(),
                 c.source_sha256.clone().into(),
             ])
             .map_err(|_| ServiceError::internal())?
-            .first::<String>(Some("id"))
+            .first(None)
             .await
             .map_err(|_| ServiceError::internal())?
             .ok_or_else(ServiceError::invalid)?;
-        let r = run(tasks, &id).await?;
         if r.expected_count != c.expected_count {
             return Err(ServiceError::invalid());
         }
@@ -82,12 +81,12 @@ pub async fn handle(request: &mut Request, tasks: &Tasks) -> ApiResult<Value> {
         .strip_prefix("/v1/imports/")
         .ok_or_else(ServiceError::invalid)?;
     let (id, action) = tail.split_once('/').unwrap_or((tail, ""));
-    if uuid::Uuid::parse_str(id).is_err() {
+    if !valid_id(id) {
         return Err(ServiceError::invalid());
     }
-    let _ = run(tasks, id).await?;
+    let existing = run(tasks, id).await?;
     match (action, method) {
-        ("", Method::Get) => Ok(json!({"run":run(tasks,id).await?})),
+        ("", Method::Get) => Ok(json!({"run":existing})),
         ("tasks", Method::Post) => {
             #[derive(Deserialize)]
             #[serde(deny_unknown_fields)]

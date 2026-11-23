@@ -1,10 +1,11 @@
 use crate::contracts::ServiceError;
 use futures_util::StreamExt;
+use serde::Serialize;
 use serde_json::Value;
 use worker::{Request, Response};
 
 pub type ApiResult<T> = std::result::Result<T, ServiceError>;
-pub fn json(value: &Value, status: u16) -> ApiResult<Response> {
+pub fn json<T: Serialize>(value: &T, status: u16) -> ApiResult<Response> {
     Ok(Response::from_json(value)
         .map_err(|_| ServiceError::internal())?
         .with_status(status))

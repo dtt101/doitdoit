@@ -78,3 +78,16 @@ it('rejects one competing insertion into the same reviewed gap without dropping 
  expect((await c.call('/v1/tasks/'+commands[winner].task.id+'/reorder','POST',commands[winner].command)).task).toEqual(results[winner].value.task);
  expect(await env.DB.prepare('SELECT count(*) AS n FROM task_events').first('n')).toBe(before+1);
 });
+it('compacts during reorder without failing expected_revision and rejects stale revisions before compacting',async()=>{
+ const c=await client();const a=await create(c,'A');const b=await create(c,'B');const d=await create(c,'D');
+ const [first,second]=[a,b].sort((x,y)=>x.id.localeCompare(y.id));
+ await env.DB.prepare('UPDATE tasks SET position=? WHERE owner_id=? AND id=?').bind('0000000000000001i','github-12345',first.id).run();
+ await env.DB.prepare('UPDATE tasks SET position=? WHERE owner_id=? AND id=?').bind('0000000000000001i','github-12345',second.id).run();
+ await env.DB.prepare('UPDATE tasks SET position=? WHERE owner_id=? AND id=?').bind('0000000000000002i','github-12345',d.id).run();
+ const eventsBefore=await env.DB.prepare('SELECT count(*) AS n FROM task_events').first('n');
+ await expect(c.call('/v1/tasks/'+d.id+'/reorder','POST',{...mutation(99),after_id:first.id,before_id:second.id})).rejects.toMatchObject({status:409,code:'revision_conflict'});
+ expect(await env.DB.prepare('SELECT count(*) AS n FROM task_events').first('n')).toBe(eventsBefore);
+ const moved=(await c.call('/v1/tasks/'+d.id+'/reorder','POST',{...mutation(1),after_id:first.id,before_id:second.id})).task;
+ expect(moved.revision).toBe(2);
+ expect((await c.list()).map(t=>t.id)).toEqual([first.id,d.id,second.id]);
+});

@@ -1,10 +1,11 @@
 //! Stateless Streamable HTTP, JSON response mode (MCP 2025-11-25).
 use crate::{
-    contracts::ServiceError,
+    contracts::{PageQuery, ServiceError, valid_id},
     http::{self, ApiResult},
-    tasks::Tasks,
+    tasks::{Tasks, to_raw},
 };
-use serde_json::{Value, json};
+use serde::Serialize;
+use serde_json::{Value, json, value::RawValue};
 use worker::{Method, Request, Response};
 
 fn rpc_error(id: &Value, code: i32, message: &str) -> ApiResult<Response> {
@@ -165,83 +166,86 @@ pub async fn handle(request: &Request, input: Option<Value>, tasks: &Tasks) -> A
             ) {
                 return rpc_error(&id, -32602, "Unknown tool");
             }
-            let operation = call(name, args, tasks).await;
-            let (result, is_error) = match operation {
+            let (result, is_error) = match call(name, args, tasks).await {
                 Ok(result) => (result, false),
-                Err(e) => (json!({"error":e}), true),
+                Err(e) => (to_raw(&json!({"error":e}))?, true),
             };
-            json!({"content":[{"type":"text","text":result.to_string()}],"structuredContent":result,"isError":is_error})
+            #[derive(Serialize)]
+            struct ToolContent<'a> {
+                #[serde(rename = "type")]
+                kind: &'static str,
+                text: &'a str,
+            }
+            #[derive(Serialize)]
+            #[serde(rename_all = "camelCase")]
+            struct ToolResult<'a> {
+                content: [ToolContent<'a>; 1],
+                structured_content: &'a RawValue,
+                is_error: bool,
+            }
+            #[derive(Serialize)]
+            struct RpcResponse<'a> {
+                jsonrpc: &'static str,
+                id: &'a Value,
+                result: ToolResult<'a>,
+            }
+            return http::json(
+                &RpcResponse {
+                    jsonrpc: "2.0",
+                    id: &id,
+                    result: ToolResult {
+                        content: [ToolContent {
+                            kind: "text",
+                            text: result.get(),
+                        }],
+                        structured_content: &result,
+                        is_error,
+                    },
+                },
+                200,
+            );
         }
         _ => return rpc_error(&id, -32601, "Method not found"),
     };
     http::json(&json!({"jsonrpc":"2.0","id":id,"result":result}), 200)
 }
-async fn call(name: &str, mut args: Value, tasks: &Tasks) -> ApiResult<Value> {
+async fn call(name: &str, mut args: Value, tasks: &Tasks) -> ApiResult<Box<RawValue>> {
     match name {
         "list_tasks" => {
             if args.as_object().is_some_and(|o| o.is_empty()) {
-                Ok(json!({"tasks":tasks.list().await?}))
+                tasks.list().await
             } else {
                 tasks.scan(args).await
             }
         }
         "task_board" | "export_tasks" => tasks.snapshot(args, name == "export_tasks").await,
         "task_changes" => {
-            #[derive(serde::Deserialize)]
-            #[serde(deny_unknown_fields)]
-            struct Page {
-                #[serde(default)]
-                after: u64,
-                #[serde(default = "default_limit")]
-                limit: u32,
-            }
-            fn default_limit() -> u32 {
-                50
-            }
-            let p: Page = serde_json::from_value(args).map_err(|_| ServiceError::invalid())?;
-            if p.after > 9_007_199_254_740_991 || !(1..=100).contains(&p.limit) {
-                return Err(ServiceError::invalid());
-            }
+            let p = PageQuery::parse(args)?;
             tasks.changes(p.after, p.limit).await
         }
-        "create_task" => Ok(json!({"task":tasks.create(args).await?})),
+        "create_task" => to_raw(&json!({"task":tasks.create(args).await?})),
         "get_task" | "update_task" | "delete_task" | "restore_task" | "task_history"
         | "reorder_task" => {
             let id = args
                 .as_object_mut()
                 .and_then(|o| o.remove("id"))
                 .and_then(|v| v.as_str().map(str::to_owned))
-                .filter(|id| uuid::Uuid::parse_str(id).is_ok())
+                .filter(|id| valid_id(id))
                 .ok_or_else(ServiceError::invalid)?;
             if name == "get_task" {
                 if args.as_object().is_none_or(|o| !o.is_empty()) {
                     return Err(ServiceError::invalid());
                 }
-                Ok(json!({"task":tasks.get(&id).await?}))
+                to_raw(&json!({"task":tasks.get(&id).await?}))
             } else if name == "task_history" {
-                #[derive(serde::Deserialize)]
-                #[serde(deny_unknown_fields)]
-                struct Page {
-                    #[serde(default)]
-                    after: u64,
-                    #[serde(default = "default_limit")]
-                    limit: u32,
-                }
-                fn default_limit() -> u32 {
-                    50
-                }
-                let page: Page =
-                    serde_json::from_value(args).map_err(|_| ServiceError::invalid())?;
-                if page.after > 9_007_199_254_740_991 || !(1..=100).contains(&page.limit) {
-                    return Err(ServiceError::invalid());
-                }
+                let page = PageQuery::parse(args)?;
                 tasks.history(&id, page.after, page.limit).await
             } else if name == "reorder_task" {
-                Ok(json!({"task":tasks.reorder(&id,args).await?}))
+                to_raw(&json!({"task":tasks.reorder(&id,args).await?}))
             } else if name == "update_task" {
-                Ok(json!({"task":tasks.update(&id,args).await?}))
+                to_raw(&json!({"task":tasks.update(&id,args).await?}))
             } else {
-                Ok(json!({"task":tasks.lifecycle(&id,args,name=="restore_task").await?}))
+                to_raw(&json!({"task":tasks.lifecycle(&id,args,name=="restore_task").await?}))
             }
         }
         _ => Err(ServiceError::invalid()),
