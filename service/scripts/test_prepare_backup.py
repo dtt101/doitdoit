@@ -22,9 +22,12 @@ class BackupTests(unittest.TestCase):
 
     def test_valid_export_restores(self):
         backup.validate(self.source)
+        # Raw SQL > 1 MiB is allowed as long as it fits within MAX_RAW_BYTES.
+        self.source.write_text(self.sql + "\n-- " + ("x" * (1100 * 1024)))
+        backup.validate(self.source)
 
     def test_rejects_empty_oversized_partial_and_corrupt_exports(self):
-        for sql in ["", " " * (backup.MAX_BYTES + 1),
+        for sql in ["", " " * (backup.MAX_RAW_BYTES + 1),
                     "CREATE TABLE tasks(id TEXT);", self.sql + "INVALID SQL;"]:
             with self.subTest(length=len(sql)):
                 self.source.write_text(sql)

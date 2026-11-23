@@ -7,7 +7,8 @@ import sqlite3
 import subprocess
 import tempfile
 
-MAX_BYTES = 1024 * 1024
+MAX_RAW_BYTES = 16 * 1024 * 1024
+MAX_ENCRYPTED_BYTES = 1024 * 1024
 RECIPIENT = "76004AFB9D8EB8FE0AC750097AA20096FA5B2F0B"
 REQUIRED_TABLES = {
     "owners", "tasks", "task_events", "operation_receipts", "oauth_clients",
@@ -15,9 +16,13 @@ REQUIRED_TABLES = {
 }
 
 
+class ValidationError(ValueError):
+    """Static validation error safe to report in CI logs without leaking SQL or paths."""
+
+
 def validate(source):
-    if not 0 < source.stat().st_size <= MAX_BYTES:
-        raise ValueError("SQL export is empty or exceeds the 1 MiB backup limit")
+    if not 0 < source.stat().st_size <= MAX_RAW_BYTES:
+        raise ValidationError("SQL export is empty or exceeds the 16 MiB raw backup limit")
     with sqlite3.connect(":memory:") as db:
         # An export must not access disk, load extensions, or change this policy.
         db.set_authorizer(lambda action, *_: sqlite3.SQLITE_DENY
@@ -27,17 +32,17 @@ def validate(source):
         tables = {row[0] for row in db.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
         if not REQUIRED_TABLES <= tables:
-            raise ValueError("Export is missing required service tables")
+            raise ValidationError("Export is missing required service tables")
         if db.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
-            raise ValueError("Restored backup failed integrity check")
+            raise ValidationError("Restored backup failed integrity check")
         if db.execute("PRAGMA foreign_key_check").fetchall():
-            raise ValueError("Restored backup has foreign-key violations")
+            raise ValidationError("Restored backup has foreign-key violations")
 
 
 def prepare(source, public_key, output):
     validate(source)
     if output.exists():
-        raise ValueError("Refusing to replace an existing encrypted backup")
+        raise ValidationError("Refusing to replace an existing encrypted backup")
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="doitdoit-backup-gpg-") as home:
         os.chmod(home, 0o700)
@@ -53,9 +58,9 @@ def prepare(source, public_key, output):
             except Exception:
                 output.unlink(missing_ok=True)
                 raise
-    if not 0 < output.stat().st_size <= MAX_BYTES:
+    if not 0 < output.stat().st_size <= MAX_ENCRYPTED_BYTES:
         output.unlink()
-        raise ValueError("Encrypted backup exceeds the 1 MiB limit")
+        raise ValidationError("Encrypted backup exceeds the 1 MiB artifact limit")
 
 
 if __name__ == "__main__":
@@ -67,6 +72,8 @@ if __name__ == "__main__":
     os.umask(0o077)
     try:
         prepare(args.source, args.public_key, args.output)
+    except ValidationError as exc:
+        raise SystemExit(f"Backup validation failed: {exc}")
     except Exception:
         # SQLite errors may embed task text; subprocess errors may embed paths.
         raise SystemExit("Backup validation/encryption failed; nothing may be uploaded")

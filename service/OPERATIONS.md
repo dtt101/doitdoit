@@ -63,7 +63,7 @@ The [backup workflow](../.github/workflows/backup.yml) is active on `main`.
 - Validation: restore SQL into temporary SQLite, check tables, integrity and
   foreign keys, then encrypt with GnuPG. Only the encrypted artifact is uploaded.
 - Retention: seven days for daily copies; 35 days for Sunday copies.
-- Limits: 1 MiB per raw/encrypted export; repository artifacts plus 2 MiB reserved
+- Limits: 16 MiB per raw SQL export and 1 MiB per encrypted artifact; repository artifacts plus 2 MiB reserved
   upload space must fit within 16 MiB. Exceeding a limit fails the job.
 - Credentials: repository secret `CLOUDFLARE_BACKUP_API_TOKEN`, scoped to this
   Cloudflare account with **D1 Edit**, without Worker/DNS permissions.
