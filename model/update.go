@@ -81,7 +81,11 @@ func (m Model) updateShared(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-	next.syncViewport()
+	switch msg.(type) {
+	case taskAnimationMsg, brandAnimationMsg, copyFlashDoneMsg, tea.MouseClickMsg, tea.MouseMotionMsg, tea.MouseReleaseMsg:
+	default:
+		next.syncViewport()
+	}
 	return next, cmd
 }
 
@@ -194,6 +198,8 @@ func (m Model) handleKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.ShowHelp {
 		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
 		case "?", "esc":
 			m.ShowHelp = false
 		case "j", "down":
@@ -231,6 +237,9 @@ func (m Model) handleKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleAddingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
 	switch msg.Code {
 	case tea.KeyEnter:
 		title := strings.TrimSpace(m.TextInput.Value())
@@ -238,12 +247,14 @@ func (m Model) handleAddingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.Err = fmt.Errorf("task title cannot be empty")
 			return m, nil
 		}
+		m.Err = nil
 		m.addTask(title)
 		m.TextInput.Reset()
 		m.State = Browsing
 		m.persist()
 	case tea.KeyEsc:
 		m.TextInput.Reset()
+		m.Err = nil
 		m.State = Browsing
 	default:
 		var cmd tea.Cmd
@@ -255,6 +266,9 @@ func (m Model) handleAddingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleEditingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
 	switch msg.Code {
 	case tea.KeyEnter:
 		if strings.TrimSpace(m.TextInput.Value()) == "" {
@@ -321,17 +335,17 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.returnToToday()
 		}
 		m.State = Adding
-		m.configureTextInput("New task...")
-		return m, nil
+		return m, m.configureTextInput("New task...")
 	case "n":
 		return m.openNotes()
 	case "e":
 		currentKey := m.getCurrentKey()
 		if m.hasSelectedTask() {
 			m.State = Editing
-			m.configureTextInput("Task title")
+			cmd := m.configureTextInput("Task title")
 			m.TextInput.SetValue(m.Data[currentKey][m.RowIdx].Title)
 			m.TextInput.CursorEnd()
+			return m, cmd
 		}
 		return m, nil
 	case "d":
@@ -380,6 +394,8 @@ func (m Model) handleBrowsingKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleChoosingMoveDestinationKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
 	case "esc":
 		m.State = Browsing
 	case "t":
@@ -396,8 +412,7 @@ func (m Model) handleChoosingMoveDestinationKey(msg tea.KeyPressMsg) (tea.Model,
 		}
 	case "d":
 		m.State = SettingMoveDate
-		m.configureTextInput("YYYY-MM-DD or MM-DD")
-		return m, nil
+		return m, m.configureTextInput("YYYY-MM-DD or MM-DD")
 	case "1", "2", "3", "4", "5", "6", "7":
 		days := int(msg.String()[0] - '0')
 		moved := m.scheduleTask(m.relativeMoveTarget(days))
@@ -411,13 +426,12 @@ func (m Model) handleChoosingMoveDestinationKey(msg tea.KeyPressMsg) (tea.Model,
 }
 
 func (m Model) handleSettingMoveDateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
 	switch msg.Code {
 	case tea.KeyEnter:
-		input := strings.TrimSpace(m.TextInput.Value())
-		if len(strings.Split(input, "-")) == 2 {
-			input = fmt.Sprintf("%d-%s", m.serviceNow().Year(), input)
-		}
-		normalizedDate, err := normalizeDueDateInput(input)
+		normalizedDate, err := normalizeDueDateInputForYear(m.TextInput.Value(), m.serviceNow().Year())
 		if err != nil {
 			m.Err = err
 			return m, nil
@@ -447,7 +461,7 @@ func (m Model) handleSettingMoveDateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 func (m *Model) persistWithFeedback(message string) {
 	m.feedback = ""
 	m.persist()
-	if m.Err == nil {
+	if m.Err == nil && m.cloud == nil {
 		m.feedback = message
 	}
 }

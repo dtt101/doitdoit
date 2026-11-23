@@ -68,6 +68,8 @@ func (m Model) notesHeight() int {
 func (m Model) updateNotes(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyPressMsg); ok {
 		switch key.String() {
+		case "ctrl+c":
+			return m, tea.Quit
 		case "esc":
 			tasks := m.Data[m.notesKey]
 			if tasks[m.notesRow].Notes == m.notesInput.Value() && m.saveErr == nil {
@@ -101,18 +103,19 @@ func (m Model) updateNotes(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if m.notesPreview {
 		if key, ok := msg.(tea.KeyPressMsg); ok {
+			height := m.notesHeight()
 			switch key.String() {
 			case "up", "k":
 				m.notesOffset--
 			case "down", "j":
 				m.notesOffset++
 			case "pgup":
-				m.notesOffset -= m.notesHeight()
+				m.notesOffset -= height
 			case "pgdown":
-				m.notesOffset += m.notesHeight()
+				m.notesOffset += height
 			}
+			m.notesOffset = min(max(0, m.notesOffset), max(0, len(m.notesLines())-height))
 		}
-		m.notesOffset = min(max(0, m.notesOffset), max(0, len(m.notesLines())-m.notesHeight()))
 		return m, nil
 	}
 	if paste, ok := msg.(tea.PasteMsg); ok {
@@ -120,9 +123,12 @@ func (m Model) updateNotes(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resizeNotes()
 		return m, nil
 	}
+	before := m.notesInput.Value()
 	var cmd tea.Cmd
 	m.notesInput, cmd = m.notesInput.Update(msg)
-	m.resizeNotes()
+	if m.notesInput.Value() != before {
+		m.resizeNotes()
+	}
 	return m, cmd
 }
 
@@ -189,17 +195,19 @@ func (m Model) notesLines() []string {
 }
 
 func (m Model) notesView() string {
+	width := m.notesWidth()
+	height := m.notesHeight()
 	body := m.notesInput.View()
 	if m.notesPreview {
 		lines := m.notesLines()
-		offset := min(max(0, m.notesOffset), max(0, len(lines)-m.notesHeight()))
-		body = strings.Join(lines[offset:min(len(lines), offset+m.notesHeight())], "\n")
+		offset := min(max(0, m.notesOffset), max(0, len(lines)-height))
+		body = strings.Join(lines[offset:min(len(lines), offset+height)], "\n")
 	}
 
-	separator := lipgloss.NewStyle().Foreground(styles.Subtle).Render(strings.Repeat("─", m.notesWidth()))
+	separator := styles.SubtleStyle.Render(strings.Repeat("─", width))
 	content := m.notesHeading() + "\n" + separator + "\n" +
-		lipgloss.NewStyle().Height(m.notesHeight()).Render(body) + "\n" +
-		lipgloss.NewStyle().Foreground(styles.Subtle).Render(m.notesHelp())
+		lipgloss.NewStyle().Height(height).Render(body) + "\n" +
+		styles.SubtleStyle.Render(m.notesHelp())
 	return m.notesPanelStyle().Render(content)
 }
 

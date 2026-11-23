@@ -66,6 +66,9 @@ func (m *Model) editTask(title string) bool {
 
 func (m *Model) captureMoveUndo() {
 	m.feedback = ""
+	if m.cloud != nil {
+		return
+	}
 	m.moveUndo = &moveUndoSnapshot{
 		Data:          cloneTodoData(m.Data),
 		ShowFuture:    m.ShowFuture,
@@ -198,15 +201,19 @@ func (m *Model) copyTask() {
 }
 
 func normalizeDueDateInput(dateStr string) (string, error) {
+	return normalizeDueDateInputForYear(dateStr, time.Now().Year())
+}
+
+func normalizeDueDateInputForYear(dateStr string, year int) (string, error) {
 	dateStr = strings.TrimSpace(dateStr)
 	if dateStr == "" {
 		return "", fmt.Errorf("date is required in YYYY-MM-DD or MM-DD format")
 	}
 
-	// If only M-D or MM-DD provided (no year), prepend current year
+	// If only MM-DD provided (no year), prepend the reference year.
 	parts := strings.Split(dateStr, "-")
 	if len(parts) == 2 {
-		dateStr = fmt.Sprintf("%d-%s", time.Now().Year(), dateStr)
+		dateStr = fmt.Sprintf("%d-%s", year, dateStr)
 	}
 
 	parsed, err := time.Parse("2006-01-02", dateStr)

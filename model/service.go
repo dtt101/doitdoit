@@ -27,7 +27,7 @@ type serviceState struct {
 	origin, draftPath     string
 	tasks                 map[string]taskclient.Task
 	deletedView           bool
-	loaded, busy          bool
+	loaded, busy, polling bool
 	queued, pending, undo *taskclient.Command
 	sequence              uint64
 	cursor                int64
@@ -107,6 +107,7 @@ func NewServiceModel(client *taskclient.Client, origin, draftPath string) (Model
 	}
 	m := Model{Data: TodoData{}, VisibleDays: 3, State: Browsing, TextInput: textinput.New(), cloud: &serviceState{client: client, origin: origin, draftPath: draftPath, tasks: map[string]taskclient.Task{}, busy: true}}
 	m.configureTextInput("New task...")
+	m.TextInput.Blur()
 	m.updateDateKeys()
 	return m, nil
 }
@@ -196,12 +197,13 @@ func (m *Model) serviceData() {
 		}
 		return a.Position < b.Position
 	})
+	today := m.serviceNow().Format(dateLayout)
 	for _, t := range tasks {
 		key, date := "Future", ""
 		if t.ScheduledDate != nil {
 			key, date = *t.ScheduledDate, *t.ScheduledDate
 		}
-		if t.Status == "open" && date != "" && date < m.serviceNow().Format(dateLayout) {
+		if t.Status == "open" && date != "" && date < today {
 			key = "Overdue"
 		}
 		if m.ShowDeleted {
@@ -417,71 +419,14 @@ func (m *Model) serviceUndo(command taskclient.Command, task taskclient.Task) {
 }
 func (m Model) updateService(msg tea.Msg) (tea.Model, tea.Cmd) {
 	copy := *m.cloud
-	copy.tasks = maps.Clone(m.cloud.tasks)
 	m.cloud = &copy
 	switch value := msg.(type) {
 	case serviceResult:
-		if value.sequence != m.cloud.sequence {
-			return m, nil
-		}
-		m.cloud.busy = false
-		if value.err == nil && (value.polled || value.board != nil) && m.cloud.readErr != nil {
-			if m.Err == m.cloud.readErr {
-				m.Err = nil
-			}
-			m.cloud.readErr = nil
-		}
-		if value.polled {
-			m.cloud.connected = true
-			if m.State == Browsing {
-				m.cloud.cursor = value.cursor
-			}
-		}
-		if value.readRecovery {
-			m.cloud.recoveryBlocked = value.recoveryBlocked
-		}
-		if value.command != nil {
-			if value.task != nil {
-				m.cloud.connected = true
-				m.cloud.tasks[value.task.ID] = *value.task
-				m.serviceUndo(*value.command, *value.task)
-				m.cloud.pending = nil
-				m.saveErr = nil
-				m.feedback = "Saved to service"
-				m.serviceData()
-			}
-			if value.err != nil {
-				m.Err = value.err
-				if value.task == nil {
-					m.saveErr = value.err
-					var conflict *taskclient.APIError
-					if errors.As(value.err, &conflict) && conflict.Status == 409 {
-						m.cloud.conflict = conflict
-						m.cloud.conflictOffset = 0
-					}
-				}
-			}
-		} else if value.err != nil {
-			m.cloud.connected = false
-			m.cloud.readErr = value.err
-			m.Err = value.err
-		}
-		if value.board != nil && m.cloud.pending == nil && m.State == Browsing {
-			m.serviceBoard(*value.board)
-		}
-		if value.draft != nil {
-			m.cloud.pending = value.draft
-			m.Err = fmt.Errorf("retained service command found; r retries the original operation")
-			m.saveErr = m.Err
-		}
-		if value.task != nil {
-			return m, m.servicePoll()
-		}
-		return m, nil
+		return m.handleServiceResult(value)
 	case serviceTickMsg:
-		if !m.cloud.busy && m.cloud.pending == nil && m.State == Browsing {
+		if !m.cloud.busy && !m.cloud.polling && m.cloud.pending == nil && m.State == Browsing {
 			m.cloud.sequence++
-			m.cloud.busy = true
+			m.cloud.polling = true
 			return m, tea.Batch(serviceTick(), m.servicePoll())
 		}
 		return m, serviceTick()
@@ -501,142 +446,257 @@ func (m Model) updateService(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, dateTick()
 	case tea.KeyPressMsg:
-		key := value.String()
-		if (key == "q" || key == "ctrl+c") && m.State == Browsing && !m.ShowHelp && m.cloud.pending == nil {
-			return m, tea.Quit
-		}
-		if m.cloud.conflict != nil {
-			switch key {
-			case "j", "down":
-				m.cloud.conflictOffset++
-			case "k", "up":
-				m.cloud.conflictOffset = max(0, m.cloud.conflictOffset-1)
-			case "a":
-				current := m.cloud.conflict.Current
-				if m.canApplyServiceConflict() {
-					command := *m.cloud.pending
-					update := *command.Update
-					update.OperationID = taskclient.OperationID()
-					update.ExpectedRevision = current.Revision
-					command.Update = &update
-					command.Before = current
-					m.queueService(command)
-				}
-			case "d":
-				return m.archiveServiceDraft()
-			case "q", "ctrl+c":
-				return m, tea.Quit
-			}
-		} else if m.cloud.pending != nil {
-			switch key {
-			case "j", "down":
-				if m.cloud.discardReview {
-					m.cloud.conflictOffset++
-				}
-			case "k", "up":
-				if m.cloud.discardReview {
-					m.cloud.conflictOffset = max(0, m.cloud.conflictOffset-1)
-				}
-			case "esc":
-				m.cloud.discardReview = false
-			case "d":
-				if !m.cloud.busy {
-					if m.cloud.discardReview {
-						return m.archiveServiceDraft()
-					}
-					m.cloud.discardReview = true
-					m.cloud.conflictOffset = 0
-				}
-			case "r":
-				if !m.cloud.busy {
-					command := *m.cloud.pending
-					m.cloud.discardReview = false
-					m.queueService(command)
-				}
-			case "q", "ctrl+c":
-				data, err := m.cloud.pending.JSON()
-				if err == nil {
-					err = taskclient.WritePrivate(m.cloud.draftPath, data)
-				}
-				if err != nil {
-					m.Err = err
-					return m, nil
-				}
-				return m, tea.Quit
-			}
-		} else if m.ShowHelp || (m.State == Browsing && key == "?") {
-			return m.updateShared(msg)
-		} else if m.State == Browsing && key == "x" && !m.cloud.busy {
-			m.ShowDeleted = !m.ShowDeleted
-			m.cloud.deletedView = m.ShowDeleted
-			m.ShowOverdue = false
-			m.ShowFuture = false
-			m.cloud.sequence++
-			m.cloud.busy = true
-			m.serviceData()
-			return m, m.serviceRead(false)
-		} else if m.ShowDeleted && m.State == Browsing && !m.cloud.busy && key != "r" {
-			switch key {
-			case "enter":
-				if m.cloud.connected && !m.cloud.recoveryBlocked && m.hasSelectedTask() {
-					id := m.Data["Deleted"][m.RowIdx].ID
-					current := m.cloud.tasks[id]
-					m.queueService(taskclient.Command{Action: "restore", ID: id, Before: &current, Mutation: &taskclient.Mutation{OperationID: taskclient.OperationID(), ExpectedRevision: current.Revision}})
-				}
-			case "j", "down":
-				m.moveSelection(1)
-			case "k", "up":
-				m.moveSelection(-1)
-			case "c":
-				m.HideCompleted = !m.HideCompleted
-				m.clampRow()
-			}
-		} else if m.State == Browsing && key == "r" {
-			if m.cloud.busy {
-				return m, nil
-			}
-			m.cloud.sequence++
-			m.cloud.busy = true
-			return m, m.serviceRead(m.cloud.recoveryBlocked)
-		} else if m.State == Browsing && key == "o" {
-			m.ShowOverdue = !m.ShowOverdue
-			m.ShowFuture = false
-			m.clampRow()
-			return m, nil
-		} else if m.State == Browsing && key == "u" {
-			if m.cloud.loaded && !m.cloud.busy && m.cloud.connected && !m.cloud.recoveryBlocked && m.cloud.undo != nil {
-				command := *m.cloud.undo
-				m.cloud.undo = nil
-				m.queueService(command)
-			}
-		} else if !m.cloud.loaded || m.cloud.busy || (!m.cloud.connected && m.State == Browsing) || m.cloud.recoveryBlocked {
-			return m, nil
-		} else {
-			if key == "f" {
-				m.ShowOverdue = false
-			}
-			if m.hasSelectedTask() {
-				m.cloud.selection = m.Data[m.getCurrentKey()][m.RowIdx].ID
-			}
-			updated, cmd := m.updateShared(msg)
-			m = updated.(Model)
-			if m.cloud.queued != nil {
-				command := *m.cloud.queued
-				m.cloud.queued = nil
-				return m, tea.Batch(cmd, m.serviceWrite(command))
-			}
-			return m, cmd
-		}
+		return m.handleServiceKey(value)
 	default:
 		updated, cmd := m.updateShared(msg)
 		return updated, cmd
 	}
+}
+
+func (m Model) handleServiceResult(value serviceResult) (tea.Model, tea.Cmd) {
+	if value.sequence != m.cloud.sequence {
+		return m, nil
+	}
+	m.cloud.busy = false
+	m.cloud.polling = false
+	if value.err == nil && (value.polled || value.board != nil) && m.cloud.readErr != nil {
+		if m.Err == m.cloud.readErr {
+			m.Err = nil
+		}
+		m.cloud.readErr = nil
+	}
+	if value.polled {
+		m.cloud.connected = true
+		if m.State == Browsing {
+			m.cloud.cursor = value.cursor
+		}
+	}
+	if value.readRecovery {
+		m.cloud.recoveryBlocked = value.recoveryBlocked
+	}
+	if value.command != nil {
+		if value.task != nil {
+			m.cloud.connected = true
+			m.cloud.tasks = maps.Clone(m.cloud.tasks)
+			m.cloud.tasks[value.task.ID] = *value.task
+			m.serviceUndo(*value.command, *value.task)
+			m.cloud.pending = nil
+			m.saveErr = nil
+			m.feedback = "Saved to service"
+			m.serviceData()
+		}
+		if value.err != nil {
+			m.Err = value.err
+			if value.task == nil {
+				m.saveErr = value.err
+				var conflict *taskclient.APIError
+				if errors.As(value.err, &conflict) && conflict.Status == 409 {
+					m.cloud.conflict = conflict
+					m.cloud.conflictOffset = 0
+				}
+			}
+		}
+	} else if value.err != nil {
+		m.cloud.connected = false
+		m.cloud.readErr = value.err
+		m.Err = value.err
+	}
+	if value.board != nil && m.cloud.pending == nil && m.State == Browsing {
+		m.serviceBoard(*value.board)
+	}
+	if value.draft != nil {
+		m.cloud.pending = value.draft
+		m.Err = fmt.Errorf("retained service command found; r retries the original operation")
+		m.saveErr = m.Err
+	}
+	if value.task != nil {
+		m.cloud.sequence++
+		m.cloud.polling = true
+		return m, m.servicePoll()
+	}
+	return m, nil
+}
+
+func (m Model) flushQueuedService(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	if m.cloud.queued != nil {
 		command := *m.cloud.queued
 		m.cloud.queued = nil
+		if cmd != nil {
+			return m, tea.Batch(cmd, m.serviceWrite(command))
+		}
 		return m, m.serviceWrite(command)
 	}
-	return m, nil
+	return m, cmd
+}
+
+func (m Model) handleServiceConflictKey(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "j", "down":
+		m.cloud.conflictOffset++
+	case "k", "up":
+		m.cloud.conflictOffset = max(0, m.cloud.conflictOffset-1)
+	case "a":
+		current := m.cloud.conflict.Current
+		if m.canApplyServiceConflict() {
+			command := *m.cloud.pending
+			update := *command.Update
+			update.OperationID = taskclient.OperationID()
+			update.ExpectedRevision = current.Revision
+			command.Update = &update
+			command.Before = current
+			m.queueService(command)
+		}
+	case "d":
+		return m.archiveServiceDraft()
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	}
+	return m.flushQueuedService(nil)
+}
+
+func (m Model) handleServicePendingKey(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "j", "down":
+		if m.cloud.discardReview {
+			m.cloud.conflictOffset++
+		}
+	case "k", "up":
+		if m.cloud.discardReview {
+			m.cloud.conflictOffset = max(0, m.cloud.conflictOffset-1)
+		}
+	case "esc":
+		m.cloud.discardReview = false
+	case "d":
+		if !m.cloud.busy {
+			if m.cloud.discardReview {
+				return m.archiveServiceDraft()
+			}
+			m.cloud.discardReview = true
+			m.cloud.conflictOffset = 0
+		}
+	case "r":
+		if !m.cloud.busy {
+			command := *m.cloud.pending
+			m.cloud.discardReview = false
+			m.queueService(command)
+		}
+	case "q", "ctrl+c":
+		data, err := m.cloud.pending.JSON()
+		if err == nil {
+			err = taskclient.WritePrivate(m.cloud.draftPath, data)
+		}
+		if err != nil {
+			m.Err = err
+			return m, nil
+		}
+		return m, tea.Quit
+	}
+	return m.flushQueuedService(nil)
+}
+
+func (m Model) handleServiceDeletedKey(key string) (tea.Model, tea.Cmd) {
+	if key == "r" {
+		if m.cloud.busy {
+			return m, nil
+		}
+		m.cloud.sequence++
+		m.cloud.busy = true
+		return m, m.serviceRead(m.cloud.recoveryBlocked)
+	}
+	if m.cloud.busy {
+		return m, nil
+	}
+	switch key {
+	case "enter":
+		if m.cloud.connected && !m.cloud.recoveryBlocked && m.hasSelectedTask() {
+			id := m.Data["Deleted"][m.RowIdx].ID
+			current := m.cloud.tasks[id]
+			m.queueService(taskclient.Command{Action: "restore", ID: id, Before: &current, Mutation: &taskclient.Mutation{OperationID: taskclient.OperationID(), ExpectedRevision: current.Revision}})
+		}
+	case "j", "down":
+		m.moveSelection(1)
+		m.syncViewport()
+	case "k", "up":
+		m.moveSelection(-1)
+		m.syncViewport()
+	case "pgup":
+		m.scrollPage(-1)
+		m.syncViewport()
+	case "pgdown":
+		m.scrollPage(1)
+		m.syncViewport()
+	case "c":
+		m.HideCompleted = !m.HideCompleted
+		m.clampRow()
+		m.syncViewport()
+	}
+	return m.flushQueuedService(nil)
+}
+
+func (m Model) handleServiceKey(value tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	key := value.String()
+	if m.cloud.conflict != nil {
+		return m.handleServiceConflictKey(key)
+	}
+	if m.cloud.pending != nil {
+		return m.handleServicePendingKey(key)
+	}
+	if (key == "q" || key == "ctrl+c") && m.State == Browsing && !m.ShowHelp {
+		return m, tea.Quit
+	}
+	if m.ShowHelp || (m.State == Browsing && key == "?") {
+		return m.updateShared(value)
+	}
+	if m.State == Browsing && key == "x" && !m.cloud.busy {
+		m.ShowDeleted = !m.ShowDeleted
+		m.cloud.deletedView = m.ShowDeleted
+		m.ShowOverdue = false
+		m.ShowFuture = false
+		m.cloud.sequence++
+		m.cloud.busy = true
+		m.serviceData()
+		m.syncViewport()
+		return m, m.serviceRead(false)
+	}
+	if m.ShowDeleted && m.State == Browsing {
+		return m.handleServiceDeletedKey(key)
+	}
+	if m.State == Browsing && key == "r" {
+		if m.cloud.busy {
+			return m, nil
+		}
+		m.cloud.sequence++
+		m.cloud.busy = true
+		return m, m.serviceRead(m.cloud.recoveryBlocked)
+	}
+	if m.State == Browsing && key == "o" {
+		m.ShowOverdue = !m.ShowOverdue
+		m.ShowFuture = false
+		m.RowIdx = -1
+		m.clampRow()
+		m.syncViewport()
+		return m, nil
+	}
+	if m.State == Browsing && key == "u" {
+		if m.cloud.loaded && !m.cloud.busy && m.cloud.connected && !m.cloud.recoveryBlocked && m.cloud.undo != nil {
+			command := *m.cloud.undo
+			m.cloud.undo = nil
+			m.queueService(command)
+		}
+		return m.flushQueuedService(nil)
+	}
+	if !m.cloud.loaded || m.cloud.busy || (!m.cloud.connected && m.State == Browsing) || m.cloud.recoveryBlocked {
+		return m, nil
+	}
+	if key == "f" {
+		m.ShowOverdue = false
+	}
+	if m.hasSelectedTask() {
+		m.cloud.selection = m.Data[m.getCurrentKey()][m.RowIdx].ID
+	}
+	updated, cmd := m.updateShared(value)
+	m = updated.(Model)
+	return m.flushQueuedService(cmd)
 }
 func (m Model) canApplyServiceConflict() bool {
 	return m.cloud.conflict != nil && m.cloud.conflict.Current != nil && m.cloud.conflict.Current.DeletedAt == nil && m.cloud.pending != nil && m.cloud.pending.Action == "update" && m.cloud.pending.Update != nil

@@ -92,6 +92,10 @@ type columnGeometry struct {
 }
 
 func (m Model) columnGeometry(count int) columnGeometry {
+	return m.columnGeometryForFooter(count, lipgloss.Height(m.footerView()))
+}
+
+func (m Model) columnGeometryForFooter(count, footerHeight int) columnGeometry {
 	width, height := m.width, m.height
 	if width <= 0 {
 		width = 80
@@ -101,7 +105,7 @@ func (m Model) columnGeometry(count int) columnGeometry {
 	}
 	style := m.columnStyle(false)
 	blockWidth := (width-m.appStyle().GetHorizontalFrameSize())/max(1, count) - style.GetHorizontalMargins()
-	blockHeight := height - m.appStyle().GetVerticalFrameSize() - lipgloss.Height(m.footerView())
+	blockHeight := height - m.appStyle().GetVerticalFrameSize() - footerHeight
 	return columnGeometry{
 		width: blockWidth, height: blockHeight,
 		contentWidth:  max(1, blockWidth-style.GetHorizontalBorderSize()-style.GetHorizontalPadding()),
@@ -147,12 +151,12 @@ func (m Model) sizedTextInput(contentWidth int) textinput.Model {
 
 func (m *Model) syncViewport() {
 	m.columnOffset = m.visibleColumnStart()
-	m.resizeTextInput()
-	if len(m.dateKeys) == 0 && !m.ShowFuture {
+	geometry := m.columnGeometry(m.visibleColumnCount())
+	m.TextInput = m.sizedTextInput(geometry.contentWidth)
+	if len(m.dateKeys) == 0 && !m.ShowFuture && !m.ShowOverdue && !m.ShowDeleted {
 		return
 	}
 	m.clampRow()
-	geometry := m.columnGeometry(m.visibleColumnCount())
 	key := m.getCurrentKey()
 	doc := m.dayContent(key, m.ColIdx, geometry.contentWidth)
 	rows := doc.viewportRows(geometry.contentHeight)

@@ -20,8 +20,9 @@ func (m Model) View() tea.View {
 	} else if m.terminalTooSmall() {
 		content = fitLines("Window too small.\nResize to at least 24 x 10.\nq quit", m.width, m.height)
 	} else {
-		columns := m.renderColumns(m.visibleKeys())
-		content = m.appStyle().Render(lipgloss.JoinHorizontal(lipgloss.Top, columns...) + "\n" + m.footerView())
+		footer := m.footerView()
+		columns := m.renderColumnsWithFooter(m.visibleKeys(), lipgloss.Height(footer))
+		content = m.appStyle().Render(lipgloss.JoinHorizontal(lipgloss.Top, columns...) + "\n" + footer)
 		if m.ShowHelp {
 			content = m.renderHelpOverlay(content)
 		}
@@ -38,7 +39,11 @@ func (m Model) View() tea.View {
 // Every column has a fixed viewport. Task count and wrapped titles cannot push
 // the footer below the terminal, and headers stay visible while paging.
 func (m Model) renderColumns(keys []string) []string {
-	geometry := m.columnGeometry(len(keys))
+	return m.renderColumnsWithFooter(keys, lipgloss.Height(m.footerView()))
+}
+
+func (m Model) renderColumnsWithFooter(keys []string, footerHeight int) []string {
+	geometry := m.columnGeometryForFooter(len(keys), footerHeight)
 	columns := make([]string, 0, len(keys))
 	for i, key := range keys {
 		dayIdx := m.visibleColumnStart() + i
@@ -64,7 +69,7 @@ func (m Model) renderColumns(keys []string) []string {
 			if end < len(doc.lines) {
 				indicator += " ↓"
 			}
-			content += "\n" + lipgloss.NewStyle().Foreground(styles.Subtle).Render(indicator)
+			content += "\n" + styles.SubtleStyle.Render(indicator)
 		}
 		style := m.columnStyle(focused).Width(geometry.width).Height(geometry.height)
 		columns = append(columns, style.Render(content))
@@ -81,6 +86,10 @@ func (m Model) renderDaySection(dateStr string, dayIdx, colWidth int) string {
 
 func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 	focused := m.ShowFuture || m.ShowOverdue || m.ShowDeleted || m.ColIdx == dayIdx
+	todayKey := m.todayKey
+	if todayKey == "" {
+		todayKey = m.serviceNow().Format(dateLayout)
+	}
 	header := "Future"
 	overdue := 0
 	if m.ShowDeleted {
@@ -90,7 +99,7 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 	} else if !m.ShowFuture {
 		displayDate, _ := time.Parse(dateLayout, dateStr)
 		header = displayDate.Format("Mon, Jan 02")
-		if dateStr == m.serviceNow().Format(dateLayout) {
+		if dateStr == todayKey {
 			header = "Today"
 			if m.cloud != nil {
 				overdue = m.serviceOverdueCount()
@@ -145,7 +154,7 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 			if section.canCollapse {
 				label += " · c " + toggle
 			}
-			appendBlock(lipgloss.NewStyle().Foreground(styles.Subtle).Render(label))
+			appendBlock(styles.SubtleStyle.Render(label))
 		}
 		if section.collapsed {
 			continue
@@ -189,7 +198,7 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 				message = "No deleted tasks."
 			case m.ShowFuture:
 				message = "Capture an idea for later."
-			case dateStr == m.serviceNow().Format(dateLayout):
+			case dateStr == todayKey:
 				message = "What needs doing today?"
 			default:
 				message = "Plan something for this day."
@@ -202,7 +211,7 @@ func (m Model) dayContent(dateStr string, dayIdx, colWidth int) dayContent {
 				message += "\nPress a to add a task."
 			}
 		}
-		appendBlock(lipgloss.NewStyle().Foreground(styles.Subtle).Render(message))
+		appendBlock(styles.SubtleStyle.Render(message))
 	}
 	return doc
 }
@@ -244,7 +253,7 @@ func (m Model) taskView(task Task, selected bool, width int) string {
 		style = styles.CompletedTaskStyle
 		check = "[x] "
 	}
-	markerStyle := lipgloss.NewStyle().Foreground(styles.Subtle)
+	markerStyle := styles.SubtleStyle
 	if selected {
 		markerStyle = markerStyle.Foreground(m.taskAccent()).Bold(true)
 		switch {
@@ -265,7 +274,7 @@ func (m Model) taskView(task Task, selected bool, width int) string {
 		title += fmt.Sprintf(" (%s)", task.DueDate)
 	}
 	if task.Notes != "" {
-		title += " " + lipgloss.NewStyle().Foreground(styles.Subtle).Bold(false).Strikethrough(false).Render("▤")
+		title += " " + styles.NoteIconStyle.Render("▤")
 	}
 	lines := strings.Split(lipgloss.Wrap(style.Width(max(1, width-4)).Render(title), max(1, width-4), ""), "\n")
 	for i, line := range lines {
@@ -283,7 +292,7 @@ func (m Model) helpView() string {
 		return styles.KeyStyle.Render(k)
 	}
 	desc := func(d string) string {
-		return lipgloss.NewStyle().Foreground(styles.Subtle).Render(d)
+		return styles.SubtleStyle.Render(d)
 	}
 	group := func(k, d string) string {
 		return key(k) + " " + desc(d)
@@ -318,29 +327,34 @@ func (m Model) feedbackView() string {
 		return ""
 	}
 	suffix := ""
-	if m.moveUndo != nil || (m.cloud != nil && m.cloud.undo != nil) {
+	canUndo := m.moveUndo != nil
+	if m.cloud != nil {
+		canUndo = m.cloud.undo != nil && m.cloud.pending == nil
+	}
+	if canUndo {
 		suffix = " · " + styles.KeyStyle.Render("u") + " undo"
 	}
 	message := m.feedback
 	if width := m.footerContentWidth(); width > 0 {
 		message = ansi.Truncate(message, max(0, width-lipgloss.Width(suffix)), "…")
 	}
-	return lipgloss.NewStyle().Foreground(styles.Subtle).
+	return styles.SubtleStyle.
 		MarginLeft(m.footerStyle().GetMarginLeft()).Render(message + suffix)
 }
 
 func (m Model) footerView() string {
 	footer := m.helpView()
+	helpHeight := lipgloss.Height(footer)
 	if m.cloud != nil {
 		lines := []string{m.serviceStatusView()}
-		if errView := m.errorView(); errView != "" {
+		if errView := m.errorViewWithHelpHeight(helpHeight); errView != "" {
 			lines = append(lines, errView)
 		} else if feedback := m.feedbackView(); feedback != "" {
 			lines = append(lines, feedback)
 		}
 		return strings.Join(append(lines, footer), "\n")
 	}
-	if errView := m.errorView(); errView != "" {
+	if errView := m.errorViewWithHelpHeight(helpHeight); errView != "" {
 		footer = errView + "\n" + footer
 	} else {
 		footer = m.feedbackView() + "\n" + footer
@@ -431,21 +445,21 @@ func (m Model) footerContentWidth() int {
 func (m Model) brandView() string {
 	const brand = "doitdoit"
 	if m.brandFrame == 0 {
-		return lipgloss.NewStyle().Foreground(styles.Special).Render(brand)
+		return styles.SpecialStyle.Render(brand)
 	}
 
 	const matrixGlyphs = "01#$%&*+"
 	resolved := max(0, m.brandFrame-4)
+	boldSpecial := styles.SpecialStyle.Bold(true)
 	var rendered strings.Builder
 	for i, letter := range brand {
 		glyph := letter
 		if i >= resolved {
 			glyph = rune(matrixGlyphs[(i*3+m.brandFrame*5)%len(matrixGlyphs)])
+			rendered.WriteString(styles.SpecialStyle.Render(string(glyph)))
+		} else {
+			rendered.WriteString(boldSpecial.Render(string(glyph)))
 		}
-		rendered.WriteString(lipgloss.NewStyle().
-			Foreground(styles.Special).
-			Bold(i < resolved).
-			Render(string(glyph)))
 	}
 	return rendered.String()
 }
@@ -461,13 +475,17 @@ func (m Model) brandBounds() (x, y, width int, ok bool) {
 	if m.ShowHelp || (m.cloud != nil && (m.cloud.conflict != nil || m.cloud.discardReview)) {
 		return 0, 0, 0, false
 	}
-	columns := lipgloss.JoinHorizontal(lipgloss.Top, m.renderColumns(m.visibleKeys())...)
-	lines := strings.Split(ansi.Strip(m.appStyle().Render(columns+"\n"+m.footerView())), "\n")
+	footer := m.footerView()
+	appStyle := m.appStyle()
+	geometry := m.columnGeometryForFooter(len(m.visibleKeys()), lipgloss.Height(footer))
+	footerStartY := appStyle.GetMarginTop() + geometry.height + m.columnStyle(false).GetVerticalMargins()
+	marginLeft := appStyle.GetMarginLeft()
+	lines := strings.Split(ansi.Strip(footer), "\n")
 	brand := ansi.Strip(m.brandView())
 	y = -1
 	for i := len(lines) - 1; i >= 0; i-- {
 		if index := strings.Index(lines[i], brand); index >= 0 {
-			x, y = lipgloss.Width(lines[i][:index]), i
+			x, y = marginLeft+lipgloss.Width(lines[i][:index]), footerStartY+i
 			break
 		}
 	}
@@ -654,6 +672,10 @@ func (m Model) renderHelpOverlay(background string) string {
 }
 
 func (m Model) errorView() string {
+	return m.errorViewWithHelpHeight(lipgloss.Height(m.helpView()))
+}
+
+func (m Model) errorViewWithHelpHeight(helpHeight int) string {
 	if m.Err == nil && m.saveErr == nil {
 		return ""
 	}
@@ -665,11 +687,11 @@ func (m Model) errorView() string {
 		}
 		message = fmt.Sprintf("Changes not saved — private recovery command retained. %v", detail)
 	}
-	content := lipgloss.NewStyle().Foreground(styles.Warning).Render(message)
+	content := styles.WarningStyle.Render(message)
 	if m.width <= 0 || m.height <= 0 {
 		return content
 	}
 	minimumColumn := m.columnStyle(false).GetVerticalFrameSize() + 3
-	rows := min(3, max(1, m.height-m.appStyle().GetVerticalFrameSize()-lipgloss.Height(m.helpView())-minimumColumn))
+	rows := min(3, max(1, m.height-m.appStyle().GetVerticalFrameSize()-helpHeight-minimumColumn))
 	return fitLines(content, m.width-m.appStyle().GetHorizontalFrameSize(), rows)
 }

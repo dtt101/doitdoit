@@ -17,7 +17,7 @@ import (
 // receives SIGUSR2 — the same reload convention Omarchy's theme switcher
 // uses for btop, helix, and friends. On Omarchy, wire it up with a theme-set
 // hook that runs `pkill -SIGUSR2 -x doitdoit`.
-func watchThemeReload(p *tea.Program) {
+func watchThemeReload(p *tea.Program) func() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGUSR2)
 	go func() {
@@ -33,4 +33,8 @@ func watchThemeReload(p *tea.Program) {
 			p.Send(model.ThemeReloadMsg{Theme: theme})
 		}
 	}()
+	return func() {
+		signal.Stop(signals)
+		close(signals)
+	}
 }

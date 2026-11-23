@@ -30,6 +30,13 @@ var (
 	HelpStyle lipgloss.Style
 	KeyStyle  lipgloss.Style
 	AppStyle  lipgloss.Style
+
+	// Reusable foreground styles to avoid per-row allocations in render loops.
+	SubtleStyle   lipgloss.Style
+	WarningStyle  lipgloss.Style
+	SpecialStyle  lipgloss.Style
+	TextStyle     lipgloss.Style
+	NoteIconStyle lipgloss.Style
 )
 
 func init() {
@@ -90,4 +97,10 @@ func Apply(t Theme) {
 
 	AppStyle = lipgloss.NewStyle().
 		Margin(1, 2)
+
+	SubtleStyle = lipgloss.NewStyle().Foreground(Subtle)
+	WarningStyle = lipgloss.NewStyle().Foreground(Warning)
+	SpecialStyle = lipgloss.NewStyle().Foreground(Special)
+	TextStyle = lipgloss.NewStyle().Foreground(Text)
+	NoteIconStyle = SubtleStyle.Bold(false).Strikethrough(false)
 }

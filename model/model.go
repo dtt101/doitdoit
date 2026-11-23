@@ -6,7 +6,6 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/dtt101/doitdoit/styles"
 )
 
@@ -174,16 +173,16 @@ func (m *Model) clampRow() {
 	m.RowIdx = rows[len(rows)-1]
 }
 
-func (m *Model) configureTextInput(placeholder string) {
+func (m *Model) configureTextInput(placeholder string) tea.Cmd {
 	m.TextInput.Reset()
 	m.TextInput.Placeholder = placeholder
 	textInputStyles := m.TextInput.Styles()
-	textInputStyles.Focused.Placeholder = lipgloss.NewStyle().Foreground(styles.Subtle)
-	textInputStyles.Focused.Text = lipgloss.NewStyle().Foreground(styles.Text)
+	textInputStyles.Focused.Placeholder = styles.SubtleStyle
+	textInputStyles.Focused.Text = styles.TextStyle
 	textInputStyles.Blurred.Placeholder = textInputStyles.Focused.Placeholder
 	textInputStyles.Blurred.Text = textInputStyles.Focused.Text
 	m.TextInput.SetStyles(textInputStyles)
 	m.TextInput.Prompt = ""
 	m.resizeTextInput()
-	m.TextInput.Focus()
+	return m.TextInput.Focus()
 }

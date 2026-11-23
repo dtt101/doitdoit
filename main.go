@@ -18,9 +18,13 @@ func main() {
 			os.Exit(cli.RunAddCommand(os.Args[2:], os.Stdout))
 		case "config":
 			os.Exit(config.RunCommand(os.Args[1:], os.Stdout))
+		case "version":
+			fmt.Fprintln(os.Stdout, versionString())
+			os.Exit(0)
 		}
 	}
 	serviceFlag := flag.String("service", "", "Use the task service at this origin for this session")
+	versionFlag := flag.Bool("version", false, "Print version information and exit")
 	flag.Usage = func() {
 		fmt.Fprint(flag.CommandLine.Output(), `doitdoit — a terminal task manager
 
@@ -34,6 +38,7 @@ Usage:
   doitdoit service retry --file <retained-command>
   doitdoit service history --id <id>
   doitdoit service restore --id <id> --revision <reviewed-revision>
+  doitdoit version
 
 Run without a command to open the interactive task manager.
 The layout adapts to the terminal width. Use left/right to navigate days,
@@ -64,6 +69,15 @@ Use --help or -h to show help; use doitdoit add --help for capture options.
 `)
 	}
 	flag.Parse()
+	if *versionFlag {
+		fmt.Fprintln(os.Stdout, versionString())
+		os.Exit(0)
+	}
+	if flag.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", flag.Arg(0))
+		flag.Usage()
+		os.Exit(2)
+	}
 
 	cfg, err := config.LoadConfig()
 	if err != nil {

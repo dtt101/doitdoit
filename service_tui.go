@@ -46,7 +46,8 @@ func runServiceTUI(origin string, cfg *config.Config) error {
 		return err
 	}
 	program := tea.NewProgram(m)
-	watchThemeReload(program)
+	stopThemeReload := watchThemeReload(program)
+	defer stopThemeReload()
 	_, err = program.Run()
 	return err
 }
