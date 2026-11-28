@@ -2,8 +2,10 @@ package model
 
 import (
 	"image/color"
+	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dtt101/doitdoit/styles"
 )
@@ -68,5 +70,66 @@ func TestCompletionGlowAndEditingCancellation(t *testing.T) {
 	m = updated.(Model)
 	if m.taskFrame != 0 || cmd != nil {
 		t.Fatal("editing should cancel the task animation")
+	}
+}
+
+func TestCompletionAnimatesCheckboxAndStrikethroughSweep(t *testing.T) {
+	m := newFeedbackTestModel(t)
+	key := m.getCurrentKey()
+	m.Data[key][0].Title = "Ship animated checkbox"
+	m.Data[key][0].Notes = "note body"
+
+	m = pressSpace(m)
+	if !m.taskCompleting || m.taskFrame != 1 {
+		t.Fatalf("expected completion animation to start, got completing=%v frame=%d", m.taskCompleting, m.taskFrame)
+	}
+
+	var completed Task
+	for _, task := range m.Data[key] {
+		if task.ID == m.taskAnimationTaskID {
+			completed = task
+			break
+		}
+	}
+	if !completed.Completed {
+		t.Fatal("animated task should be marked completed")
+	}
+
+	frame1 := m.taskView(completed, false, 30)
+	if !strings.HasPrefix(ansi.Strip(frame1), "[·] ") {
+		t.Fatalf("frame 1 checkbox = %q, want [·] prefix", ansi.Strip(frame1))
+	}
+	if !strings.Contains(frame1, ";9m") && !strings.Contains(frame1, "[9m") && !strings.Contains(frame1, "[9;") {
+		t.Fatalf("frame 1 should include strikethrough on swept prefix: %q", frame1)
+	}
+
+	// Mid-sweep: checkmark glyph and preserved text + note icon without shifting layout.
+	m.taskFrame = 4
+	frame4 := m.taskView(completed, false, 30)
+	plain4 := ansi.Strip(frame4)
+	if !strings.HasPrefix(plain4, "[✓] ") {
+		t.Fatalf("frame 4 checkbox = %q, want [✓] prefix", plain4)
+	}
+	if !strings.Contains(plain4, "Ship animated checkbox") || !strings.Contains(plain4, "▤") {
+		t.Fatalf("frame 4 lost title or note icon: %q", plain4)
+	}
+
+	// Advance to completion of animation.
+	for frame := 5; frame <= taskAnimationFrames+1; frame++ {
+		updated, _ := m.Update(taskAnimationMsg{id: m.taskAnimationID, frame: frame})
+		m = updated.(Model)
+	}
+	if m.taskFrame != 0 || m.taskCompleting {
+		t.Fatalf("completion animation did not settle: frame=%d completing=%v", m.taskFrame, m.taskCompleting)
+	}
+	settled := ansi.Strip(m.taskView(completed, false, 30))
+	if !strings.HasPrefix(settled, "[x] ") {
+		t.Fatalf("settled checkbox = %q, want [x] prefix", settled)
+	}
+	if lipgloss.Height(frame1) != lipgloss.Height(settled) || lipgloss.Height(frame4) != lipgloss.Height(settled) {
+		t.Fatalf("sweep changed line count: frame1=%d (%q) frame4=%d (%q) settled=%d (%q)",
+			lipgloss.Height(frame1), ansi.Strip(frame1),
+			lipgloss.Height(frame4), ansi.Strip(frame4),
+			lipgloss.Height(settled), settled)
 	}
 }

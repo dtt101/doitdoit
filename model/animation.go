@@ -8,7 +8,10 @@ import (
 	"github.com/dtt101/doitdoit/styles"
 )
 
-const taskAnimationFrames = 14
+const (
+	taskAnimationFrames = 14
+	taskSweepFrames     = 9
+)
 
 type taskAnimationMsg struct {
 	id    uint64
@@ -46,4 +49,28 @@ func (m Model) taskFade(base color.Color) color.Color {
 		return uint8((float64(a)*(1-weight) + peak*weight) / 257)
 	}
 	return color.RGBA{R: blend(r, sr), G: blend(g, sg), B: blend(b, sb), A: 255}
+}
+
+// taskCheckbox returns a fixed 4-cell checkbox prefix, morphing briefly while
+// a task completes so layout never shifts.
+func taskCheckbox(completed bool, frame int, completing bool) string {
+	if !completed {
+		return "[ ] "
+	}
+	if completing && frame > 0 {
+		if frame <= 2 {
+			return "[·] "
+		}
+		if frame <= 6 {
+			return "[✓] "
+		}
+	}
+	return "[x] "
+}
+
+func sweepProgress(frame int) float64 {
+	if frame <= 0 || frame >= taskSweepFrames {
+		return 1
+	}
+	return float64(frame) / float64(taskSweepFrames)
 }

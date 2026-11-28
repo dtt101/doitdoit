@@ -87,6 +87,7 @@ type Model struct {
 	taskFrame           int
 	taskGlow            float64
 	taskAnimationTaskID string
+	taskCompleting      bool
 
 	// Click-only animation for the footer wordmark.
 	brandFrame       int

@@ -2,8 +2,10 @@ package model
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -246,12 +248,13 @@ func (m Model) taskView(task Task, selected bool, width int) string {
 	// A completion glow follows the task when completion reorders the list.
 	if task.ID != m.taskAnimationTaskID {
 		m.taskFrame = 0
+		m.taskCompleting = false
 	}
+	completing := m.taskCompleting && task.Completed && m.taskFrame > 0
 	style := styles.TaskStyle
-	check := "[ ] "
+	check := taskCheckbox(task.Completed, m.taskFrame, completing)
 	if task.Completed {
 		style = styles.CompletedTaskStyle
-		check = "[x] "
 	}
 	markerStyle := styles.SubtleStyle
 	if selected {
@@ -269,22 +272,65 @@ func (m Model) taskView(task Task, selected bool, width int) string {
 		style = style.Foreground(m.taskFade(style.GetForeground()))
 		markerStyle = markerStyle.Foreground(m.taskFade(styles.Subtle))
 	}
-	title := task.Title
+	titleText := task.Title
 	if m.ShowFuture && task.DueDate != "" {
-		title += fmt.Sprintf(" (%s)", task.DueDate)
+		titleText += fmt.Sprintf(" (%s)", task.DueDate)
 	}
-	if task.Notes != "" {
-		title += " " + styles.NoteIconStyle.Render("▤")
+	textWidth := max(1, width-4)
+	if completing && m.taskFrame < taskSweepFrames {
+		return renderTaskLines(titleText, task.Notes != "", check, markerStyle, style, style.Strikethrough(false).Foreground(m.taskFade(styles.Text)), textWidth, m.taskFrame, true)
 	}
-	lines := strings.Split(lipgloss.Wrap(style.Width(max(1, width-4)).Render(title), max(1, width-4), ""), "\n")
-	for i, line := range lines {
+	return renderTaskLines(titleText, task.Notes != "", check, markerStyle, style, style, textWidth, 0, false)
+}
+
+func renderTaskLines(titleText string, hasNotes bool, check string, markerStyle, primaryStyle, unstruckStyle lipgloss.Style, textWidth, frame int, sweeping bool) string {
+	plain := titleText
+	if hasNotes {
+		plain += " ▤"
+	}
+	wrapped := strings.Split(lipgloss.Wrap(plain, textWidth, ""), "\n")
+	totalTitleRunes := utf8.RuneCountInString(titleText)
+	struckBudget := totalTitleRunes
+	if sweeping {
+		struckBudget = 0
+		if totalTitleRunes > 0 {
+			struckBudget = max(1, min(totalTitleRunes, int(math.Round(sweepProgress(frame)*float64(totalTitleRunes)))))
+		}
+	}
+	for i, line := range wrapped {
+		var rendered strings.Builder
+		runes := []rune(line)
+		// Keep a trailing note icon styled with NoteIconStyle (never struck through).
+		lineTitleLen := len(runes)
+		noteTail := ""
+		if hasNotes && i == len(wrapped)-1 && strings.HasSuffix(line, "▤") {
+			if strings.HasSuffix(line, " ▤") {
+				lineTitleLen = len(runes) - 2
+				noteTail = " " + styles.NoteIconStyle.Render("▤")
+			} else {
+				lineTitleLen = len(runes) - 1
+				noteTail = styles.NoteIconStyle.Render("▤")
+			}
+		}
+		titleRunes := runes[:max(0, lineTitleLen)]
+		take := min(len(titleRunes), struckBudget)
+		if take > 0 {
+			rendered.WriteString(primaryStyle.Render(string(titleRunes[:take])))
+			struckBudget -= take
+		}
+		if take < len(titleRunes) {
+			rendered.WriteString(unstruckStyle.Render(string(titleRunes[take:])))
+		}
+		if noteTail != "" {
+			rendered.WriteString(noteTail)
+		}
 		prefix := "    "
 		if i == 0 {
 			prefix = check
 		}
-		lines[i] = markerStyle.Render(prefix) + line
+		wrapped[i] = markerStyle.Render(prefix) + rendered.String()
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(wrapped, "\n")
 }
 
 func (m Model) helpView() string {

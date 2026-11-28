@@ -59,13 +59,16 @@ func (m Model) updateShared(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if next.State != Browsing || next.ShowHelp || next.Err != nil {
 			next.taskAnimationID++
 			next.taskFrame = 0
+			next.taskCompleting = false
 		} else if (next.ShowFuture || next.ShowOverdue || next.ShowDeleted || (next.ColIdx >= 0 && next.ColIdx < len(next.dateKeys))) && next.hasSelectedTask() {
 			after := next.Data[next.getCurrentKey()][next.RowIdx]
 			changed := beforeKey != next.getCurrentKey() || beforeRow != next.RowIdx || before.ID != after.ID
 			completed := false
+			completing := false
 			for _, task := range next.Data[beforeKey] {
 				if before.ID != "" && task.ID == before.ID && task.Completed != before.Completed {
 					completed = true
+					completing = task.Completed
 				}
 			}
 			if changed || completed {
@@ -73,9 +76,11 @@ func (m Model) updateShared(msg tea.Msg) (tea.Model, tea.Cmd) {
 				next.taskFrame = 1
 				next.taskGlow = 0.65
 				next.taskAnimationTaskID = after.ID
+				next.taskCompleting = false
 				if completed {
 					next.taskGlow = 0.8
 					next.taskAnimationTaskID = before.ID
+					next.taskCompleting = completing
 				}
 				cmd = tea.Batch(cmd, taskAnimationTick(next.taskAnimationID, 2))
 			}
@@ -105,6 +110,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.frame > taskAnimationFrames {
 			m.taskFrame = 0
+			m.taskCompleting = false
 			return m, nil
 		}
 		m.taskFrame = msg.frame
