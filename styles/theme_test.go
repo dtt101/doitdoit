@@ -1,6 +1,7 @@
 package styles
 
 import (
+	"image/color"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,12 +39,24 @@ func TestThemeFromPaletteMissingKey(t *testing.T) {
 	}
 }
 
+func colorToRGBA(t *testing.T, c color.Color) color.RGBA {
+	t.Helper()
+	r, g, b, a := c.RGBA()
+	return color.RGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: uint8(a >> 8)}
+}
+
 func TestBuiltinThemes(t *testing.T) {
 	names := BuiltinThemeNames()
 	if len(names) == 0 {
 		t.Fatal("no embedded themes found")
 	}
 	for _, name := range names {
+		data, err := embeddedThemes.ReadFile("themes/" + name + ".toml")
+		if err != nil {
+			t.Errorf("read theme %q: %v", name, err)
+			continue
+		}
+		palette := ParsePalette(data)
 		theme, err := BuiltinTheme(name)
 		if err != nil {
 			t.Errorf("theme %q: %v", name, err)
@@ -51,6 +64,15 @@ func TestBuiltinThemes(t *testing.T) {
 		}
 		if theme.Text == nil || theme.Highlight == nil {
 			t.Errorf("theme %q has nil colors", name)
+		}
+		bg, ok := parseHexColor(palette["background"])
+		if !ok {
+			t.Errorf("theme %q has invalid background %q", name, palette["background"])
+			continue
+		}
+		ratio := contrastRatio(colorToRGBA(t, theme.Subtle), bg)
+		if ratio < minSubtleContrast {
+			t.Errorf("theme %q Subtle contrast = %.2f against %s, want >= %.1f", name, ratio, palette["background"], minSubtleContrast)
 		}
 	}
 }
@@ -72,21 +94,74 @@ func TestBuiltinThemeTokyoNight(t *testing.T) {
 	if theme.Text != lipgloss.Color("#a9b1d6") {
 		t.Errorf("Text = %v, want the tokyo-night foreground #a9b1d6", theme.Text)
 	}
-	if theme.Subtle != lipgloss.Color("#565f89") {
-		t.Errorf("Subtle = %v, want the tokyo-night dark_foreground #565f89", theme.Subtle)
+	if theme.Subtle == lipgloss.Color("#565f89") || theme.Subtle == theme.Text {
+		t.Errorf("Subtle = %v, want lifted above raw dark_foreground #565f89 while staying distinct from Text", theme.Subtle)
+	}
+	bg, _ := parseHexColor("#1a1b26")
+	if got := contrastRatio(colorToRGBA(t, theme.Subtle), bg); got < minSubtleContrast {
+		t.Errorf("Subtle contrast = %.2f, want >= %.1f", got, minSubtleContrast)
 	}
 	if theme.Border != lipgloss.Color("#414868") {
 		t.Errorf("Border = %v, want the tokyo-night muted #414868", theme.Border)
 	}
 }
 
-func TestThemeFromPaletteSubtleFallsBackToMuted(t *testing.T) {
-	theme, err := ThemeFromPalette(ParsePalette([]byte(sampleColors)))
+func TestBuiltinThemeMatteBlackSubtleContrast(t *testing.T) {
+	theme, err := BuiltinTheme("matte-black")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if theme.Subtle != lipgloss.Color("#414868") {
-		t.Errorf("Subtle = %v, want fallback to muted #414868", theme.Subtle)
+	if theme.Subtle == lipgloss.Color("#555555") {
+		t.Fatalf("matte-black Subtle should be lifted above #555555 for readability on #121212")
+	}
+	if theme.Subtle == theme.Text {
+		t.Fatalf("matte-black Subtle should remain distinct from Text")
+	}
+	bg, _ := parseHexColor("#121212")
+	if got := contrastRatio(colorToRGBA(t, theme.Subtle), bg); got < minSubtleContrast {
+		t.Errorf("matte-black Subtle contrast = %.2f, want >= %.1f", got, minSubtleContrast)
+	}
+}
+
+func TestBuiltinThemePreservesReadableDarkForeground(t *testing.T) {
+	theme, err := BuiltinTheme("osaka-jade")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if theme.Subtle != lipgloss.Color("#81B8A8") {
+		t.Errorf("osaka-jade Subtle = %v, want untouched #81B8A8 (already >= %.1f contrast)", theme.Subtle, minSubtleContrast)
+	}
+}
+
+func TestThemeFromPaletteSubtleFallsBackToMuted(t *testing.T) {
+	// When dark_foreground is absent and muted is already readable, keep muted as-is.
+	readable, err := ThemeFromPalette(map[string]string{
+		"background": "#121212",
+		"foreground": "#eeeeee",
+		"muted":      "#888888",
+		"accent":     "#7aa2f7",
+		"red":        "#f7768e",
+		"green":      "#9ece6a",
+		"magenta":    "#ad8ee6",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readable.Subtle != lipgloss.Color("#888888") {
+		t.Errorf("Subtle = %v, want fallback to readable muted #888888", readable.Subtle)
+	}
+
+	// When muted is too dim against background, lift it to meet the contrast floor.
+	dim, err := ThemeFromPalette(ParsePalette([]byte(sampleColors)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bg, _ := parseHexColor("#1a1b26")
+	if got := contrastRatio(colorToRGBA(t, dim.Subtle), bg); got < minSubtleContrast {
+		t.Errorf("lifted muted Subtle contrast = %.2f, want >= %.1f", got, minSubtleContrast)
+	}
+	if dim.Border != lipgloss.Color("#414868") {
+		t.Errorf("Border = %v, want untouched muted #414868", dim.Border)
 	}
 }
 

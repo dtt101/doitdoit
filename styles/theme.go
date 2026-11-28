@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"image/color"
 	"io/fs"
+	"math"
 	"sort"
+	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -80,12 +82,16 @@ func ThemeFromPalette(palette map[string]string) (Theme, error) {
 		}
 	}
 	// Omarchy's `muted` is a background-tier grey (selections, borders); the
-	// dim *text* colour is `dark_foreground`. Use it for subtle text so
-	// completed tasks and help stay readable, keeping `muted` for borders.
+	// dim *text* colour is `dark_foreground`. Some palettes set
+	// `dark_foreground` too close to `background` for comfortable reading
+	// (e.g. matte-black's #555555 on #121212), so lift it toward `foreground`
+	// just enough to meet WCAG AA text contrast while keeping `muted` for
+	// unfocused borders.
 	subtle := palette["dark_foreground"]
 	if subtle == "" {
 		subtle = palette["muted"]
 	}
+	subtle = ensureSubtleContrast(subtle, palette["foreground"], palette["background"], minSubtleContrast)
 	return Theme{
 		Text:      lipgloss.Color(palette["foreground"]),
 		Subtle:    lipgloss.Color(subtle),
@@ -97,6 +103,92 @@ func ThemeFromPalette(palette map[string]string) (Theme, error) {
 		MovingFg:  lipgloss.Color(palette["background"]),
 		MovingBg:  lipgloss.Color(palette["accent"]),
 	}, nil
+}
+
+const minSubtleContrast = 4.5 // WCAG AA contrast ratio for normal text
+
+// ensureSubtleContrast blends subtleHex toward fgHex when its contrast against
+// bgHex falls below minRatio, preserving the theme's hue while keeping subtle
+// text legible on dark and light backgrounds alike.
+func ensureSubtleContrast(subtleHex, fgHex, bgHex string, minRatio float64) string {
+	subtle, okS := parseHexColor(subtleHex)
+	fg, okF := parseHexColor(fgHex)
+	bg, okB := parseHexColor(bgHex)
+	if !okS || !okF || !okB {
+		return subtleHex
+	}
+	if contrastRatio(subtle, bg) >= minRatio {
+		return subtleHex
+	}
+	target := min(minRatio, contrastRatio(fg, bg))
+	if contrastRatio(subtle, bg) >= target {
+		return subtleHex
+	}
+	lo, hi := 0.0, 1.0
+	for range 20 {
+		mid := (lo + hi) / 2
+		if contrastRatio(blendRGBA(subtle, fg, mid), bg) < target {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	lifted := blendRGBA(subtle, fg, hi)
+	return fmt.Sprintf("#%02x%02x%02x", lifted.R, lifted.G, lifted.B)
+}
+
+func parseHexColor(s string) (color.RGBA, bool) {
+	s = strings.TrimPrefix(strings.TrimSpace(s), "#")
+	switch len(s) {
+	case 3:
+		s = string([]byte{s[0], s[0], s[1], s[1], s[2], s[2]})
+	case 6:
+	default:
+		return color.RGBA{}, false
+	}
+	v, err := strconv.ParseUint(s, 16, 32)
+	if err != nil {
+		return color.RGBA{}, false
+	}
+	return color.RGBA{
+		R: uint8(v >> 16),
+		G: uint8(v >> 8),
+		B: uint8(v),
+		A: 255,
+	}, true
+}
+
+func blendRGBA(a, b color.RGBA, t float64) color.RGBA {
+	lerp := func(x, y uint8) uint8 {
+		v := math.Round(float64(x) + (float64(y)-float64(x))*t)
+		return uint8(max(0, min(255, v)))
+	}
+	return color.RGBA{
+		R: lerp(a.R, b.R),
+		G: lerp(a.G, b.G),
+		B: lerp(a.B, b.B),
+		A: 255,
+	}
+}
+
+func contrastRatio(a, b color.RGBA) float64 {
+	l1 := relativeLuminance(a)
+	l2 := relativeLuminance(b)
+	if l1 < l2 {
+		l1, l2 = l2, l1
+	}
+	return (l1 + 0.05) / (l2 + 0.05)
+}
+
+func relativeLuminance(c color.RGBA) float64 {
+	linearize := func(v uint8) float64 {
+		s := float64(v) / 255.0
+		if s <= 0.03928 {
+			return s / 12.92
+		}
+		return math.Pow((s+0.055)/1.055, 2.4)
+	}
+	return 0.2126*linearize(c.R) + 0.7152*linearize(c.G) + 0.0722*linearize(c.B)
 }
 
 // BuiltinThemeNames lists the embedded Omarchy stock palettes, sorted.
